@@ -62,17 +62,17 @@ const getDeviceInfo = () => {
 
 const Modal = ({ isOpen, onClose, title, children, maxWidth = "max-w-md", hideHeaderInPrint = false }) => {
   if (!isOpen) return null;
-  let containerClass = "bg-white rounded-xl shadow-2xl w-full " + maxWidth + " overflow-hidden flex flex-col max-h-[90vh] print:max-h-none print:shadow-none print:rounded-none print:w-full";
+  let containerClass = "bg-white rounded-xl shadow-2xl w-full " + maxWidth + " overflow-hidden flex flex-col max-h-[90vh] modal-content";
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm print:bg-transparent print:p-0">
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm modal-overlay">
       <div className={containerClass}>
         {!hideHeaderInPrint && (
-          <div className="flex justify-between items-center p-4 border-b shrink-0 print:hidden">
+          <div className="flex justify-between items-center p-4 border-b shrink-0 no-print">
             <h3 className="text-lg font-semibold text-gray-800">{title}</h3>
             <button onClick={onClose} className="text-gray-400 hover:text-gray-600"><X size={20} /></button>
           </div>
         )}
-        <div className="p-4 overflow-y-auto print:overflow-visible print:p-0">{children}</div>
+        <div className="p-4 overflow-y-auto print-area-wrapper">{children}</div>
       </div>
     </div>
   );
@@ -222,12 +222,44 @@ export default function EnhancedPOS() {
     return userData.perms[t.permId];
   });
 
-  const printStyle = "@media print { body * { visibility: hidden; } .print-container, .print-container * { visibility: visible; } .print-container { position: absolute; left: 0; top: 0; width: 100%; padding: 20px; } .no-print { display: none !important; } }";
+  const printStyle = `
+    @media print {
+      .hide-on-print { display: none !important; }
+      .modal-overlay { 
+        position: absolute !important; 
+        background: transparent !important; 
+        padding: 0 !important;
+      }
+      .modal-content {
+        box-shadow: none !important;
+        border: none !important;
+        width: 100% !important;
+        max-width: 100% !important;
+        max-height: none !important;
+        overflow: visible !important;
+      }
+      .print-area-wrapper {
+        overflow: visible !important;
+        padding: 0 !important;
+      }
+      .print-container { 
+        position: absolute; 
+        left: 0; 
+        top: 0; 
+        width: 100%; 
+        background: white !important; 
+        color: black !important;
+        padding: 0 !important;
+        margin: 0 !important;
+      }
+      .no-print { display: none !important; }
+    }
+  `;
 
   return (
     <>
       <style>{printStyle}</style>
-      <div className="min-h-screen bg-gray-50 flex flex-col md:flex-row font-sans text-sm md:text-base print:hidden">
+      <div className="min-h-screen bg-gray-50 flex flex-col md:flex-row font-sans text-sm md:text-base hide-on-print">
         <aside className="w-full md:w-64 bg-white border-r border-gray-200 flex flex-col shadow-sm z-10 shrink-0">
           <div className="p-5 border-b border-gray-100 flex items-center gap-3">
             {storeConfig.logo ? <img src={storeConfig.logo} alt="Logo" className="w-10 h-10 object-contain rounded bg-white p-1 shadow-sm" /> : <div className="bg-blue-600 text-white p-2 rounded-lg"><ShoppingBag size={24} /></div>}
@@ -844,7 +876,7 @@ function SalesHistoryView({ orders, products, storeConfig, db, storeId, showToas
                 </div>
               ) : (
                 <div className={printType === 'a4' ? 'max-w-[210mm] mx-auto p-4' : 'max-w-[148mm] mx-auto p-2'}>
-                  <div className="flex justify-between items-start border-b-2 border-gray-800 pb-4 mb-4">
+                  <div className="flex justify-between items-center border-b-2 border-gray-800 pb-4 mb-4">
                     <div className="flex items-center gap-3">
                       {storeConfig?.logo && (<img src={storeConfig.logo} alt="Logo" className="max-h-16 object-contain" />)}
                       <div>
@@ -853,7 +885,7 @@ function SalesHistoryView({ orders, products, storeConfig, db, storeId, showToas
                         <p className="text-xs text-gray-600">Điện thoại: {storeConfig?.phone || '...'}</p>
                       </div>
                     </div>
-                    <div className="text-right">
+                    <div className="text-right mt-6">
                       <h1 className="text-xl font-bold uppercase text-blue-800">PHIẾU BÁN HÀNG</h1>
                       <p className="text-xs text-gray-500 mt-1">Mã HĐ: #{viewingOrderPrint.id.slice(0,6).toUpperCase()}</p>
                       <p className="text-xs text-gray-500">Ngày: {formatDate(viewingOrderPrint.date)}</p>
@@ -1931,7 +1963,7 @@ function POSView({ products, customers, db, storeId, user, storeConfig, showToas
                 </div>
               ) : (
                 <div className={printType === 'a4' ? 'max-w-[210mm] mx-auto p-4' : 'max-w-[148mm] mx-auto p-2'}>
-                  <div className="flex justify-between items-start border-b-2 border-gray-800 pb-4 mb-4">
+                  <div className="flex justify-between items-center border-b-2 border-gray-800 pb-4 mb-4">
                     <div className="flex items-center gap-3">
                       {storeConfig?.logo && (<img src={storeConfig.logo} alt="Logo" className="max-h-16 object-contain" />)}
                       <div>
@@ -1940,7 +1972,7 @@ function POSView({ products, customers, db, storeId, user, storeConfig, showToas
                         <p className="text-xs text-gray-600">Điện thoại: {storeConfig?.phone || '...'}</p>
                       </div>
                     </div>
-                    <div className="text-right">
+                    <div className="text-right mt-6">
                       <h1 className="text-xl font-bold uppercase text-blue-800">PHIẾU BÁN HÀNG</h1>
                       <p className="text-xs text-gray-500 mt-1">Mã HĐ: #{completedOrder.id.slice(0,6).toUpperCase()}</p>
                       <p className="text-xs text-gray-500">Ngày: {formatDate(completedOrder.date)}</p>
