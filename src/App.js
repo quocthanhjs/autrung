@@ -1368,7 +1368,7 @@ function InventoryView({ products, orders, imports, db, storeId, showToast }) {
               const stockClass = p.stock < 0 ? 'text-red-600' : 'text-gray-800';
               return (
                 <tr key={p.id} className="border-b hover:bg-blue-50/50 cursor-pointer" onClick={() => setDetailProduct(p)}>
-                  <td className="p-4" onClick={e=>e.stopPropagation()}><input type="checkbox" checked={selectedIds.includes(p.id)} onChange={() => setSelectedIds(prev => prev.includes(p.id) ? prev.filter(x=>x!==p.id) : [...prev, p.id]} className="w-4 h-4"/></td>
+                  <td className="p-4" onClick={e=>e.stopPropagation()}><input type="checkbox" checked={selectedIds.includes(p.id)} onChange={() => setSelectedIds(prev => prev.includes(p.id) ? prev.filter(x=>x!==p.id) : [...prev, p.id])} className="w-4 h-4"/></td>
                   <td className="p-4 font-medium text-blue-600 underline">{p.name}</td><td className="p-4 text-gray-600">{formatCurrency(p.cost)}</td><td className="p-4 font-bold text-blue-600">{formatCurrency(p.price)}</td><td className={"p-4 font-bold " + stockClass}>{p.stock}</td>
                   <td className="p-4 text-right flex justify-end gap-1" onClick={e=>e.stopPropagation()}><button onClick={() => setDetailProduct(p)} title="Xem chi tiết nhập/bán" className="text-gray-600 bg-gray-100 p-2 rounded-lg hover:bg-gray-200"><Eye size={16}/></button><button onClick={() => {setForm(p); setIsModalOpen(true);}} className="text-blue-600 bg-blue-50 p-2 rounded-lg hover:bg-blue-100"><Edit size={16}/></button><button onClick={() => handleDelete(p.id)} className="text-red-600 bg-red-50 p-2 rounded-lg hover:bg-red-100"><Trash2 size={16}/></button></td>
                 </tr>
@@ -1476,7 +1476,7 @@ function ExpenseView({ expenses, db, storeId, showToast }) {
   };
 
   const handleDelete = async (id) => { if (window.confirm("Xác nhận xóa chi phí này?")) { await deleteDoc(doc(db, 'stores', storeId, 'expenses', id)); showToast("Đã xóa chi phí"); } };
-  const handleBatchDelete = async () => { if (selectedIds.length === 0) return; const confirmMsg = "Xác nhận xóa " + selectedIds.length + " mục đã chọn?"; if (window.confirm(confirmMsg)) { let batch = writeBatch(db); selectedIds.forEach(id => batch.delete(doc(db, 'stores', storeId, 'expenses', id))); await batch.commit(); setSelectedIds([]); showToast("Đã xóa các chi phí đã chọn"); } };
+  const handleBatchDelete = async () => { if (selectedIds.length === 0) return; const confirmMsg = "Xác nhận xóa " + selectedIds.length + " mục đã chọn?"; if (window.confirm(confirmMsg)) { let batch = writeBatch(db); selectedIds.forEach(id => { batch.delete(doc(db, 'stores', storeId, 'expenses', id)); }); await batch.commit(); setSelectedIds([]); showToast("Đã xóa các chi phí đã chọn"); } };
 
   const filteredExpenses = useMemo(() => {
     return expenses.filter(e => {
