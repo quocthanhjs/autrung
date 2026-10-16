@@ -673,7 +673,6 @@ function StaffManagerView({ db, showToast }) {
       if(form.id) { 
         await updateDoc(doc(db, 'users_db', form.id), { role: form.role, permissions: form.perms }); 
         
-        // Nếu admin có nhập mật khẩu mới thì gửi yêu cầu reset hoặc thông báo hướng dẫn qua hàm reset firebase auth
         if (form.newPassword && form.newPassword.trim().length >= 6) {
           try {
             await sendPasswordResetEmail(auth, form.email);
@@ -1113,6 +1112,9 @@ function InventoryView({ products, orders, imports, db, storeId, showToast }) {
   const [selectedIds, setSelectedIds] = useState([]);
   const [searchTerm, setSearchTerm] = useState('');
   
+  // Trạng thái sắp xếp cho Kho hàng
+  const [sortConfig, setSortConfig] = useState({ field: null, direction: 'none' });
+
   const [detailProduct, setDetailProduct] = useState(null);
   const currentDate = new Date();
   const [filterMonth, setFilterMonth] = useState((currentDate.getMonth() + 1).toString());
@@ -1136,7 +1138,36 @@ function InventoryView({ products, orders, imports, db, storeId, showToast }) {
     return { totalStock, totalValue, count: products.length };
   }, [products]);
 
-  const filteredProducts = useMemo(() => { return products.filter(p => p.name && p.name.toLowerCase().includes(searchTerm.toLowerCase())); }, [products, searchTerm]);
+  const handleSort = (field) => {
+    setSortConfig(prev => {
+      if (prev.field === field) {
+        if (prev.direction === 'none') return { field, direction: 'desc' };
+        if (prev.direction === 'desc') return { field, direction: 'asc' };
+        return { field: null, direction: 'none' };
+      }
+      return { field, direction: 'desc' };
+    });
+  };
+
+  const filteredProducts = useMemo(() => {
+    let list = products.filter(p => p.name && p.name.toLowerCase().includes(searchTerm.toLowerCase()));
+    if (sortConfig.field && sortConfig.direction !== 'none') {
+      list.sort((a, b) => {
+        let aVal = a[sortConfig.field] || 0;
+        let bVal = b[sortConfig.field] || 0;
+        if (sortConfig.field === 'name') {
+          aVal = (a.name || '').toLowerCase();
+          bVal = (b.name || '').toLowerCase();
+          if (aVal < bVal) return sortConfig.direction === 'asc' ? -1 : 1;
+          if (aVal > bVal) return sortConfig.direction === 'asc' ? 1 : -1;
+          return 0;
+        } else {
+          return sortConfig.direction === 'asc' ? aVal - bVal : bVal - aVal;
+        }
+      });
+    }
+    return list;
+  }, [products, searchTerm, sortConfig]);
 
   const productHistory = useMemo(() => {
     if (!detailProduct) return { sales: [], imports: [], totalSoldQty: 0, totalImportQty: 0, totalSoldAmount: 0, totalImportAmount: 0, totalPaid: 0, totalDebtRemain: 0 };
@@ -1191,10 +1222,22 @@ function InventoryView({ products, orders, imports, db, storeId, showToast }) {
       )}
       <div className="flex-1 bg-white rounded-xl border shadow-sm overflow-auto">
         <table className="w-full text-left text-sm">
-          <thead className="bg-gray-100 sticky top-0 border-b">
+          <thead className="bg-gray-100 sticky top-0 border-b select-none">
             <tr>
               <th className="p-4 w-10"><input type="checkbox" onChange={() => setSelectedIds(selectedIds.length === products.length ? [] : products.map(p=>p.id))} checked={products.length > 0 && selectedIds.length === products.length} className="w-4 h-4"/></th>
-              <th className="p-4 font-bold text-gray-600">Sản phẩm</th><th className="p-4 font-bold text-gray-600">Giá vốn</th><th className="p-4 font-bold text-gray-600">Giá bán</th><th className="p-4 font-bold text-gray-600">Tồn</th><th className="p-4 font-bold text-gray-600 text-right">Thao tác</th>
+              <th className="p-4 font-bold text-gray-600 cursor-pointer hover:bg-gray-200" onClick={() => handleSort('name')}>
+                <div className="flex items-center gap-1">Sản phẩm {sortConfig.field === 'name' && sortConfig.direction !== 'none' && <ArrowUpDown size={14} className={sortConfig.direction==='desc' ? 'text-red-500' : 'text-green-500'} />}</div>
+              </th>
+              <th className="p-4 font-bold text-gray-600 cursor-pointer hover:bg-gray-200" onClick={() => handleSort('cost')}>
+                <div className="flex items-center gap-1">Giá vốn {sortConfig.field === 'cost' && sortConfig.direction !== 'none' && <ArrowUpDown size={14} className={sortConfig.direction==='desc' ? 'text-red-500' : 'text-green-500'} />}</div>
+              </th>
+              <th className="p-4 font-bold text-gray-600 cursor-pointer hover:bg-gray-200" onClick={() => handleSort('price')}>
+                <div className="flex items-center gap-1">Giá bán {sortConfig.field === 'price' && sortConfig.direction !== 'none' && <ArrowUpDown size={14} className={sortConfig.direction==='desc' ? 'text-red-500' : 'text-green-500'} />}</div>
+              </th>
+              <th className="p-4 font-bold text-gray-600 cursor-pointer hover:bg-gray-200" onClick={() => handleSort('stock')}>
+                <div className="flex items-center gap-1">Tồn {sortConfig.field === 'stock' && sortConfig.direction !== 'none' && <ArrowUpDown size={14} className={sortConfig.direction==='desc' ? 'text-red-500' : 'text-green-500'} />}</div>
+              </th>
+              <th className="p-4 font-bold text-gray-600 text-right">Thao tác</th>
             </tr>
           </thead>
           <tbody>
@@ -1310,7 +1353,7 @@ function ExpenseView({ expenses, db, storeId, showToast }) {
   };
 
   const handleDelete = async (id) => { if (window.confirm("Xác nhận xóa chi phí này?")) { await deleteDoc(doc(db, 'stores', storeId, 'expenses', id)); showToast("Đã xóa chi phí"); } };
-  const handleBatchDelete = async () => { if (selectedIds.length === 0) return; const confirmMsg = "Xác nhận xóa " + selectedIds.length + " mục đã chọn?"; if (window.confirm(confirmMsg)) { let batch = writeBatch(db); selectedIds.forEach(id => { batch.delete(doc(db, 'stores', storeId, 'expenses', id)); }); await batch.commit(); setSelectedIds([]); showToast("Đã xóa các chi phí đã chọn"); } };
+  const handleBatchDelete = async () => { if (selectedIds.length === 0) return; const confirmMsg = "Xác nhận xóa " + selectedIds.length + " mục đã chọn?"; if (window.confirm(confirmMsg)) { let batch = writeBatch(db); selectedIds.setSelectedIds(id => batch.delete(doc(db, 'stores', storeId, 'expenses', id))); await batch.commit(); setSelectedIds([]); showToast("Đã xóa các chi phí đã chọn"); } };
 
   const filteredExpenses = useMemo(() => {
     return expenses.filter(e => {
