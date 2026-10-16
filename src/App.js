@@ -5,7 +5,7 @@ import {
   TrendingUp, AlertCircle, ArrowDownToLine, Phone, 
   DollarSign, CheckCircle2, Printer, FileText, CreditCard,
   Lock, LogOut, ShieldAlert, User as UserIcon, Database,
-  UserCog, KeyRound, MonitorSmartphone, Mail, Download, Upload, ArrowUpDown, Search, Eye, Bell, Award, BarChart3
+  UserCog, KeyRound, MonitorSmartphone, Mail, Download, Upload, ArrowUpDown, Search, Eye, Bell, Award, BarChart3, Receipt
 } from 'lucide-react';
 
 import { initializeApp } from 'firebase/app';
@@ -34,6 +34,7 @@ const db = getFirestore(app);
 
 const PERMISSION_TREE = [
   { module: 'Tổng quan', perms: [{ id: 'tong_quan_xem', label: 'Xem tổng quan' }] },
+  { module: 'Bán hàng (POS & Hóa đơn)', perms: [{ id: 'ban_hang', label: 'Quản lý bán hàng & Hóa đơn' }] },
   { module: 'Hàng hóa', perms: [{ id: 'hh_danh_sach', label: 'Danh sách hàng hóa' }, { id: 'hh_gia', label: 'Thiết lập giá' }] },
   { module: 'Mua hàng', perms: [{ id: 'mua_ncc', label: 'Danh sách nhà cung cấp' }, { id: 'mua_nhap_hang', label: 'Nhập hàng' }] },
   { module: 'Khách hàng', perms: [{ id: 'kh_danh_sach', label: 'Danh sách khách hàng' }] },
@@ -204,6 +205,7 @@ export default function EnhancedPOS() {
   const allTabs = [
     { id: 'dashboard', icon: LayoutDashboard, label: 'Báo cáo & Nhắc nợ', permId: 'tong_quan_xem' },
     { id: 'pos', icon: ShoppingCart, label: 'Bán hàng (POS)', permId: 'ALWAYS' },
+    { id: 'sales_history', icon: Receipt, label: 'Thẻ Bán Hàng (Hóa đơn)', permId: 'ban_hang' },
     { id: 'imports', icon: ArrowDownToLine, label: 'Nhập hàng', permId: 'mua_nhap_hang' },
     { id: 'products', icon: Package, label: 'Kho hàng', permId: 'hh_danh_sach' },
     { id: 'customers', icon: Users, label: 'Khách hàng', permId: 'kh_danh_sach' },
@@ -251,6 +253,7 @@ export default function EnhancedPOS() {
           
           {activeTab === 'dashboard' && <DashboardView orders={orders} imports={imports} expenses={expenses} showToast={showToast} />}
           {activeTab === 'pos' && <POSView products={products} customers={customers} db={db} storeId={storeId} user={user} storeConfig={storeConfig} showToast={showToast} />}
+          {activeTab === 'sales_history' && <SalesHistoryView orders={orders} products={products} db={db} storeId={storeId} showToast={showToast} />}
           {activeTab === 'imports' && <ImportView products={products} suppliers={suppliers} db={db} storeId={storeId} user={user} showToast={showToast} />}
           {activeTab === 'products' && <InventoryView products={products} orders={orders} imports={imports} db={db} storeId={storeId} showToast={showToast} />}
           {activeTab === 'customers' && <ContactManager type="customers" data={customers} orders={orders} db={db} storeId={storeId} showToast={showToast} />}
@@ -283,19 +286,16 @@ function DashboardView({ orders, imports, expenses, showToast }) {
     const overdueSupp = imports.filter(i => i.status === 'DEBT').sort((a,b) => new Date(b.date) - new Date(a.date));
     const overdueCust1Week = overdueCust.filter(o => getDaysDifference(o.date) >= 7);
 
-    // TÍNH TOÁN BIỂU ĐỒ BÁN HÀNG THEO NGÀY (TRONG THÁNG ĐƯỢC CHỌN) HOẶC THEO THÁNG (NẾU CHỌN CẢ NĂM)
     let chartData = {};
     if (filterMonth !== 'ALL') {
-      // Nhóm theo ngày trong tháng
       fOrders.forEach(o => {
         const d = new Date(o.date);
         const dayKey = d.getDate() + '/' + (d.getMonth() + 1);
         chartData[dayKey] = (chartData[dayKey] || 0) + o.total;
       });
     } else {
-      // Nhóm theo tháng trong năm
       const monthNames = ['Th 1', 'Th 2', 'Th 3', 'Th 4', 'Th 5', 'Th 6', 'Th 7', 'Th 8', 'Th 9', 'Th 10', 'Th 11', 'Th 12'];
-      monthNames.forEach((m, idx) => { chartData[m] = 0; });
+      monthNames.forEach((m) => { chartData[m] = 0; });
       fOrders.forEach(o => {
         const d = new Date(o.date);
         const mKey = monthNames[d.getMonth()];
@@ -303,7 +303,6 @@ function DashboardView({ orders, imports, expenses, showToast }) {
       });
     }
 
-    // TÍNH TOÁN HÀNG HÓA BÁN CHẠY NHẤT TRONG KỲ LỌC
     let productSalesMap = {};
     fOrders.forEach(o => {
       (o.items || []).forEach(it => {
@@ -370,7 +369,6 @@ function DashboardView({ orders, imports, expenses, showToast }) {
         <StatCard icon={<DollarSign />} title="Lãi Ròng (Đã trừ phí)" value={formatCurrency(stats.netProfit)} color="bg-green-100 text-green-600" highlight={true} />
       </div>
 
-      {/* KHU VỰC BIỂU ĐỒ BÁN HÀNG VÀ TOP HÀNG BÁN CHẠY */}
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
         <div className="bg-white p-6 rounded-2xl shadow-sm border border-gray-200 lg:col-span-2 flex flex-col">
           <h3 className="font-bold text-gray-800 mb-4 flex items-center gap-2"><BarChart3 size={20} className="text-blue-600"/> Biểu đồ doanh thu {filterMonth === 'ALL' ? 'theo các tháng trong năm' : 'theo các ngày trong tháng'}</h3>
@@ -414,54 +412,237 @@ function DashboardView({ orders, imports, expenses, showToast }) {
           </div>
         </div>
       </div>
+    </div>
+  );
+}
 
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-        <div className="bg-white rounded-2xl shadow-sm border border-gray-200 overflow-hidden">
-          <div className="p-4 bg-gray-50 border-b flex justify-between items-center font-bold text-gray-700">
-            <div className="flex gap-2"><AlertCircle size={20}/> Toàn bộ Phải Thu (Khách nợ)</div>
-          </div>
-          <div className="max-h-80 overflow-y-auto">
-            <table className="w-full text-left text-sm">
-              <thead className="bg-white sticky top-0 shadow-sm">
-                <tr><th className="p-3">Khách hàng</th><th className="p-3">Thời gian</th><th className="p-3">Số tiền</th></tr>
-              </thead>
-              <tbody>
-                {stats.overdueCust.map(o => (
-                  <tr key={o.id} className="border-b hover:bg-gray-50">
-                    <td className="p-3 font-bold">{o.customerName}</td>
-                    <td className="p-3">{getDaysDifference(o.date)} ngày</td>
-                    <td className="p-3 font-bold text-red-600">{formatCurrency(o.total)}</td>
-                  </tr>
-                ))}
-                {stats.overdueCust.length === 0 && (<tr><td colSpan="3" className="p-4 text-center text-gray-500">Không có nợ khách hàng</td></tr>)}
-              </tbody>
-            </table>
-          </div>
+// ==========================================
+// THẺ BÁN HÀNG (QUẢN LÝ HÓA ĐƠN THEO KIOTVIET)
+// ==========================================
+function SalesHistoryView({ orders, products, db, storeId, showToast }) {
+  const currentDate = new Date();
+  const [filterType, setFilterType] = useState('day'); // 'day', 'month', 'year', 'all'
+  const [selectedDate, setSelectedDate] = useState(currentDate.toISOString().split('T')[0]);
+  const [filterMonth, setFilterMonth] = useState((currentDate.getMonth() + 1).toString());
+  const [filterYear, setFilterYear] = useState(currentDate.getFullYear().toString());
+  const [searchTerm, setSearchTerm] = useState('');
+  
+  const [editingOrder, setEditingOrder] = useState(null);
+
+  const filteredOrders = useMemo(() => {
+    return (orders || []).filter(o => {
+      const d = new Date(o.date);
+      let matchTime = true;
+      if (filterType === 'day') {
+        const orderDateStr = d.toISOString().split('T')[0];
+        matchTime = orderDateStr === selectedDate;
+      } else if (filterType === 'month') {
+        matchTime = (d.getMonth() + 1).toString() === filterMonth && d.getFullYear().toString() === filterYear;
+      } else if (filterType === 'year') {
+        matchTime = d.getFullYear().toString() === filterYear;
+      }
+
+      const matchSearch = (o.customerName && o.customerName.toLowerCase().includes(searchTerm.toLowerCase())) || 
+                          (o.id && o.id.toLowerCase().includes(searchTerm.toLowerCase()));
+      return matchTime && matchSearch;
+    }).sort((a, b) => new Date(b.date) - new Date(a.date));
+  }, [orders, filterType, selectedDate, filterMonth, filterYear, searchTerm]);
+
+  const summaryStats = useMemo(() => {
+    let totalRevenue = 0;
+    let totalCost = 0;
+    filteredOrders.forEach(o => {
+      totalRevenue += (Number(o.total) || 0);
+      totalCost += (Number(o.totalCost) || 0);
+    });
+    return {
+      count: filteredOrders.length,
+      revenue: totalRevenue,
+      cost: totalCost,
+      profit: totalRevenue - totalCost
+    };
+  }, [filteredOrders]);
+
+  const handleDeleteOrder = async (order) => {
+    if (window.confirm("CẢNH BÁO: Xóa hóa đơn này sẽ hoàn lại tồn kho cho sản phẩm. Bạn có chắc chắn muốn xóa?")) {
+      try {
+        let batch = writeBatch(db);
+        // Hoàn kho
+        for (let item of (order.items || [])) {
+          const matchedProd = products.find(p => p.id === item.id);
+          if (matchedProd) {
+            batch.update(doc(db, 'stores', storeId, 'products', matchedProd.id), {
+              stock: Number(matchedProd.stock || 0) + Number(item.quantity || 1)
+            });
+          }
+        }
+        batch.delete(doc(db, 'stores', storeId, 'orders', order.id));
+        await batch.commit();
+        showToast("Đã xóa hóa đơn và hoàn kho thành công!");
+      } catch (err) {
+        showToast("Lỗi khi xóa hóa đơn", "error");
+      }
+    }
+  };
+
+  const handleSaveEditOrder = async (e) => {
+    e.preventDefault();
+    try {
+      await updateDoc(doc(db, 'stores', storeId, 'orders', editingOrder.id), {
+        customerName: editingOrder.customerName,
+        note: editingOrder.note,
+        status: editingOrder.status
+      });
+      setEditingOrder(null);
+      showToast("Cập nhật hóa đơn thành công!");
+    } catch (err) {
+      showToast("Lỗi cập nhật hóa đơn", "error");
+    }
+  };
+
+  return (
+    <div className="flex-1 flex flex-col p-4 md:p-6 bg-gray-50 overflow-hidden h-full">
+      <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center mb-4 gap-3">
+        <div>
+          <h2 className="text-2xl font-bold text-gray-800 flex items-center gap-2"><Receipt className="text-blue-600"/> Thẻ Bán Hàng (Quản lý Hóa Đơn)</h2>
+          <p className="text-xs text-gray-500 mt-0.5">Theo dõi chi tiết giá nhập, giá bán, tiền lãi và thao tác hóa đơn chuẩn KiotViet</p>
         </div>
-
-        <div className="bg-white rounded-2xl shadow-sm border border-gray-200 overflow-hidden">
-          <div className="p-4 bg-gray-50 border-b flex justify-between items-center font-bold text-gray-700">
-            <div className="flex gap-2"><Truck size={20}/> Phải Trả (Nợ NCC)</div>
-          </div>
-          <div className="max-h-80 overflow-y-auto">
-            <table className="w-full text-left text-sm">
-              <thead className="bg-white sticky top-0 shadow-sm">
-                <tr><th className="p-3">Nhà Cung Cấp</th><th className="p-3">Thời gian</th><th className="p-3">Số tiền</th></tr>
-              </thead>
-              <tbody>
-                {stats.overdueSupp.map(i => (
-                  <tr key={i.id} className="border-b hover:bg-gray-50">
-                    <td className="p-3 font-bold">{i.supplierName}</td>
-                    <td className="p-3">{getDaysDifference(i.date)} ngày</td>
-                    <td className="p-3 font-bold text-orange-600">{formatCurrency(i.total)}</td>
-                  </tr>
-                ))}
-                {stats.overdueSupp.length === 0 && (<tr><td colSpan="3" className="p-4 text-center text-gray-500">Không có nợ nhà cung cấp</td></tr>)}
-              </tbody>
-            </table>
-          </div>
+        <div className="relative w-full sm:w-64">
+          <Search size={16} className="absolute left-3 top-3 text-gray-400"/>
+          <input placeholder="Tìm mã HĐ hoặc tên khách..." value={searchTerm} onChange={e=>setSearchTerm(e.target.value)} className="w-full pl-9 pr-3 py-2 border rounded-lg bg-white outline-none text-sm"/>
         </div>
       </div>
+
+      {/* THANH LỌC THỜI GIAN & THỐNG KÊ NHANH */}
+      <div className="bg-white p-4 rounded-2xl border shadow-sm mb-4 flex flex-col lg:flex-row justify-between items-start lg:items-center gap-4">
+        <div className="flex flex-wrap items-center gap-2 bg-gray-100 p-1 rounded-xl">
+          <button onClick={() => setFilterType('day')} className={"px-3 py-1.5 rounded-lg text-xs font-bold transition " + (filterType==='day'?'bg-blue-600 text-white shadow':'text-gray-600 hover:bg-white')}>Theo Ngày</button>
+          <button onClick={() => setFilterType('month')} className={"px-3 py-1.5 rounded-lg text-xs font-bold transition " + (filterType==='month'?'bg-blue-600 text-white shadow':'text-gray-600 hover:bg-white')}>Theo Tháng</button>
+          <button onClick={() => setFilterType('year')} className={"px-3 py-1.5 rounded-lg text-xs font-bold transition " + (filterType==='year'?'bg-blue-600 text-white shadow':'text-gray-600 hover:bg-white')}>Theo Năm</button>
+          <button onClick={() => setFilterType('all')} className={"px-3 py-1.5 rounded-lg text-xs font-bold transition " + (filterType==='all'?'bg-blue-600 text-white shadow':'text-gray-600 hover:bg-white')}>Tất cả</button>
+        </div>
+
+        <div className="flex items-center gap-2">
+          {filterType === 'day' && (
+            <input type="date" value={selectedDate} onChange={e=>setSelectedDate(e.target.value)} className="p-2 border rounded-lg text-sm bg-white font-medium outline-none"/>
+          )}
+          {filterType === 'month' && (
+            <div className="flex items-center gap-2 bg-gray-50 p-1.5 rounded-lg border">
+              <select value={filterMonth} onChange={e=>setFilterMonth(e.target.value)} className="bg-transparent text-sm font-medium outline-none">
+                {Array.from({length: 12}, (_, i) => <option key={i+1} value={i+1}>Tháng {i+1}</option>)}
+              </select>
+              <span className="text-gray-400">/</span>
+              <select value={filterYear} onChange={e=>setFilterYear(e.target.value)} className="bg-transparent text-sm font-medium outline-none">
+                {Array.from({length: 5}, (_, i) => currentDate.getFullYear() - i).map(y => <option key={y} value={y}>{y}</option>)}
+              </select>
+            </div>
+          )}
+          {filterType === 'year' && (
+            <select value={filterYear} onChange={e=>setFilterYear(e.target.value)} className="p-2 border rounded-lg text-sm bg-white font-medium outline-none">
+              {Array.from({length: 5}, (_, i) => currentDate.getFullYear() - i).map(y => <option key={y} value={y}>Năm {y}</option>)}
+            </select>
+          )}
+        </div>
+
+        <div className="grid grid-cols-3 gap-3 w-full lg:w-auto">
+          <div className="bg-blue-50 px-3 py-2 rounded-xl border border-blue-100 text-center"><p className="text-[10px] text-blue-600 font-bold uppercase">Tổng Hóa Đơn</p><p className="text-sm font-bold text-blue-800">{summaryStats.count}</p></div>
+          <div className="bg-gray-50 px-3 py-2 rounded-xl border border-gray-200 text-center"><p className="text-[10px] text-gray-500 font-bold uppercase">Doanh Thu</p><p className="text-sm font-bold text-gray-800">{formatCurrency(summaryStats.revenue)}</p></div>
+          <div className="bg-green-50 px-3 py-2 rounded-xl border border-green-100 text-center"><p className="text-[10px] text-green-600 font-bold uppercase">Tiền Lãi</p><p className="text-sm font-bold text-green-700">{formatCurrency(summaryStats.profit)}</p></div>
+        </div>
+      </div>
+
+      {/* BẢNG DANH SÁCH HÓA ĐƠN CHI TIẾT */}
+      <div className="flex-1 bg-white rounded-xl border shadow-sm overflow-auto">
+        <table className="w-full text-left text-sm">
+          <thead className="bg-gray-100 sticky top-0 border-b">
+            <tr>
+              <th className="p-3">Mã HĐ / Thời gian</th>
+              <th className="p-3">Khách hàng</th>
+              <th className="p-3">Chi tiết hàng bán (SL / Giá vốn / Giá bán)</th>
+              <th className="p-3">Tổng Tiền</th>
+              <th className="p-3">Tiền Lãi</th>
+              <th className="p-3">Trạng thái</th>
+              <th className="p-3 text-right">Thao tác</th>
+            </tr>
+          </thead>
+          <tbody>
+            {filteredOrders.map(o => {
+              // Tính tổng vốn của đơn hàng này
+              let orderTotalCost = o.totalCost || 0;
+              if (!orderTotalCost && o.items) {
+                orderTotalCost = o.items.reduce((sum, it) => sum + (Number(it.cost || 0) * Number(it.quantity || 1)), 0);
+              }
+              const orderProfit = (Number(o.total) || 0) - orderTotalCost;
+              const statusClass = o.status === 'PAID' ? 'bg-green-100 text-green-700' : 'bg-orange-100 text-orange-700';
+
+              return (
+                <tr key={o.id} className="border-b hover:bg-blue-50/30">
+                  <td className="p-3">
+                    <p className="font-bold text-blue-600">#{o.id.slice(0,6).toUpperCase()}</p>
+                    <p className="text-xs text-gray-400">{formatDate(o.date)}</p>
+                  </td>
+                  <td className="p-3 font-medium text-gray-800">{o.customerName || 'Khách lẻ'}</td>
+                  <td className="p-3">
+                    <div className="space-y-1">
+                      {o.items?.map((it, idx) => {
+                        const itemQty = Number(it.quantity || 1);
+                        const itemCost = Number(it.cost || 0);
+                        const itemPrice = Number(it.price || 0);
+                        return (
+                          <div key={idx} className="text-xs bg-gray-50 p-1.5 rounded border border-gray-100 flex justify-between items-center gap-2">
+                            <span className="font-semibold text-gray-700">{it.name} (x{itemQty})</span>
+                            <span className="text-gray-500 font-mono">Vốn: {formatCurrency(itemCost)} | Bán: {formatCurrency(itemPrice)}</span>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </td>
+                  <td className="p-3 font-bold text-gray-900">{formatCurrency(o.total)}</td>
+                  <td className="p-3 font-bold text-green-600">{formatCurrency(orderProfit)}</td>
+                  <td className="p-3">
+                    <span className={"px-2 py-0.5 rounded text-[10px] font-bold " + statusClass}>
+                      {o.status === 'PAID' ? 'Đã thanh toán' : 'Ghi nợ'}
+                    </span>
+                  </td>
+                  <td className="p-3 text-right">
+                    <div className="flex justify-end gap-1">
+                      <button onClick={() => setEditingOrder(o)} title="Chỉnh sửa hóa đơn" className="text-blue-600 bg-blue-50 p-2 rounded-lg hover:bg-blue-100"><Edit size={16}/></button>
+                      <button onClick={() => handleDeleteOrder(o)} title="Xóa hóa đơn" className="text-red-600 bg-red-50 p-2 rounded-lg hover:bg-red-100"><Trash2 size={16}/></button>
+                    </div>
+                  </td>
+                </tr>
+              );
+            })}
+            {filteredOrders.length === 0 && (
+              <tr><td colSpan="7" className="p-8 text-center text-gray-400">Không tìm thấy hóa đơn nào trong thời điểm này</td></tr>
+            )}
+          </tbody>
+        </table>
+      </div>
+
+      {/* MODAL CHỈNH SỬA HÓA ĐƠN */}
+      <Modal isOpen={!!editingOrder} onClose={() => setEditingOrder(null)} title="Chỉnh sửa Hóa đơn">
+        {editingOrder && (
+          <form onSubmit={handleSaveEditOrder} className="space-y-4">
+            <div>
+              <label className="block text-xs font-bold text-gray-500 mb-1">Tên khách hàng</label>
+              <input required value={editingOrder.customerName || ''} onChange={e=>setEditingOrder({...editingOrder, customerName: e.target.value})} className="w-full p-2.5 border rounded-lg outline-none text-sm font-medium"/>
+            </div>
+            <div>
+              <label className="block text-xs font-bold text-gray-500 mb-1">Trạng thái thanh toán</label>
+              <select value={editingOrder.status} onChange={e=>setEditingOrder({...editingOrder, status: e.target.value})} className="w-full p-2.5 border rounded-lg outline-none text-sm font-medium bg-white">
+                <option value="PAID">Đã thanh toán (Tiền mặt)</option>
+                <option value="DEBT">Ghi nợ</option>
+              </select>
+            </div>
+            <div>
+              <label className="block text-xs font-bold text-gray-500 mb-1">Ghi chú đơn hàng</label>
+              <textarea value={editingOrder.note || ''} onChange={e=>setEditingOrder({...editingOrder, note: e.target.value})} className="w-full p-2.5 border rounded-lg outline-none text-sm resize-none h-20 bg-white"></textarea>
+            </div>
+            <button type="submit" className="w-full bg-blue-600 text-white font-bold p-3 rounded-lg text-sm">Lưu Thay Đổi</button>
+          </form>
+        )}
+      </Modal>
     </div>
   );
 }
@@ -609,12 +790,42 @@ function SettingsView({ db, storeId, showToast, storeConfig }) {
   const menuItems = [{ id: 'customers', label: 'Khách hàng (Nợ phải thu)' }, { id: 'suppliers', label: 'Nhà cung cấp (Nợ phải trả)' }, { id: 'products', label: 'Hàng hóa & Kho' }, { id: 'expenses', label: 'Lịch sử Chi phí' }];
 
   return (
-    <div className="flex-1 p-4 md:p-6 bg-gray-50 overflow-auto">
-      <h2 className="text-2xl font-bold mb-6">Cài đặt & Dữ liệu Excel (Drive)</h2>
-      <div className="bg-blue-50 border border-blue-200 text-blue-800 p-4 rounded-xl mb-6 shadow-sm">
-        <strong className="flex items-center gap-2"><FileText size={18}/> Mẹo lưu trữ Google Drive:</strong> 
-        Hệ thống đang tự động đồng bộ theo thời gian thực mọi thao tác qua máy chủ. Nếu anh muốn lưu file cứng lên Google Drive cá nhân, chỉ cần chọn nút <b>"Xuất"</b> ở dưới để tải file Excel về máy rồi đưa lên Drive.
+    <div className="flex-1 p-4 md:p-6 bg-gray-50 overflow-auto space-y-6">
+      <h2 className="text-2xl font-bold mb-2">Cài đặt & Dữ liệu Excel (Drive)</h2>
+      
+      {/* VÙNG NGUY HIỂM: XÓA TRẮNG DỮ LIỆU */}
+      <div className="bg-red-50 p-6 rounded-xl border border-red-200 shadow-sm">
+        <h3 className="font-bold border-b border-red-200 pb-2 mb-4 text-red-700">Vùng nguy hiểm: Xóa trắng toàn bộ dữ liệu hệ thống</h3>
+        <p className="text-sm text-red-600 mb-4">Thao tác này sẽ xóa sạch toàn bộ sản phẩm, hóa đơn, khách hàng, nhà cung cấp và chi phí trên cửa hàng để bạn làm lại từ đầu.</p>
+        <button 
+          onClick={async () => {
+            if (window.confirm("CẢNH BÁO TUYỆT ĐỐI: Bạn có chắc chắn muốn XÓA TRẮNG toàn bộ cơ sở dữ liệu không?")) {
+              try {
+                showToast("Đang tiến hành xóa dữ liệu...", "error");
+                const collections = ['products', 'orders', 'imports', 'customers', 'suppliers', 'expenses'];
+                for (let col of collections) {
+                  const snap = await getDocs(collection(db, 'stores', storeId, col));
+                  let batch = writeBatch(db);
+                  let count = 0;
+                  snap.docs.forEach((d) => {
+                    batch.delete(d.ref);
+                    count++;
+                    if (count >= 400) { batch.commit(); batch = writeBatch(db); count = 0; }
+                  });
+                  if (count > 0) await batch.commit();
+                }
+                showToast("Đã xóa trắng toàn bộ dữ liệu thành công!");
+              } catch(err) {
+                showToast("Lỗi khi xóa dữ liệu", "error");
+              }
+            }
+          }} 
+          className="bg-red-600 hover:bg-red-700 text-white font-bold py-2.5 px-6 rounded-lg w-full md:w-auto"
+        >
+          Xóa trắng toàn bộ dữ liệu cửa hàng
+        </button>
       </div>
+
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
         <div className="bg-white p-6 rounded-xl border shadow-sm">
           <h3 className="font-bold border-b pb-2 mb-4 text-gray-800">Cấu hình Hóa đơn & Giao diện</h3>
@@ -1131,7 +1342,17 @@ function POSView({ products, customers, db, storeId, user, storeConfig, showToas
     if (cart.length === 0 || (isDebt && !customerId)) return;
     try {
       const c = customers.find(cust => cust.id === customerId);
-      const orderData = { customerId: customerId || null, customerName: c ? c.name : 'Khách lẻ', sellerUid: user.uid, note: orderNote, items: cart.map(i => ({ id: i.id, name: i.name, price: i.price, cost: i.cost || 0, quantity: i.quantity })), total: cartTotal, totalCost: cart.reduce((s, item) => s + ((item.cost || 0) * item.quantity), 0), status: isDebt ? 'DEBT' : 'PAID', date: new Date().toISOString() };
+      const orderData = { 
+        customerId: customerId || null, 
+        customerName: c ? c.name : 'Khách lẻ', 
+        sellerUid: user.uid, 
+        note: orderNote, 
+        items: cart.map(i => ({ id: i.id, name: i.name, price: i.price, cost: i.cost || 0, quantity: i.quantity })), 
+        total: cartTotal, 
+        totalCost: cart.reduce((s, item) => s + ((item.cost || 0) * item.quantity), 0), 
+        status: isDebt ? 'DEBT' : 'PAID', 
+        date: new Date().toISOString() 
+      };
       const orderRef = await addDoc(collection(db, 'stores', storeId, 'orders'), orderData);
       
       let batch = writeBatch(db);
