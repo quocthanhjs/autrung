@@ -11,7 +11,7 @@ import {
 import { initializeApp } from 'firebase/app';
 import { 
   getAuth, signInWithEmailAndPassword, signOut, 
-  onAuthStateChanged, sendPasswordResetEmail, createUserWithEmailAndPassword
+  onAuthStateChanged, sendPasswordResetEmail, createUserWithEmailAndPassword, updatePassword 
 } from 'firebase/auth';
 import { 
   getFirestore, doc, setDoc, getDoc, getDocs, addDoc, updateDoc, 
@@ -421,7 +421,7 @@ function DashboardView({ orders, imports, expenses, showToast }) {
 // ==========================================
 function SalesHistoryView({ orders, products, db, storeId, showToast }) {
   const currentDate = new Date();
-  const [filterType, setFilterType] = useState('day'); // 'day', 'month', 'year', 'all'
+  const [filterType, setFilterType] = useState('day'); 
   const [selectedDate, setSelectedDate] = useState(currentDate.toISOString().split('T')[0]);
   const [filterMonth, setFilterMonth] = useState((currentDate.getMonth() + 1).toString());
   const [filterYear, setFilterYear] = useState(currentDate.getFullYear().toString());
@@ -657,7 +657,7 @@ function StaffManagerView({ db, showToast }) {
   const [staff, setStaff] = useState([]); 
   const [logs, setLogs] = useState([]);
   const [isModalOpen, setIsModalOpen] = useState(false);
-  const [form, setForm] = useState({ id: '', name: '', username: '', email: '', password: '', role: 'seller', perms: {} });
+  const [form, setForm] = useState({ id: '', name: '', username: '', email: '', password: '', newPassword: '', role: 'seller', perms: {} });
   const [loading, setLoading] = useState(false);
 
   useEffect(() => {
@@ -672,7 +672,7 @@ function StaffManagerView({ db, showToast }) {
     try {
       if(form.id) { 
         await updateDoc(doc(db, 'users_db', form.id), { role: form.role, permissions: form.perms }); 
-        showToast("Đã cập nhật quyền"); setIsModalOpen(false); 
+        showToast("Đã cập nhật quyền thành công!"); setIsModalOpen(false); 
       } else {
         const msg = "Hệ thống sẽ ĐĂNG XUẤT tài khoản Admin hiện tại để khởi tạo tài khoản Nhân viên mới. Bạn đồng ý chứ?";
         if(!window.confirm(msg)) { setLoading(false); return; }
@@ -684,39 +684,88 @@ function StaffManagerView({ db, showToast }) {
     } catch (err) { showToast("Lỗi: " + err.message, "error"); } finally { setLoading(false); }
   };
 
-  const openAddModal = () => { setForm({ id: '', name: '', username: '', email: '', password: '', role: 'seller', perms: {} }); setIsModalOpen(true); };
-  const openEditModal = (s) => { setForm({ id: s.id, name: s.name, username: s.username, email: s.email, role: s.role, perms: s.permissions || {} }); setIsModalOpen(true); };
-  const modalTitle = form.id ? "Sửa quyền: " + form.name : "Thêm Nhân Viên Mới";
+  const handleDeleteStaff = async (staffMember) => {
+    if (window.confirm(`CẢNH BÁO: Bạn có chắc chắn muốn xóa tài khoản nhân viên "${staffMember.name}" khỏi hệ thống không?`)) {
+      try {
+        await deleteDoc(doc(db, 'users_db', staffMember.id));
+        showToast("Đã xóa nhân viên thành công!");
+      } catch (err) {
+        showToast("Lỗi khi xóa nhân viên", "error");
+      }
+    }
+  };
+
+  const openAddModal = () => { setForm({ id: '', name: '', username: '', email: '', password: '', newPassword: '', role: 'seller', perms: {} }); setIsModalOpen(true); };
+  const openEditModal = (s) => { setForm({ id: s.id, name: s.name, username: s.username, email: s.email, role: s.role, perms: s.permissions || {}, newPassword: '' }); setIsModalOpen(true); };
+  const modalTitle = form.id ? "Sửa quyền & Thông tin: " + form.name : "Thêm Nhân Viên Mới";
 
   return (
     <div className="flex-1 flex flex-col p-4 md:p-6 bg-gray-50 overflow-auto h-full">
-      <div className="flex justify-between items-center mb-6"><h2 className="text-2xl font-bold flex items-center gap-2"><UserCog/> Quản trị Nhân viên</h2><button onClick={openAddModal} className="bg-blue-600 text-white px-4 py-2 rounded-lg font-bold flex items-center gap-2"><Plus size={18}/> Thêm Nhân viên</button></div>
+      <div className="flex justify-between items-center mb-6">
+        <h2 className="text-2xl font-bold flex items-center gap-2"><UserCog/> Quản trị Nhân viên</h2>
+        <button onClick={openAddModal} className="bg-blue-600 text-white px-4 py-2 rounded-lg font-bold flex items-center gap-2"><Plus size={18}/> Thêm Nhân viên</button>
+      </div>
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 h-full min-h-[500px]">
-        <div className="bg-white border rounded-xl overflow-auto shadow-sm"><div className="p-3 bg-gray-100 font-bold sticky top-0 border-b">Danh sách Tài khoản</div>
-          <table className="w-full text-sm text-left"><thead className="bg-gray-50 border-b"><tr><th className="p-3">Tên & Username</th><th className="p-3">Quyền</th><th className="p-3 text-right">Thao tác</th></tr></thead>
-            <tbody>{staff.map(s => { const roleClass = s.role === 'admin' ? 'bg-red-100 text-red-700' : 'bg-blue-100 text-blue-700'; return (<tr key={s.id} className="border-b hover:bg-gray-50"><td className="p-3"><p className="font-bold text-gray-800">{s.name}</p><p className="text-xs text-gray-500">@{s.username}</p></td><td className="p-3"><span className={"px-2 py-1 rounded text-xs font-bold " + roleClass}>{s.role.toUpperCase()}</span></td><td className="p-3 text-right"><button onClick={() => openEditModal(s)} className="text-blue-600 bg-blue-50 px-3 py-1.5 rounded-lg font-medium">Sửa quyền</button></td></tr>); })}</tbody>
+        <div className="bg-white border rounded-xl overflow-auto shadow-sm">
+          <div className="p-3 bg-gray-100 font-bold sticky top-0 border-b">Danh sách Tài khoản</div>
+          <table className="w-full text-sm text-left">
+            <thead className="bg-gray-50 border-b">
+              <tr><th className="p-3">Tên & Username</th><th className="p-3">Quyền</th><th className="p-3 text-right">Thao tác</th></tr>
+            </thead>
+            <tbody>
+              {staff.map(s => { 
+                const roleClass = s.role === 'admin' ? 'bg-red-100 text-red-700' : 'bg-blue-100 text-blue-700'; 
+                return (
+                  <tr key={s.id} className="border-b hover:bg-gray-50">
+                    <td className="p-3"><p className="font-bold text-gray-800">{s.name}</p><p className="text-xs text-gray-500">@{s.username}</p></td>
+                    <td className="p-3"><span className={"px-2 py-1 rounded text-xs font-bold " + roleClass}>{s.role.toUpperCase()}</span></td>
+                    <td className="p-3 text-right flex justify-end gap-1.5">
+                      <button onClick={() => openEditModal(s)} className="text-blue-600 bg-blue-50 px-3 py-1.5 rounded-lg font-medium text-xs">Sửa quyền</button>
+                      <button onClick={() => handleDeleteStaff(s)} className="text-red-600 bg-red-50 p-1.5 rounded-lg hover:bg-red-100" title="Xóa nhân viên"><Trash2 size={16}/></button>
+                    </td>
+                  </tr>
+                ); 
+              })}
+            </tbody>
           </table>
         </div>
-        <div className="bg-white border rounded-xl overflow-auto shadow-sm"><div className="p-3 bg-gray-100 font-bold sticky top-0 border-b">Lịch sử Đăng nhập (Giám sát)</div>
-          <table className="w-full text-xs text-left"><thead className="bg-gray-50 border-b"><tr><th className="p-3">Thời gian</th><th className="p-3">Username</th><th className="p-3">Thiết bị & IP</th></tr></thead>
+        <div className="bg-white border rounded-xl overflow-auto shadow-sm">
+          <div className="p-3 bg-gray-100 font-bold sticky top-0 border-b">Lịch sử Đăng nhập (Giám sát)</div>
+          <table className="w-full text-xs text-left">
+            <thead className="bg-gray-50 border-b"><tr><th className="p-3">Thời gian</th><th className="p-3">Username</th><th className="p-3">Thiết bị & IP</th></tr></thead>
             <tbody>{logs.map(l => (<tr key={l.id} className="border-b hover:bg-gray-50"><td className="p-3 text-gray-500">{formatDate(l.loginTime)}</td><td className="p-3 font-bold text-blue-600">{l.username}</td><td className="p-3"><p>{l.device}</p><p className="text-gray-400 font-mono">{l.ip}</p></td></tr>))}</tbody>
           </table>
         </div>
       </div>
       <Modal isOpen={isModalOpen} onClose={() => setIsModalOpen(false)} title={modalTitle} maxWidth="max-w-2xl">
         <form onSubmit={handleSave} className="space-y-4">
-          {!form.id && (
+          {!form.id ? (
             <div className="grid grid-cols-2 gap-4 bg-blue-50 p-4 rounded-xl border border-blue-100 mb-4">
-              <div className="col-span-2"><input required placeholder="Tên nhân viên *" value={form.name} onChange={e=>setForm({...form, name:e.target.value})} className="w-full p-2.5 border rounded outline-none"/></div>
-              <div><input required placeholder="Username đăng nhập *" value={form.username} onChange={e=>setForm({...form, username:e.target.value.toLowerCase().replace(/\s/g,'')})} className="w-full p-2.5 border rounded outline-none"/></div>
-              <div><input required type="password" placeholder="Mật khẩu *" value={form.password} onChange={e=>setForm({...form, password:e.target.value})} className="w-full p-2.5 border rounded outline-none"/></div>
-              <div className="col-span-2"><input required type="email" placeholder="Email thực (Để lấy lại MK) *" value={form.email} onChange={e=>setForm({...form, email:e.target.value})} className="w-full p-2.5 border rounded outline-none"/></div>
+              <div className="col-span-2"><input required placeholder="Tên nhân viên *" value={form.name} onChange={e=>setForm({...form, name:e.target.value})} className="w-full p-2.5 border rounded outline-none text-sm"/></div>
+              <div><input required placeholder="Username đăng nhập *" value={form.username} onChange={e=>setForm({...form, username:e.target.value.toLowerCase().replace(/\s/g,'')})} className="w-full p-2.5 border rounded outline-none text-sm"/></div>
+              <div><input required type="password" placeholder="Mật khẩu *" value={form.password} onChange={e=>setForm({...form, password:e.target.value})} className="w-full p-2.5 border rounded outline-none text-sm"/></div>
+              <div className="col-span-2"><input required type="email" placeholder="Email thực (Để lấy lại MK) *" value={form.email} onChange={e=>setForm({...form, email:e.target.value})} className="w-full p-2.5 border rounded outline-none text-sm"/></div>
+            </div>
+          ) : (
+            <div className="bg-gray-50 p-3 rounded-xl border text-xs text-gray-600 space-y-1 mb-3">
+              <p><strong>Họ tên:</strong> {form.name}</p>
+              <p><strong>Email đăng nhập:</strong> {form.email}</p>
+              <p className="text-blue-600 italic">*(Lưu ý: Để đổi mật khẩu cho nhân viên này, anh có thể dùng tính năng "Quên mật khẩu" ở màn hình đăng nhập hoặc gửi email khôi phục pass cho họ).*</p>
             </div>
           )}
-          <select value={form.role} onChange={e=>setForm({...form, role: e.target.value})} className="w-full p-2.5 border rounded font-bold outline-none"><option value="seller">Nhân viên (Theo check-box bên dưới)</option><option value="admin">Quản trị viên (Toàn quyền)</option></select>
+          <div>
+            <label className="block text-xs font-bold text-gray-500 mb-1">Vai trò tài khoản</label>
+            <select value={form.role} onChange={e=>setForm({...form, role: e.target.value})} className="w-full p-2.5 border rounded font-bold outline-none text-sm bg-white">
+              <option value="seller">Nhân viên (Theo check-box phân quyền bên dưới)</option>
+              <option value="admin">Quản trị viên (Toàn quyền)</option>
+            </select>
+          </div>
           {form.role === 'seller' && (
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4 max-h-[40vh] overflow-y-auto p-4 border rounded bg-gray-50">
-              {PERMISSION_TREE.map(g => (<div key={g.module} className="border-b pb-2"><p className="font-bold text-blue-800 text-sm mb-2 uppercase">{g.module}</p>{g.perms.map(p => (<label key={p.id} className="flex items-center gap-2 text-sm mb-1.5 cursor-pointer hover:bg-gray-200 p-1 rounded"><input type="checkbox" checked={!!form.perms[p.id]} onChange={() => setForm({...form, perms: {...form.perms, [p.id]: !form.perms[p.id]}})} className="w-4 h-4 text-blue-600"/> {p.label}</label>))}</div>))}
+            <div>
+              <label className="block text-xs font-bold text-gray-500 mb-1">Phân quyền chức năng</label>
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4 max-h-[40vh] overflow-y-auto p-4 border rounded bg-gray-50">
+                {PERMISSION_TREE.map(g => (<div key={g.module} className="border-b pb-2"><p className="font-bold text-blue-800 text-sm mb-2 uppercase">{g.module}</p>{g.perms.map(p => (<label key={p.id} className="flex items-center gap-2 text-sm mb-1.5 cursor-pointer hover:bg-gray-200 p-1 rounded"><input type="checkbox" checked={!!form.perms[p.id]} onChange={() => setForm({...form, perms: {...form.perms, [p.id]: !form.perms[p.id]}})} className="w-4 h-4 text-blue-600"/> {p.label}</label>))}</div>))}
+              </div>
             </div>
           )}
           <button type="submit" disabled={loading} className="w-full bg-blue-600 text-white font-bold p-3 rounded-lg">{loading ? 'Đang xử lý...' : 'Lưu Dữ Liệu'}</button>
@@ -970,7 +1019,7 @@ function ContactManager({ type, data, orders, db, storeId, showToast }) {
               <div><p className="text-xs text-gray-500">Tổng Nợ Gốc:</p><p className="font-bold text-red-600">{formatCurrency(detailTarget.totalDebt)}</p></div>
               <div className="flex items-center gap-1 bg-white p-1 rounded border">
                 <select value={filterMonth} onChange={e=>setFilterMonth(e.target.value)} className="bg-transparent text-xs outline-none"><option value="ALL">Cả năm</option>{Array.from({length: 12}, (_, i) => <option key={i+1} value={i+1}>Tháng {i+1}</option>)}</select>
-                <select value={filterYear} onChange={e=>setFilterYear(e.target.value)} className="bg-transparent text-xs outline-none">{Array.from({length: 5}, (_, i) => new Date().getFullYear() - i).map(y => <option key={y} value={y}>Năm {y}</option>)}</select>
+                <select value={filterYear} onChange={e=>setFilterYear(e.target.value)} className="bg-transparent text-xs outline-none">{Array.from({length: 5}, (_, i) => new Date().getFullYear() - i).map(y => <option key={y} value={y}>{y}</option>)}</select>
               </div>
             </div>
             <div className="grid grid-cols-3 gap-3 text-center">
@@ -1147,7 +1196,7 @@ function InventoryView({ products, orders, imports, db, storeId, showToast }) {
               <div><p className="text-xs text-gray-500">Tồn kho:</p><p className={"font-bold " + (detailProduct.stock < 0 ? 'text-red-600' : 'text-gray-800')}>{detailProduct.stock}</p></div>
               <div className="flex items-center gap-1 bg-white p-1 rounded border">
                 <select value={filterMonth} onChange={e=>setFilterMonth(e.target.value)} className="bg-transparent text-xs outline-none"><option value="ALL">Cả năm</option>{Array.from({length: 12}, (_, i) => <option key={i+1} value={i+1}>Tháng {i+1}</option>)}</select>
-                <select value={filterYear} onChange={e=>setFilterYear(e.target.value)} className="bg-transparent text-xs outline-none">{Array.from({length: 5}, (_, i) => new Date().getFullYear() - i).map(y => <option key={y} value={y}>Năm {y}</option>)}</select>
+                <select value={filterYear} onChange={e=>setFilterYear(e.target.value)} className="bg-transparent text-xs outline-none">{Array.from({length: 5}, (_, i) => new Date().getFullYear() - i).map(y => <option key={y} value={y}>{y}</option>)}</select>
               </div>
             </div>
 
