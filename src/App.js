@@ -5,7 +5,7 @@ import {
   TrendingUp, AlertCircle, ArrowDownToLine, Phone, 
   DollarSign, CheckCircle2, Printer, FileText, CreditCard,
   Lock, LogOut, ShieldAlert, User as UserIcon, Database,
-  UserCog, KeyRound, MonitorSmartphone, Mail, Download, Upload, ArrowUpDown, Search, Eye, Bell, Award, BarChart3, Receipt
+  UserCog, KeyRound, MonitorSmartphone, Mail, Download, Upload, ArrowUpDown, Search, Eye, Bell, Award, BarChart3, Receipt, ChevronDown, ChevronUp
 } from 'lucide-react';
 
 import { initializeApp } from 'firebase/app';
@@ -251,7 +251,7 @@ export default function EnhancedPOS() {
         <main className="flex-1 overflow-hidden flex flex-col h-[calc(100vh-80px)] md:h-screen relative">
           {toast && <div className={"absolute top-4 right-4 z-50 px-6 py-3 rounded-lg shadow-lg flex items-center gap-2 text-white " + (toast.type === 'success' ? 'bg-green-600' : 'bg-red-600')}>{toast.type === 'success' ? <Check size={20} /> : <AlertCircle size={20} />}<span className="font-medium">{toast.msg}</span></div>}
           
-          {activeTab === 'dashboard' && <DashboardView orders={orders} imports={imports} expenses={expenses} showToast={showToast} />}
+          {activeTab === 'dashboard' && <DashboardView orders={orders} imports={imports} expenses={expenses} customers={customers} suppliers={suppliers} showToast={showToast} />}
           {activeTab === 'pos' && <POSView products={products} customers={customers} db={db} storeId={storeId} user={user} storeConfig={storeConfig} showToast={showToast} />}
           {activeTab === 'sales_history' && <SalesHistoryView orders={orders} products={products} db={db} storeId={storeId} showToast={showToast} />}
           {activeTab === 'imports' && <ImportView products={products} suppliers={suppliers} db={db} storeId={storeId} user={user} showToast={showToast} />}
@@ -267,10 +267,18 @@ export default function EnhancedPOS() {
   );
 }
 
-function DashboardView({ orders, imports, expenses, showToast }) {
+function DashboardView({ orders, imports, expenses, customers, suppliers, showToast }) {
   const currentDate = new Date();
   const [filterMonth, setFilterMonth] = useState((currentDate.getMonth() + 1).toString());
   const [filterYear, setFilterYear] = useState(currentDate.getFullYear().toString());
+
+  // Trạng thái sắp xếp cho bảng Nhắc nợ Khách hàng và Nhà cung cấp
+  const [custSortOrder, setCustSortOrder] = useState('desc'); // 'desc' (lâu nhất/nhiều nhất trước), 'asc' (ngược lại)
+  const [suppSortOrder, setSuppSortOrder] = useState('desc');
+  
+  // Trạng thái Xem thêm / Thu gọn cho 10 dòng đầu
+  const [showAllCust, setShowAllCust] = useState(false);
+  const [showAllSupp, setShowAllSupp] = useState(false);
 
   const stats = useMemo(() => {
     const fOrders = orders.filter(o => { const d = new Date(o.date); return (filterMonth === 'ALL' || (d.getMonth() + 1).toString() === filterMonth) && d.getFullYear().toString() === filterYear; });
@@ -282,6 +290,37 @@ function DashboardView({ orders, imports, expenses, showToast }) {
     const totalExp = fExpenses.reduce((s, e) => s + (Number(e.amount) || 0), 0);
     const netProfit = totalRev - totalCost - totalExp;
     
+    // Lọc và sắp xếp công nợ khách hàng (ưu tiên thời gian lâu nhất / nợ nhiều nhất)
+    const filteredCustDebt = (customers || []).filter(c => {
+      if (!c.createdAt) return filterMonth === 'ALL';
+      const d = new Date(c.createdAt);
+      return (filterMonth === 'ALL' || (d.getMonth() + 1).toString() === filterMonth) && d.getFullYear().toString() === filterYear;
+    }).sort((a, b) => {
+      const timeA = new Date(a.createdAt || 0);
+      const timeB = new Date(b.createdAt || 0);
+      // Mặc định desc: ngày cũ hơn (thời gian nợ lâu hơn) lên trước
+      if (custSortOrder === 'desc') {
+        return timeA - timeB; 
+      } else {
+        return timeB - timeA;
+      }
+    });
+
+    // Lọc và sắp xếp công nợ nhà cung cấp
+    const filteredSuppDebt = (suppliers || []).filter(s => {
+      if (!s.createdAt) return filterMonth === 'ALL';
+      const d = new Date(s.createdAt);
+      return (filterMonth === 'ALL' || (d.getMonth() + 1).toString() === filterMonth) && d.getFullYear().toString() === filterYear;
+    }).sort((a, b) => {
+      const timeA = new Date(a.createdAt || 0);
+      const timeB = new Date(b.createdAt || 0);
+      if (suppSortOrder === 'desc') {
+        return timeA - timeB;
+      } else {
+        return timeB - timeA;
+      }
+    });
+
     const overdueCust = orders.filter(o => o.status === 'DEBT').sort((a,b) => new Date(b.date) - new Date(a.date));
     const overdueSupp = imports.filter(i => i.status === 'DEBT').sort((a,b) => new Date(b.date) - new Date(a.date));
     const overdueCust1Week = overdueCust.filter(o => getDaysDifference(o.date) >= 7);
@@ -317,15 +356,15 @@ function DashboardView({ orders, imports, expenses, showToast }) {
     });
     const topProducts = Object.values(productSalesMap).sort((a, b) => b.totalQty - a.totalQty).slice(0, 5);
 
-    return { totalRev, totalCost, totalExp, netProfit, overdueCust, overdueSupp, overdueCust1Week, chartData, topProducts };
-  }, [orders, imports, expenses, filterMonth, filterYear]);
+    return { totalRev, totalCost, totalExp, netProfit, overdueCust, overdueSupp, overdueCust1Week, chartData, topProducts, filteredCustDebt, filteredSuppDebt };
+  }, [orders, imports, expenses, customers, suppliers, filterMonth, filterYear, custSortOrder, suppSortOrder]);
 
   const years = Array.from({length: 5}, (_, i) => currentDate.getFullYear() - i);
 
   return (
     <div className="flex-1 overflow-y-auto p-4 md:p-6 bg-gray-50/50 space-y-6">
       <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
-        <h2 className="text-2xl font-bold text-gray-800">Báo cáo Kinh doanh & Biểu đồ</h2>
+        <h2 className="text-2xl font-bold text-gray-800">Báo cáo Kinh doanh & Biểu đồ Nhắc nợ</h2>
         <div className="flex items-center gap-3 bg-white p-2 rounded-xl shadow-sm border border-gray-200">
           <select value={filterMonth} onChange={e=>setFilterMonth(e.target.value)} className="bg-transparent font-medium outline-none">
             <option value="ALL">Cả năm</option>{Array.from({length: 12}, (_, i) => (<option key={i+1} value={i+1}>Tháng {i+1}</option>))}
@@ -337,8 +376,103 @@ function DashboardView({ orders, imports, expenses, showToast }) {
         </div>
       </div>
 
+      {/* 2 PHẦN NHẮC NỢ RIÊNG BIỆT: KHÁCH HÀNG & NHÀ CUNG CẤP (10 DÒNG + XEM THÊM + SẮP XẾP TĂNG/GIẢM) */}
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+        {/* KHÁCH HÀNG */}
+        <div className="bg-white p-5 rounded-2xl shadow-sm border border-gray-200 flex flex-col">
+          <div className="flex justify-between items-center mb-3">
+            <h3 className="font-bold text-gray-800 flex items-center gap-2 text-blue-600">
+              <Users size={18}/> Nhắc nợ Khách hàng ({filterMonth === 'ALL' ? `Năm ${filterYear}` : `Tháng ${filterMonth}/${filterYear}`})
+            </h3>
+            <button 
+              onClick={() => setCustSortOrder(prev => prev === 'desc' ? 'asc' : 'desc')} 
+              className="text-xs bg-gray-100 hover:bg-gray-200 text-gray-700 px-2.5 py-1 rounded-lg font-medium flex items-center gap-1 transition"
+              title="Đổi chiều sắp xếp thời gian nợ"
+            >
+              <ArrowUpDown size={12}/> {custSortOrder === 'desc' ? 'Lâu nhất trước' : 'Gần nhất trước'}
+            </button>
+          </div>
+          <div className="overflow-y-auto border rounded-xl flex-1 max-h-72">
+            <table className="w-full text-left text-xs">
+              <thead className="bg-blue-50 sticky top-0 border-b">
+                <tr><th className="p-2.5">Khách hàng</th><th className="p-2.5">Thời gian chưa trả</th><th className="p-2.5 text-right">Tổng Nợ</th></tr>
+              </thead>
+              <tbody>
+                {(showAllCust ? stats.filteredCustDebt : stats.filteredCustDebt.slice(0, 10)).map(c => {
+                  const daysAgo = c.createdAt ? getDaysDifference(c.createdAt) : 0;
+                  return (
+                    <tr key={c.id} className="border-b hover:bg-gray-50">
+                      <td className="p-2.5 font-bold text-gray-800">{c.name}<p className="text-[10px] text-gray-400 font-normal">{c.phone || 'Không có SĐT'}</p></td>
+                      <td className="p-2.5 font-semibold text-orange-600">{daysAgo} ngày trước</td>
+                      <td className="p-2.5 text-right font-bold text-red-600">{formatCurrency(c.totalDebt)}</td>
+                    </tr>
+                  );
+                })}
+                {stats.filteredCustDebt.length === 0 && (
+                  <tr><td colSpan="3" className="p-4 text-center text-gray-400">Không có khách hàng nợ trong kỳ này</td></tr>
+                )}
+              </tbody>
+            </table>
+          </div>
+          {stats.filteredCustDebt.length > 10 && (
+            <button 
+              onClick={() => setShowAllCust(!showAllCust)} 
+              className="mt-3 text-xs text-blue-600 font-bold hover:underline flex items-center justify-center gap-1 py-1"
+            >
+              {showAllCust ? <><ChevronUp size={14}/> Thu gọn</> : <><ChevronDown size={14}/> Xem thêm ({stats.filteredCustDebt.length - 10} khách hàng khác)</>}
+            </button>
+          )}
+        </div>
+
+        {/* NHÀ CUNG CẤP */}
+        <div className="bg-white p-5 rounded-2xl shadow-sm border border-gray-200 flex flex-col">
+          <div className="flex justify-between items-center mb-3">
+            <h3 className="font-bold text-gray-800 flex items-center gap-2 text-orange-600">
+              <Truck size={18}/> Nhắc nợ Nhà cung cấp ({filterMonth === 'ALL' ? `Năm ${filterYear}` : `Tháng ${filterMonth}/${filterYear}`})
+            </h3>
+            <button 
+              onClick={() => setSuppSortOrder(prev => prev === 'desc' ? 'asc' : 'desc')} 
+              className="text-xs bg-gray-100 hover:bg-gray-200 text-gray-700 px-2.5 py-1 rounded-lg font-medium flex items-center gap-1 transition"
+              title="Đổi chiều sắp xếp thời gian nợ"
+            >
+              <ArrowUpDown size={12}/> {suppSortOrder === 'desc' ? 'Lâu nhất trước' : 'Gần nhất trước'}
+            </button>
+          </div>
+          <div className="overflow-y-auto border rounded-xl flex-1 max-h-72">
+            <table className="w-full text-left text-xs">
+              <thead className="bg-orange-50 sticky top-0 border-b">
+                <tr><th className="p-2.5">Nhà cung cấp</th><th className="p-2.5">Thời gian chưa trả</th><th className="p-2.5 text-right">Cần trả</th></tr>
+              </thead>
+              <tbody>
+                {(showAllSupp ? stats.filteredSuppDebt : stats.filteredSuppDebt.slice(0, 10)).map(s => {
+                  const daysAgo = s.createdAt ? getDaysDifference(s.createdAt) : 0;
+                  return (
+                    <tr key={s.id} className="border-b hover:bg-gray-50">
+                      <td className="p-2.5 font-bold text-gray-800">{s.name}<p className="text-[10px] text-gray-400 font-normal">{s.phone || 'Không có SĐT'}</p></td>
+                      <td className="p-2.5 font-semibold text-orange-600">{daysAgo} ngày trước</td>
+                      <td className="p-2.5 text-right font-bold text-orange-600">{formatCurrency(s.totalDebt)}</td>
+                    </tr>
+                  );
+                })}
+                {stats.filteredSuppDebt.length === 0 && (
+                  <tr><td colSpan="3" className="p-4 text-center text-gray-400">Không có nhà cung cấp nợ trong kỳ này</td></tr>
+                )}
+              </tbody>
+            </table>
+          </div>
+          {stats.filteredSuppDebt.length > 10 && (
+            <button 
+              onClick={() => setShowAllSupp(!showAllSupp)} 
+              className="mt-3 text-xs text-orange-600 font-bold hover:underline flex items-center justify-center gap-1 py-1"
+            >
+              {showAllSupp ? <><ChevronUp size={14}/> Thu gọn</> : <><ChevronDown size={14}/> Xem thêm ({stats.filteredSuppDebt.length - 10} nhà cung cấp khác)</>}
+            </button>
+          )}
+        </div>
+      </div>
+
       {stats.overdueCust1Week.length > 0 && (
-        <div className="bg-red-50 border-2 border-red-500 rounded-2xl shadow-sm overflow-hidden animate-pulse-slow">
+        <div className="bg-red-50 border-2 border-red-500 rounded-2xl shadow-sm overflow-hidden">
           <div className="p-4 bg-red-600 flex justify-between items-center text-white">
             <h3 className="font-bold flex items-center gap-2 text-lg"><Bell size={24}/> CẢNH BÁO: KHÁCH HÀNG NỢ QUÁ HẠN 1 TUẦN ({stats.overdueCust1Week.length})</h3>
           </div>
@@ -818,10 +952,11 @@ function SettingsView({ db, storeId, showToast, storeConfig }) {
           let batch = writeBatch(db); let count = 0; let success = 0;
           for (let i = 0; i < data.length; i++) {
             let p = null; const row = data[i];
-            if (type === 'products' && row['Tên hàng']) p = { name: String(row['Tên hàng']), price: Number(row['Giá bán']) || 0, cost: Number(row['Giá vốn']) || 0, stock: Number(row['Tồn kho']) || 0 };
-            else if (type === 'customers' && row['Tên khách hàng']) { const rawPhone = row['Điện thoại'] ? String(row['Điện thoại']) : ''; p = { name: String(row['Tên khách hàng']), phone: rawPhone.replace('.0', ''), totalDebt: Number(row['Nợ cần thu hiện tại']) || 0 }; }
-            else if (type === 'suppliers' && row['Tên nhà cung cấp']) { const rawPhone = row['Điện thoại'] ? String(row['Điện thoại']) : ''; p = { name: String(row['Tên nhà cung cấp']), phone: rawPhone.replace('.0', ''), totalDebt: Number(row['Nợ cần trả hiện tại']) || 0 }; }
-            else if (type === 'expenses' && row['Số tiền']) p = { amount: Number(row['Số tiền']), note: row['Nội dung'] || '', date: new Date().toISOString() };
+            const nowIso = new Date().toISOString();
+            if (type === 'products' && row['Tên hàng']) p = { name: String(row['Tên hàng']), price: Number(row['Giá bán']) || 0, cost: Number(row['Giá vốn']) || 0, stock: Number(row['Tồn kho']) || 0, createdAt: nowIso };
+            else if (type === 'customers' && row['Tên khách hàng']) { const rawPhone = row['Điện thoại'] ? String(row['Điện thoại']) : ''; p = { name: String(row['Tên khách hàng']), phone: rawPhone.replace('.0', ''), totalDebt: Number(row['Nợ cần thu hiện tại']) || 0, createdAt: nowIso }; }
+            else if (type === 'suppliers' && row['Tên nhà cung cấp']) { const rawPhone = row['Điện thoại'] ? String(row['Điện thoại']) : ''; p = { name: String(row['Tên nhà cung cấp']), phone: rawPhone.replace('.0', ''), totalDebt: Number(row['Nợ cần trả hiện tại']) || 0, createdAt: nowIso }; }
+            else if (type === 'expenses' && row['Số tiền']) p = { amount: Number(row['Số tiền']), note: row['Nội dung'] || '', date: nowIso };
             if (p) { batch.set(doc(collection(db, 'stores', storeId, type)), p); count++; success++; }
             if (count === 400 || i === data.length - 1) { if (count > 0) { await batch.commit(); batch = writeBatch(db); count = 0; } }
           }
@@ -938,7 +1073,8 @@ function ContactManager({ type, data, orders, db, storeId, showToast }) {
   const handleSave = async (e) => { 
     e.preventDefault(); 
     try { 
-      const p = { name: form.name, phone: form.phone || '', address: form.address || '', totalDebt: Number(form.totalDebt || 0) }; 
+      const nowIso = new Date().toISOString();
+      const p = { name: form.name, phone: form.phone || '', address: form.address || '', totalDebt: Number(form.totalDebt || 0), createdAt: form.createdAt || nowIso }; 
       if (form.id) { await updateDoc(doc(db, 'stores', storeId, type, form.id), p); } 
       else { await addDoc(collection(db, 'stores', storeId, type), p); }
       setIsModalOpen(false); showToast("Đã lưu thành công"); 
@@ -1123,7 +1259,8 @@ function InventoryView({ products, orders, imports, db, storeId, showToast }) {
   const handleSave = async (e) => { 
     e.preventDefault(); 
     try { 
-      const d = { name: form.name, price: Number(form.price), cost: Number(form.cost || 0), stock: Number(form.stock) }; 
+      const nowIso = new Date().toISOString();
+      const d = { name: form.name, price: Number(form.price), cost: Number(form.cost || 0), stock: Number(form.stock), createdAt: form.createdAt || nowIso }; 
       if (form.id) { await updateDoc(doc(db, 'stores', storeId, 'products', form.id), d); } else { await addDoc(collection(db, 'stores', storeId, 'products'), d); }
       setIsModalOpen(false); showToast("Đã lưu Hàng hóa"); 
     } catch (e) { showToast("Lỗi", "error"); } 
@@ -1245,7 +1382,7 @@ function InventoryView({ products, orders, imports, db, storeId, showToast }) {
               const stockClass = p.stock < 0 ? 'text-red-600' : 'text-gray-800';
               return (
                 <tr key={p.id} className="border-b hover:bg-blue-50/50 cursor-pointer" onClick={() => setDetailProduct(p)}>
-                  <td className="p-4" onClick={e=>e.stopPropagation()}><input type="checkbox" checked={selectedIds.includes(p.id)} onChange={() => setSelectedIds(prev => prev.includes(p.id) ? prev.filter(x=>x!==p.id) : [...prev, p.id])} className="w-4 h-4"/></td>
+                  <td className="p-4" onClick={e=>e.stopPropagation()}><input type="checkbox" checked={selectedIds.includes(p.id)} onChange={() => setSelectedIds(prev => prev.includes(p.id) ? prev.filter(x=>x!==p.id) : [...prev, p.id]} className="w-4 h-4"/></td>
                   <td className="p-4 font-medium text-blue-600 underline">{p.name}</td><td className="p-4 text-gray-600">{formatCurrency(p.cost)}</td><td className="p-4 font-bold text-blue-600">{formatCurrency(p.price)}</td><td className={"p-4 font-bold " + stockClass}>{p.stock}</td>
                   <td className="p-4 text-right flex justify-end gap-1" onClick={e=>e.stopPropagation()}><button onClick={() => setDetailProduct(p)} title="Xem chi tiết nhập/bán" className="text-gray-600 bg-gray-100 p-2 rounded-lg hover:bg-gray-200"><Eye size={16}/></button><button onClick={() => {setForm(p); setIsModalOpen(true);}} className="text-blue-600 bg-blue-50 p-2 rounded-lg hover:bg-blue-100"><Edit size={16}/></button><button onClick={() => handleDelete(p.id)} className="text-red-600 bg-red-50 p-2 rounded-lg hover:bg-red-100"><Trash2 size={16}/></button></td>
                 </tr>
@@ -1271,7 +1408,7 @@ function InventoryView({ products, orders, imports, db, storeId, showToast }) {
               <div className="bg-blue-50 p-2 rounded-lg border border-blue-100"><p className="text-[10px] text-blue-600 font-bold uppercase">Tổng Bán</p><p className="text-xs font-bold text-blue-800">{formatCurrency(productHistory.totalSoldAmount)}</p></div>
               <div className="bg-green-50 p-2 rounded-lg border border-green-100"><p className="text-[10px] text-green-600 font-bold uppercase">Đã Thanh Toán</p><p className="text-xs font-bold text-green-700">{formatCurrency(productHistory.totalPaid)}</p></div>
               <div className="bg-orange-50 p-2 rounded-lg border border-orange-100"><p className="text-[10px] text-orange-600 font-bold uppercase">Đang Nợ</p><p className="text-xs font-bold text-orange-700">{formatCurrency(productHistory.totalDebtRemain)}</p></div>
-              <div className="bg-purple-50 p-2 rounded-lg border border-purple-100"><p className="text-[10px] text-purple-600 font-bold uppercase">Tổng Nhập</p><p className="text-xs font-bold text-purple-700">{formatCurrency(productHistory.totalImportAmount)}</p></div>
+              <div className="bg-purple-50 p-2 rounded-lg border border-purple-100"><p className="text-[10px] text-purple-700 font-bold uppercase">Tổng Nhập</p><p className="text-xs font-bold text-purple-700">{formatCurrency(productHistory.totalImportAmount)}</p></div>
             </div>
 
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
@@ -1377,7 +1514,7 @@ function ExpenseView({ expenses, db, storeId, showToast }) {
         <div className="flex items-center gap-2 bg-gray-50 p-2 rounded-xl border">
           <select value={filterMonth} onChange={e=>setFilterMonth(e.target.value)} className="bg-transparent text-sm font-medium outline-none"><option value="ALL">Cả năm</option>{Array.from({length: 12}, (_, i) => <option key={i+1} value={i+1}>Tháng {i+1}</option>)}</select>
           <div className="w-px h-4 bg-gray-300"></div>
-          <select value={filterYear} onChange={e=>setFilterYear(e.target.value)} className="bg-transparent text-sm font-medium outline-none">{Array.from({length: 5}, (_, i) => new Date().getFullYear() - i).map(y => <option key={y} value={y}>Năm {y}</option>)}</select>
+          <select value={filterYear} onChange={e=>setFilterYear(e.target.value)} className="bg-transparent text-sm font-medium outline-none">{Array.from({length: 5}, (_, i) => new Date().getFullYear() - i).map(y => <option key={y} value={y}>{y}</option>)}</select>
         </div>
       </div>
       <form onSubmit={handleSave} className="bg-white p-4 rounded-xl border shadow-sm mb-4 flex flex-col md:flex-row gap-4 shrink-0">
@@ -1402,7 +1539,7 @@ function ExpenseView({ expenses, db, storeId, showToast }) {
           <tbody>
             {filteredExpenses.map(e => (
               <tr key={e.id} className="border-b hover:bg-gray-50 cursor-pointer" onClick={() => setDetailExpense(e)}>
-                <td className="p-4" onClick={evt=>evt.stopPropagation()}><input type="checkbox" checked={selectedIds.includes(e.id)} onChange={() => setSelectedIds(prev => prev.includes(e.id) ? prev.filter(x=>x!==e.id) : [...prev, e.id])} className="w-4 h-4"/></td>
+                <td className="p-4" onClick={evt=>evt.stopPropagation()}><input type="checkbox" checked={selectedIds.includes(e.id)} onChange={() => setSelectedIds(prev => prev.includes(e.id) ? prev.filter(x=>x!==e.id) : [...prev, e.id]} className="w-4 h-4"/></td>
                 <td className="p-4 text-gray-500">{formatDate(e.date)}</td><td className="p-4 font-medium text-blue-600 underline">{e.note}</td><td className="p-4 font-bold text-orange-600">{formatCurrency(e.amount)}</td>
                 <td className="p-4 text-right" onClick={evt=>evt.stopPropagation()}><button onClick={() => handleDelete(e.id)} className="text-red-500 bg-red-50 p-2 rounded-lg hover:bg-red-100"><Trash2 size={16}/></button></td>
               </tr>
@@ -1444,7 +1581,11 @@ function POSView({ products, customers, db, storeId, user, storeConfig, showToas
 
   const handleAddCustomerQuick = async (e) => {
     e.preventDefault();
-    try { const docRef = await addDoc(collection(db, 'stores', storeId, 'customers'), { name: newCusForm.name, phone: newCusForm.phone || '', address: newCusForm.address || '', totalDebt: 0 }); setCustomerId(docRef.id); setShowAddCusModal(false); setNewCusForm({ name: '', phone: '', address: '' }); showToast("Đã thêm và chọn khách hàng mới!"); } 
+    try { 
+      const nowIso = new Date().toISOString();
+      const docRef = await addDoc(collection(db, 'stores', storeId, 'customers'), { name: newCusForm.name, phone: newCusForm.phone || '', address: newCusForm.address || '', totalDebt: 0, createdAt: nowIso }); 
+      setCustomerId(docRef.id); setShowAddCusModal(false); setNewCusForm({ name: '', phone: '', address: '' }); showToast("Đã thêm và chọn khách hàng mới!"); 
+    } 
     catch (err) { showToast("Lỗi thêm khách hàng", "error"); }
   };
 
