@@ -1,18 +1,16 @@
-import React, { useState, useEffect, useMemo, useRef } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { 
   LayoutDashboard, ShoppingCart, Package, Users, Truck, Plus, 
   Edit, Trash2, Check, X, Image as ImageIcon, ShoppingBag, 
-  TrendingUp, Clock, AlertCircle, ArrowDownToLine, Phone, MapPin, 
-  DollarSign, CheckCircle2, Printer, Receipt, FileText, CreditCard,
-  Lock, LogOut, ShieldAlert, User as UserIcon
+  TrendingUp, AlertCircle, ArrowDownToLine, Phone, 
+  DollarSign, CheckCircle2, Printer, FileText, CreditCard,
+  Lock, LogOut, ShieldAlert, User as UserIcon, Database
 } from 'lucide-react';
 
-// --- FIREBASE IMPORTS ---
 import { initializeApp } from 'firebase/app';
 import { getAuth, signInAnonymously, signInWithCustomToken, onAuthStateChanged } from 'firebase/auth';
-import { getFirestore, doc, addDoc, updateDoc, deleteDoc, onSnapshot, collection } from 'firebase/firestore';
+import { getFirestore, doc, addDoc, updateDoc, deleteDoc, onSnapshot, collection, writeBatch } from 'firebase/firestore';
 
-// --- FIREBASE SETUP ---
 let app, auth, db, appId;
 try {
   const firebaseConfig = typeof __firebase_config !== 'undefined' ? JSON.parse(__firebase_config) : {};
@@ -24,7 +22,6 @@ try {
   console.error("Firebase init error:", error);
 }
 
-// --- UTILS ---
 const formatCurrency = (amount) => new Intl.NumberFormat('vi-VN', { style: 'currency', currency: 'VND' }).format(amount || 0);
 const formatDate = (iso) => new Intl.DateTimeFormat('vi-VN', { dateStyle: 'short', timeStyle: 'short' }).format(new Date(iso));
 const getDaysDifference = (isoDate) => {
@@ -32,7 +29,6 @@ const getDaysDifference = (isoDate) => {
   return Math.floor(diffTime / (1000 * 60 * 60 * 24));
 };
 
-// --- REUSABLE MODAL ---
 const Modal = ({ isOpen, onClose, title, children, maxWidth = "max-w-md", hideHeaderInPrint = false }) => {
   if (!isOpen) return null;
   return (
@@ -50,9 +46,6 @@ const Modal = ({ isOpen, onClose, title, children, maxWidth = "max-w-md", hideHe
   );
 };
 
-// ==========================================
-// MÀN HÌNH ĐĂNG NHẬP (MỚI THÊM)
-// ==========================================
 function LoginView({ onLogin }) {
   const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
@@ -60,7 +53,6 @@ function LoginView({ onLogin }) {
 
   const handleSubmit = (e) => {
     e.preventDefault();
-    // Logic kiểm tra tài khoản (Mô phỏng cứng)
     if (username === 'admin' && password === 'admin') {
       onLogin('admin');
     } else if (username === 'nhanvien' && password === '123456') {
@@ -90,33 +82,17 @@ function LoginView({ onLogin }) {
         <form onSubmit={handleSubmit} className="space-y-4">
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-1">Tài khoản</label>
-            <input 
-              type="text" 
-              value={username}
-              onChange={e => setUsername(e.target.value)}
-              className="w-full p-3 border border-gray-300 rounded-lg outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500"
-              placeholder="Nhập tên đăng nhập"
-              required
-            />
+            <input type="text" value={username} onChange={e => setUsername(e.target.value)} className="w-full p-3 border border-gray-300 rounded-lg outline-none focus:border-blue-500" required />
           </div>
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-1">Mật khẩu</label>
-            <input 
-              type="password" 
-              value={password}
-              onChange={e => setPassword(e.target.value)}
-              className="w-full p-3 border border-gray-300 rounded-lg outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500"
-              placeholder="Nhập mật khẩu"
-              required
-            />
+            <input type="password" value={password} onChange={e => setPassword(e.target.value)} className="w-full p-3 border border-gray-300 rounded-lg outline-none focus:border-blue-500" required />
           </div>
-          <button type="submit" className="w-full bg-blue-600 hover:bg-blue-700 text-white font-bold py-3 rounded-lg transition-colors mt-2">
-            Đăng nhập
-          </button>
+          <button type="submit" className="w-full bg-blue-600 hover:bg-blue-700 text-white font-bold py-3 rounded-lg transition-colors mt-2">Đăng nhập</button>
         </form>
 
         <div className="mt-6 border-t pt-4 text-sm text-gray-500">
-          <p>Tài khoản thử nghiệm:</p>
+          <p>Tài khoản dùng thử:</p>
           <ul className="mt-1 list-disc pl-5">
             <li>Quản lý: <b>admin</b> / pass: <b>admin</b></li>
             <li>Bán hàng: <b>nhanvien</b> / pass: <b>123456</b></li>
@@ -127,16 +103,11 @@ function LoginView({ onLogin }) {
   );
 }
 
-
-// ==========================================
-// COMPONENT CHÍNH CỦA PHẦN MỀM
-// ==========================================
 export default function EnhancedPOS() {
   const [user, setUser] = useState(null);
-  const [userRole, setUserRole] = useState(null); // 'admin' | 'seller'
-  const [activeTab, setActiveTab] = useState('dashboard');
+  const [userRole, setUserRole] = useState(null);
+  const [activeTab, setActiveTab] = useState('pos');
   
-  // Data States
   const [products, setProducts] = useState([]);
   const [orders, setOrders] = useState([]);
   const [imports, setImports] = useState([]);
@@ -146,7 +117,6 @@ export default function EnhancedPOS() {
   const [loading, setLoading] = useState(true);
   const [toast, setToast] = useState(null);
 
-  // --- AUTH & DATA FETCHING ---
   useEffect(() => {
     const initAuth = async () => {
       try {
@@ -155,9 +125,7 @@ export default function EnhancedPOS() {
         } else {
           await signInAnonymously(auth);
         }
-      } catch (error) {
-        console.error("Auth failed:", error);
-      }
+      } catch (error) { console.error("Auth failed:", error); }
     };
     initAuth();
 
@@ -193,27 +161,23 @@ export default function EnhancedPOS() {
 
   const handleLoginSuccess = (role) => {
     setUserRole(role);
-    // Tự động chuyển tab phù hợp theo quyền
     if (role === 'admin') setActiveTab('dashboard');
     else setActiveTab('pos'); 
   };
 
   if (loading) return <div className="min-h-screen flex items-center justify-center bg-gray-50"><div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600"></div></div>;
 
-  // HIỂN THỊ MÀN HÌNH ĐĂNG NHẬP NẾU CHƯA CÓ QUYỀN
-  if (!userRole) {
-    return <LoginView onLogin={handleLoginSuccess} />;
-  }
+  if (!userRole) return <LoginView onLogin={handleLoginSuccess} />;
 
-  // CẤU HÌNH MENU THEO QUYỀN
   const allTabs = [
     { id: 'dashboard', icon: LayoutDashboard, label: 'Báo cáo & Nhắc nợ', roles: ['admin'] },
     { id: 'pos', icon: ShoppingCart, label: 'Bán hàng (POS)', roles: ['admin', 'seller'] },
     { id: 'imports', icon: ArrowDownToLine, label: 'Nhập hàng', roles: ['admin'] },
     { id: 'products', icon: Package, label: 'Kho hàng', roles: ['admin'] },
-    { id: 'customers', icon: Users, label: 'Khách hàng', roles: ['admin', 'seller'] }, // Seller được tạo KH
+    { id: 'customers', icon: Users, label: 'Khách hàng', roles: ['admin', 'seller'] },
     { id: 'suppliers', icon: Truck, label: 'Nhà cung cấp', roles: ['admin'] },
     { id: 'expenses', icon: CreditCard, label: 'Chi phí', roles: ['admin'] },
+    { id: 'settings', icon: Database, label: 'Cài đặt & Dữ liệu', roles: ['admin'] },
   ];
 
   const visibleTabs = allTabs.filter(tab => tab.roles.includes(userRole));
@@ -230,13 +194,10 @@ export default function EnhancedPOS() {
       `}</style>
 
       <div className="min-h-screen bg-gray-50 flex flex-col md:flex-row font-sans text-sm md:text-base print:hidden">
-        {/* SIDEBAR */}
         <aside className="w-full md:w-64 bg-white border-r border-gray-200 flex flex-col shadow-sm z-10 shrink-0">
           <div className="p-5 border-b border-gray-100 flex items-center gap-3">
             <div className="bg-blue-600 text-white p-2 rounded-lg"><ShoppingBag size={24} /></div>
-            <div>
-              <h1 className="text-xl font-bold tracking-tight text-gray-800">SmartPOS<span className="text-blue-600">Pro</span></h1>
-            </div>
+            <div><h1 className="text-xl font-bold tracking-tight text-gray-800">SmartPOS<span className="text-blue-600">Pro</span></h1></div>
           </div>
           
           <nav className="flex-1 p-3 flex flex-row md:flex-col gap-1 overflow-x-auto md:overflow-visible scrollbar-hide">
@@ -251,25 +212,17 @@ export default function EnhancedPOS() {
             ))}
           </nav>
 
-          {/* USER INFO & LOGOUT SECTION */}
           <div className="p-4 border-t border-gray-100 bg-gray-50">
             <div className="flex items-center justify-between">
               <div className="flex items-center gap-2 text-sm text-gray-700 font-medium">
                 <div className="bg-gray-200 p-1.5 rounded-full"><UserIcon size={16} /></div>
                 {userRole === 'admin' ? 'Quản trị viên' : 'Nhân viên bán hàng'}
               </div>
-              <button 
-                onClick={() => setUserRole(null)} 
-                className="text-gray-500 hover:text-red-600 p-2 rounded-lg hover:bg-red-50 transition-colors"
-                title="Đăng xuất"
-              >
-                <LogOut size={18} />
-              </button>
+              <button onClick={() => setUserRole(null)} className="text-gray-500 hover:text-red-600 p-2 rounded-lg hover:bg-red-50" title="Đăng xuất"><LogOut size={18} /></button>
             </div>
           </div>
         </aside>
 
-        {/* MAIN CONTENT */}
         <main className="flex-1 overflow-hidden flex flex-col h-[calc(100vh-80px)] md:h-screen relative">
           {toast && (
             <div className={`absolute top-4 right-4 z-50 px-6 py-3 rounded-lg shadow-lg flex items-center gap-2 animate-in slide-in-from-top-5 text-white ${toast.type === 'success' ? 'bg-green-600' : 'bg-red-600'}`}>
@@ -285,15 +238,154 @@ export default function EnhancedPOS() {
           {activeTab === 'customers' && <ContactManager type="customers" data={customers} db={db} appId={appId} user={user} showToast={showToast} />}
           {activeTab === 'suppliers' && userRole === 'admin' && <ContactManager type="suppliers" data={suppliers} db={db} appId={appId} user={user} showToast={showToast} />}
           {activeTab === 'expenses' && userRole === 'admin' && <ExpenseView expenses={expenses} db={db} appId={appId} user={user} showToast={showToast} />}
+          {activeTab === 'settings' && userRole === 'admin' && <SettingsView db={db} appId={appId} user={user} showToast={showToast} />}
         </main>
       </div>
     </>
   );
 }
 
-// ==========================================
-// 1. DASHBOARD & DEBT REMINDER VIEW
-// ==========================================
+function SettingsView({ db, appId, user, showToast }) {
+  const [importing, setImporting] = useState(false);
+  const [progress, setProgress] = useState(0);
+
+  const handleImport = async (e, type) => {
+    const file = e.target.files[0];
+    if (!file) return;
+    
+    setImporting(true);
+    setProgress(0);
+    try {
+      const XLSX = await new Promise((resolve, reject) => {
+        if (window.XLSX) return resolve(window.XLSX);
+        const script = document.createElement('script');
+        script.src = "https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js";
+        script.onload = () => resolve(window.XLSX);
+        script.onerror = reject;
+        document.body.appendChild(script);
+      });
+
+      const reader = new FileReader();
+      reader.onload = async (evt) => {
+        try {
+          const bstr = evt.target.result;
+          const wb = XLSX.read(bstr, { type: 'binary' });
+          const wsname = wb.SheetNames[0];
+          const ws = wb.Sheets[wsname];
+          const data = XLSX.utils.sheet_to_json(ws);
+          
+          let successCount = 0;
+          const batchSize = 400;
+          let batch = writeBatch(db);
+          let currentBatchCount = 0;
+          
+          for (let i = 0; i < data.length; i++) {
+            const row = data[i];
+            let payload = null;
+            
+            if (type === 'products') {
+              if (row['Tên hàng']) {
+                payload = {
+                  name: String(row['Tên hàng']),
+                  price: Number(row['Giá bán']) || 0,
+                  cost: Number(row['Giá vốn']) || 0,
+                  stock: Number(row['Tồn kho']) || 0,
+                  image: ''
+                };
+              }
+            } else if (type === 'customers') {
+              if (row['Tên khách hàng']) {
+                payload = {
+                  name: String(row['Tên khách hàng']),
+                  phone: row['Điện thoại'] ? String(row['Điện thoại']).replace('.0', '') : '',
+                  address: row['Địa chỉ'] ? String(row['Địa chỉ']) : '',
+                  totalDebt: Number(row['Nợ cần thu hiện tại']) || 0
+                };
+              }
+            } else if (type === 'suppliers') {
+              if (row['Tên nhà cung cấp']) {
+                payload = {
+                  name: String(row['Tên nhà cung cấp']),
+                  phone: row['Điện thoại'] ? String(row['Điện thoại']).replace('.0', '') : '',
+                  address: row['Địa chỉ'] ? String(row['Địa chỉ']) : '',
+                  totalDebt: Number(row['Nợ cần trả hiện tại']) || 0
+                };
+              }
+            }
+
+            if (payload) {
+              const docRef = doc(collection(db, 'artifacts', appId, 'users', user.uid, type));
+              batch.set(docRef, payload);
+              currentBatchCount++;
+              successCount++;
+            }
+            
+            if (currentBatchCount === batchSize || i === data.length - 1) {
+              if (currentBatchCount > 0) {
+                await batch.commit();
+                batch = writeBatch(db);
+                currentBatchCount = 0;
+              }
+              setProgress(Math.floor(((i + 1) / data.length) * 100));
+            }
+          }
+          
+          setProgress(100);
+          showToast(`Thành công! Đã thêm ${successCount} dòng.`);
+          setImporting(false);
+          e.target.value = ''; 
+        } catch (err) {
+          console.error(err);
+          showToast("Lỗi khi ghi dữ liệu.", "error");
+          setImporting(false);
+        }
+      };
+      reader.readAsBinaryString(file);
+    } catch (err) {
+      console.error(err);
+      showToast("Lỗi tải bộ đọc Excel", "error");
+      setImporting(false);
+    }
+  };
+
+  return (
+    <div className="flex-1 flex flex-col bg-gray-50 p-4 md:p-6 overflow-hidden h-full">
+      <h2 className="text-2xl font-bold text-gray-800 mb-6">Cài đặt & Dữ liệu</h2>
+      <div className="bg-white p-6 rounded-xl border border-gray-200 shadow-sm max-w-3xl">
+        <h3 className="font-bold text-lg mb-4 text-blue-800">Nhập Cơ Sở Dữ Liệu Hàng Loạt Từ Excel</h3>
+        <p className="text-sm text-gray-600 mb-6">Tải lên các file .xlsx để thêm dữ liệu hàng loạt tự động vào hệ thống.</p>
+
+        {importing && (
+          <div className="mb-6 p-4 bg-blue-50 text-blue-700 rounded-lg border border-blue-200">
+            <p className="font-bold mb-2 flex items-center gap-2">
+              <span className="animate-spin h-4 w-4 border-2 border-blue-600 border-t-transparent rounded-full"></span> 
+              Đang đẩy dữ liệu lên hệ thống... {progress}%
+            </p>
+            <div className="w-full bg-blue-200 rounded-full h-2.5">
+              <div className="bg-blue-600 h-2.5 rounded-full transition-all duration-300" style={{width: `${progress}%`}}></div>
+            </div>
+          </div>
+        )}
+
+        <div className="space-y-4">
+          <div className="border border-gray-200 p-4 rounded-xl flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+            <div><p className="font-semibold text-gray-800">1. Nhập file Khách hàng</p></div>
+            <input type="file" accept=".xlsx, .xls" onChange={(e) => handleImport(e, 'customers')} disabled={importing} className="text-sm cursor-pointer" />
+          </div>
+          <div className="border border-gray-200 p-4 rounded-xl flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+            <div><p className="font-semibold text-gray-800">2. Nhập file Nhà cung cấp</p></div>
+            <input type="file" accept=".xlsx, .xls" onChange={(e) => handleImport(e, 'suppliers')} disabled={importing} className="text-sm cursor-pointer" />
+          </div>
+          <div className="border border-gray-200 p-4 rounded-xl flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+            <div><p className="font-semibold text-gray-800">3. Nhập file Sản phẩm</p></div>
+            <input type="file" accept=".xlsx, .xls" onChange={(e) => handleImport(e, 'products')} disabled={importing} className="text-sm cursor-pointer" />
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 function DashboardView({ orders, imports, customers, products, expenses, db, appId, user, showToast }) {
   const currentDate = new Date();
   const [filterMonth, setFilterMonth] = useState((currentDate.getMonth() + 1).toString());
@@ -314,13 +406,12 @@ function DashboardView({ orders, imports, customers, products, expenses, db, app
     const totalCOGS = filteredOrders.reduce((sum, o) => sum + (o.totalCost || 0), 0);
     const totalOperatingExpense = filteredExpenses.reduce((sum, e) => sum + e.amount, 0);
     const netProfit = totalRevenue - totalCOGS - totalOperatingExpense;
-    const lowStock = products.filter(p => p.stock < 10).length;
     
     const overdueDebts = orders.filter(o => 
       o.status === 'DEBT' && getDaysDifference(o.date) >= 7
     ).sort((a, b) => new Date(a.date) - new Date(b.date));
 
-    return { totalRevenue, totalCOGS, totalOperatingExpense, netProfit, lowStock, overdueDebts };
+    return { totalRevenue, totalCOGS, totalOperatingExpense, netProfit, overdueDebts };
   }, [orders, expenses, products, filterMonth, filterYear]);
 
   const handleMarkAsPaid = async (order) => {
@@ -343,7 +434,6 @@ function DashboardView({ orders, imports, customers, products, expenses, db, app
     <div className="flex-1 overflow-y-auto p-4 md:p-6 bg-gray-50/50">
       <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center mb-6 gap-4">
         <h2 className="text-2xl font-bold text-gray-800">Báo cáo Kinh doanh</h2>
-        
         <div className="flex items-center gap-3 bg-white p-2 rounded-xl shadow-sm border border-gray-200">
           <select value={filterMonth} onChange={(e) => setFilterMonth(e.target.value)} className="bg-transparent font-medium text-gray-700 outline-none cursor-pointer">
             <option value="ALL">Cả năm</option>
@@ -358,7 +448,7 @@ function DashboardView({ orders, imports, customers, products, expenses, db, app
       
       <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-4 mb-8">
         <StatCard icon={<TrendingUp />} title="Tổng Doanh Thu" value={formatCurrency(stats.totalRevenue)} color="bg-blue-100 text-blue-600" />
-        <StatCard icon={<Package />} title="Tổng Giá Vốn (Hàng đã bán)" value={formatCurrency(stats.totalCOGS)} color="bg-gray-200 text-gray-700" />
+        <StatCard icon={<Package />} title="Tổng Giá Vốn" value={formatCurrency(stats.totalCOGS)} color="bg-gray-200 text-gray-700" />
         <StatCard icon={<CreditCard />} title="Tổng Chi Phí" value={formatCurrency(stats.totalOperatingExpense)} color="bg-orange-100 text-orange-600" />
         <StatCard icon={<DollarSign />} title="Lãi Ròng" value={formatCurrency(stats.netProfit)} color={stats.netProfit >= 0 ? "bg-green-100 text-green-600" : "bg-red-100 text-red-600"} highlight={true} />
       </div>
@@ -394,15 +484,11 @@ function DashboardView({ orders, imports, customers, products, expenses, db, app
                       <td className="p-4 text-gray-600">{formatDate(order.date)}</td>
                       <td className="p-4 text-gray-500 text-xs max-w-xs truncate">{order.note || '-'}</td>
                       <td className="p-4">
-                        <span className="bg-red-100 text-red-700 px-2.5 py-1 rounded-full text-xs font-bold">
-                          {getDaysDifference(order.date)} ngày
-                        </span>
+                        <span className="bg-red-100 text-red-700 px-2.5 py-1 rounded-full text-xs font-bold">{getDaysDifference(order.date)} ngày</span>
                       </td>
                       <td className="p-4 font-bold text-gray-900">{formatCurrency(order.total)}</td>
                       <td className="p-4 text-right">
-                        <button onClick={() => handleMarkAsPaid(order)} className="bg-green-500 hover:bg-green-600 text-white px-3 py-1.5 rounded-lg text-sm font-medium transition-colors shadow-sm">
-                          Đã thu tiền
-                        </button>
+                        <button onClick={() => handleMarkAsPaid(order)} className="bg-green-500 hover:bg-green-600 text-white px-3 py-1.5 rounded-lg text-sm font-medium transition-colors shadow-sm">Đã thu tiền</button>
                       </td>
                     </tr>
                   ))}
@@ -426,15 +512,11 @@ const StatCard = ({ icon, title, value, color, highlight = false }) => (
   </div>
 );
 
-// ==========================================
-// 2. POS VIEW (BÁN HÀNG & IN HÓA ĐƠN)
-// ==========================================
 function POSView({ products, customers, db, appId, user, showToast }) {
   const [cart, setCart] = useState([]);
   const [customerId, setCustomerId] = useState('');
   const [isDebt, setIsDebt] = useState(false);
   const [orderNote, setOrderNote] = useState('');
-  
   const [completedOrder, setCompletedOrder] = useState(null);
   const [showInvoiceModal, setShowInvoiceModal] = useState(false);
 
@@ -479,17 +561,19 @@ function POSView({ products, customers, db, appId, user, showToast }) {
       };
 
       const orderRef = await addDoc(collection(db, 'artifacts', appId, 'users', user.uid, 'orders'), orderData);
-
+      let batch = writeBatch(db);
       for (const item of cart) {
         const p = products.find(p => p.id === item.id);
-        if (p) await updateDoc(doc(db, 'artifacts', appId, 'users', user.uid, 'products', p.id), { stock: Math.max(0, p.stock - item.quantity) });
+        if (p) {
+          const pRef = doc(db, 'artifacts', appId, 'users', user.uid, 'products', p.id);
+          batch.update(pRef, { stock: Math.max(0, p.stock - item.quantity) });
+        }
       }
-
       if (isDebt && customerId && c) {
-        await updateDoc(doc(db, 'artifacts', appId, 'users', user.uid, 'customers', customerId), {
-          totalDebt: (c.totalDebt || 0) + cartTotal
-        });
+        const cRef = doc(db, 'artifacts', appId, 'users', user.uid, 'customers', customerId);
+        batch.update(cRef, { totalDebt: (c.totalDebt || 0) + cartTotal });
       }
+      await batch.commit();
 
       setCompletedOrder({ id: orderRef.id, ...orderData, customerPhone: c?.phone || '' });
       setShowInvoiceModal(true);
@@ -502,9 +586,7 @@ function POSView({ products, customers, db, appId, user, showToast }) {
     }
   };
 
-  const handlePrint = () => {
-    window.print();
-  };
+  const handlePrint = () => window.print();
 
   return (
     <div className="flex-1 flex flex-col lg:flex-row overflow-hidden bg-gray-50 h-full">
@@ -514,7 +596,7 @@ function POSView({ products, customers, db, appId, user, showToast }) {
           {products.map(p => (
             <div key={p.id} onClick={() => addToCart(p)} className={`bg-white rounded-xl border ${p.stock > 0 ? 'border-gray-200 hover:border-blue-400 cursor-pointer shadow-sm hover:shadow' : 'border-gray-200 opacity-60'} overflow-hidden transition-all flex flex-col`}>
               <div className="aspect-video bg-gray-100 overflow-hidden relative">
-                {p.image ? <img src={p.image} className="w-full h-full object-cover" /> : <div className="w-full h-full flex items-center justify-center text-gray-300"><ImageIcon size={30} /></div>}
+                {p.image ? <img src={p.image} className="w-full h-full object-cover" alt={p.name} /> : <div className="w-full h-full flex items-center justify-center text-gray-300"><ImageIcon size={30} /></div>}
                 {p.stock <= 0 && <div className="absolute inset-0 bg-white/60 flex items-center justify-center"><span className="bg-red-500 text-white text-xs font-bold px-2 py-1 rounded">Hết hàng</span></div>}
               </div>
               <div className="p-3">
@@ -560,26 +642,18 @@ function POSView({ products, customers, db, appId, user, showToast }) {
               {customers.map(c => <option key={c.id} value={c.id}>{c.name} - {c.phone}</option>)}
             </select>
           </div>
-          
           <div>
             <label className="text-xs font-semibold text-gray-600 mb-1 flex items-center gap-1"><FileText size={14}/> Ghi chú đơn / Bảo hành</label>
-            <textarea 
-              value={orderNote} onChange={e => setOrderNote(e.target.value)} 
-              placeholder="VD: Bảo hành 24 tháng, số series..." 
-              className="w-full p-2 border border-gray-300 rounded-lg text-sm bg-white outline-none focus:border-blue-500 resize-none h-16"
-            ></textarea>
+            <textarea value={orderNote} onChange={e => setOrderNote(e.target.value)} placeholder="VD: Bảo hành 24 tháng..." className="w-full p-2 border border-gray-300 rounded-lg text-sm bg-white outline-none focus:border-blue-500 resize-none h-16"></textarea>
           </div>
-
           <div className="flex gap-2">
             <button onClick={() => setIsDebt(false)} className={`flex-1 py-2 rounded-lg text-sm font-medium transition-colors border ${!isDebt ? 'bg-blue-600 text-white border-blue-600' : 'bg-white text-gray-600 border-gray-300'}`}>Tiền mặt</button>
             <button onClick={() => setIsDebt(true)} className={`flex-1 py-2 rounded-lg text-sm font-medium transition-colors border ${isDebt ? 'bg-orange-500 text-white border-orange-500' : 'bg-white text-gray-600 border-gray-300'}`}>Ghi nợ</button>
           </div>
-          
           <div className="flex justify-between items-center pt-2">
             <span className="text-gray-600 font-medium">Tổng tiền:</span>
             <span className="text-2xl font-bold text-blue-600">{formatCurrency(cartTotal)}</span>
           </div>
-          
           <button onClick={handleCheckout} disabled={cart.length === 0 || (isDebt && !customerId)} className="w-full bg-green-600 hover:bg-green-700 disabled:bg-gray-300 text-white py-3 rounded-xl font-bold text-lg transition-colors flex justify-center items-center gap-2 shadow-sm">
             Thanh toán {isDebt ? '(Nợ)' : ''}
           </button>
@@ -591,21 +665,16 @@ function POSView({ products, customers, db, appId, user, showToast }) {
           <div className="p-6 bg-white print-container">
             <div className="text-center mb-6 border-b pb-4">
               <h1 className="text-2xl font-bold text-gray-900 uppercase">HÓA ĐƠN BÁN HÀNG</h1>
-              <p className="text-gray-500 text-sm mt-1">Kiêm phiếu bảo hành (nếu có)</p>
             </div>
-
             <div className="flex justify-between mb-6 text-sm text-gray-700">
               <div>
                 <p><span className="font-semibold">Mã ĐH:</span> #{completedOrder.id.slice(0, 8).toUpperCase()}</p>
                 <p><span className="font-semibold">Ngày:</span> {formatDate(completedOrder.date)}</p>
-                <p><span className="font-semibold">Hình thức:</span> {completedOrder.status === 'DEBT' ? 'Ghi nợ' : 'Tiền mặt'}</p>
               </div>
               <div className="text-right">
                 <p><span className="font-semibold">Khách hàng:</span> {completedOrder.customerName}</p>
-                {completedOrder.customerPhone && <p><span className="font-semibold">SĐT:</span> {completedOrder.customerPhone}</p>}
               </div>
             </div>
-
             <table className="w-full mb-6 text-sm">
               <thead className="border-b-2 border-gray-800 text-left">
                 <tr>
@@ -632,19 +701,6 @@ function POSView({ products, customers, db, appId, user, showToast }) {
                 </tr>
               </tfoot>
             </table>
-
-            {completedOrder.note && (
-              <div className="mb-8 p-3 bg-gray-50 border border-gray-200 rounded-lg text-sm print:bg-transparent print:border-gray-800 print:rounded-none">
-                <p className="font-semibold text-gray-800 mb-1">Ghi chú / Bảo hành:</p>
-                <p className="text-gray-700 whitespace-pre-wrap">{completedOrder.note}</p>
-              </div>
-            )}
-            
-            <div className="text-center text-sm text-gray-500 mt-10">
-              <p>Cảm ơn quý khách đã mua hàng!</p>
-              <p className="italic text-xs mt-1">Xin vui lòng giữ lại hóa đơn để được hỗ trợ bảo hành.</p>
-            </div>
-
             <div className="mt-8 flex justify-end gap-3 no-print">
               <button onClick={() => setShowInvoiceModal(false)} className="px-4 py-2 border rounded-lg hover:bg-gray-50">Đóng</button>
               <button onClick={handlePrint} className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 flex items-center gap-2 font-medium">
@@ -658,9 +714,6 @@ function POSView({ products, customers, db, appId, user, showToast }) {
   );
 }
 
-// ==========================================
-// 3. IMPORT VIEW (NHẬP HÀNG)
-// ==========================================
 function ImportView({ products, suppliers, db, appId, user, showToast }) {
   const [cart, setCart] = useState([]);
   const [supplierId, setSupplierId] = useState('');
@@ -681,25 +734,23 @@ function ImportView({ products, suppliers, db, appId, user, showToast }) {
     if (!user || cart.length === 0 || !supplierId) return showToast("Vui lòng chọn NCC và thêm hàng", "error");
     try {
       const s = suppliers.find(s => s.id === supplierId);
-      
       await addDoc(collection(db, 'artifacts', appId, 'users', user.uid, 'imports'), {
-        supplierId, supplierName: s.name, 
-        items: cart, total: cartTotal, 
-        status: isDebt ? 'DEBT' : 'PAID', 
-        note: importNote,
-        date: new Date().toISOString()
+        supplierId, supplierName: s.name, items: cart, total: cartTotal, status: isDebt ? 'DEBT' : 'PAID', note: importNote, date: new Date().toISOString()
       });
 
+      let batch = writeBatch(db);
       for (const item of cart) {
         const p = products.find(p => p.id === item.id);
-        if (p) await updateDoc(doc(db, 'artifacts', appId, 'users', user.uid, 'products', p.id), { 
-          stock: p.stock + item.qty, cost: item.importCost 
-        });
+        if (p) {
+          const pRef = doc(db, 'artifacts', appId, 'users', user.uid, 'products', p.id);
+          batch.update(pRef, { stock: p.stock + item.qty, cost: item.importCost });
+        }
       }
-
       if (isDebt) {
-        await updateDoc(doc(db, 'artifacts', appId, 'users', user.uid, 'suppliers', supplierId), { totalDebt: (s.totalDebt || 0) + cartTotal });
+        const sRef = doc(db, 'artifacts', appId, 'users', user.uid, 'suppliers', supplierId);
+        batch.update(sRef, { totalDebt: (s.totalDebt || 0) + cartTotal });
       }
+      await batch.commit();
 
       setCart([]); setSupplierId(''); setIsDebt(false); setImportNote('');
       showToast("Nhập hàng thành công!");
@@ -714,12 +765,11 @@ function ImportView({ products, suppliers, db, appId, user, showToast }) {
           {products.map(p => (
             <div key={p.id} onClick={() => addToCart(p)} className="bg-white p-3 rounded-xl border border-gray-200 hover:border-purple-400 cursor-pointer shadow-sm">
               <h3 className="font-semibold text-sm truncate">{p.name}</h3>
-              <p className="text-xs text-gray-500 mt-1">Tồn hiện tại: {p.stock}</p>
+              <p className="text-xs text-gray-500 mt-1">Tồn: {p.stock}</p>
             </div>
           ))}
         </div>
       </div>
-      
       <div className="w-full lg:w-[450px] bg-white border-l border-gray-200 flex flex-col shadow-lg shrink-0 z-20 h-[60vh] lg:h-auto">
         <div className="p-4 border-b border-gray-100 bg-purple-50 flex justify-between">
           <h2 className="font-bold text-purple-800">Phiếu nhập kho</h2>
@@ -744,7 +794,6 @@ function ImportView({ products, suppliers, db, appId, user, showToast }) {
             </div>
           ))}
         </div>
-        
         <div className="p-4 border-t border-gray-100 bg-gray-50 space-y-3">
            <div>
             <label className="text-xs font-semibold text-gray-600 block mb-1">Nhà cung cấp *</label>
@@ -753,16 +802,6 @@ function ImportView({ products, suppliers, db, appId, user, showToast }) {
               {suppliers.map(s => <option key={s.id} value={s.id}>{s.name}</option>)}
             </select>
           </div>
-          
-          <div>
-            <label className="text-xs font-semibold text-gray-600 mb-1 block">Ghi chú nhập hàng</label>
-            <textarea 
-              value={importNote} onChange={e => setImportNote(e.target.value)} 
-              placeholder="VD: Lô hàng cáp mạng, switch mua của Hưng..." 
-              className="w-full p-2 border border-gray-300 rounded-lg text-sm bg-white outline-none focus:border-purple-500 resize-none h-12"
-            ></textarea>
-          </div>
-
           <div className="flex gap-2">
             <button onClick={() => setIsDebt(false)} className={`flex-1 py-2 rounded-lg text-sm font-medium border ${!isDebt ? 'bg-purple-600 text-white border-purple-600' : 'bg-white text-gray-600 border-gray-300'}`}>Tiền mặt</button>
             <button onClick={() => setIsDebt(true)} className={`flex-1 py-2 rounded-lg text-sm font-medium border ${isDebt ? 'bg-orange-500 text-white border-orange-500' : 'bg-white text-gray-600 border-gray-300'}`}>Ghi nợ NCC</button>
@@ -778,9 +817,6 @@ function ImportView({ products, suppliers, db, appId, user, showToast }) {
   );
 }
 
-// ==========================================
-// 4. KHO HÀNG
-// ==========================================
 function InventoryView({ products, db, appId, user, showToast }) {
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [form, setForm] = useState({});
@@ -835,16 +871,14 @@ function InventoryView({ products, db, appId, user, showToast }) {
           </table>
         </div>
       </div>
-      
       <Modal isOpen={isModalOpen} onClose={() => setIsModalOpen(false)} title={form.id ? "Sửa sản phẩm" : "Thêm sản phẩm"}>
         <form onSubmit={handleSave} className="space-y-4">
           <input required placeholder="Tên sản phẩm *" value={form.name} onChange={e => setForm({...form, name: e.target.value})} className="w-full p-2.5 border rounded-lg outline-none focus:border-blue-500" />
           <div className="grid grid-cols-2 gap-3">
-             <input required type="number" placeholder="Giá nhập (Vốn) *" value={form.cost} onChange={e => setForm({...form, cost: e.target.value})} className="w-full p-2.5 border rounded-lg outline-none focus:border-blue-500" />
+             <input required type="number" placeholder="Giá vốn *" value={form.cost} onChange={e => setForm({...form, cost: e.target.value})} className="w-full p-2.5 border rounded-lg outline-none focus:border-blue-500" />
              <input required type="number" placeholder="Giá bán *" value={form.price} onChange={e => setForm({...form, price: e.target.value})} className="w-full p-2.5 border rounded-lg outline-none focus:border-blue-500" />
           </div>
-          <input required type="number" placeholder="Số lượng kho *" value={form.stock} onChange={e => setForm({...form, stock: e.target.value})} className="w-full p-2.5 border rounded-lg outline-none focus:border-blue-500" />
-          <input placeholder="Link ảnh (tùy chọn)" value={form.image} onChange={e => setForm({...form, image: e.target.value})} className="w-full p-2.5 border rounded-lg outline-none focus:border-blue-500" />
+          <input required type="number" placeholder="Tồn kho *" value={form.stock} onChange={e => setForm({...form, stock: e.target.value})} className="w-full p-2.5 border rounded-lg outline-none focus:border-blue-500" />
           <button type="submit" className="w-full bg-blue-600 text-white py-2.5 rounded-lg font-medium hover:bg-blue-700">Lưu thông tin</button>
         </form>
       </Modal>
@@ -852,9 +886,6 @@ function InventoryView({ products, db, appId, user, showToast }) {
   );
 }
 
-// ==========================================
-// 5. KHÁCH HÀNG & NHÀ CUNG CẤP (CÔNG NỢ)
-// ==========================================
 function ContactManager({ type, data, db, appId, user, showToast }) {
   const isCus = type === 'customers';
   const title = isCus ? "Khách Hàng" : "Nhà Cung Cấp";
@@ -892,7 +923,7 @@ function ContactManager({ type, data, db, appId, user, showToast }) {
               <tr>
                 <th className="p-4 font-semibold text-gray-600">Tên {title}</th>
                 <th className="p-4 font-semibold text-gray-600">Điện thoại</th>
-                <th className="p-4 font-semibold text-gray-600">Tổng Nợ Hiện Tại</th>
+                <th className="p-4 font-semibold text-gray-600">Tổng Nợ</th>
                 <th className="p-4 font-semibold text-gray-600 text-right">Thao tác</th>
               </tr>
             </thead>
@@ -900,10 +931,8 @@ function ContactManager({ type, data, db, appId, user, showToast }) {
               {data.map(item => (
                 <tr key={item.id} className="hover:bg-gray-50/50">
                   <td className="p-4 font-medium">{item.name}</td>
-                  <td className="p-4 text-gray-600 flex items-center gap-2"><Phone size={14}/> {item.phone}</td>
-                  <td className={`p-4 font-bold ${item.totalDebt > 0 ? 'text-red-600' : 'text-green-600'}`}>
-                    {formatCurrency(item.totalDebt)}
-                  </td>
+                  <td className="p-4 text-gray-600">{item.phone}</td>
+                  <td className={`p-4 font-bold ${item.totalDebt > 0 ? 'text-red-600' : 'text-green-600'}`}>{formatCurrency(item.totalDebt)}</td>
                   <td className="p-4 text-right">
                     <button onClick={() => openModal(item)} className="p-2 text-gray-500 hover:text-blue-600 bg-gray-50 hover:bg-blue-50 rounded-lg"><Edit size={18}/></button>
                   </td>
@@ -913,18 +942,11 @@ function ContactManager({ type, data, db, appId, user, showToast }) {
           </table>
         </div>
       </div>
-      
       <Modal isOpen={isModalOpen} onClose={() => setIsModalOpen(false)} title={form.id ? `Cập nhật ${title}` : `Thêm ${title}`}>
         <form onSubmit={handleSave} className="space-y-4">
-          <input required placeholder={`Tên ${title.toLowerCase()} *`} value={form.name} onChange={e => setForm({...form, name: e.target.value})} className="w-full p-2.5 border rounded-lg outline-none focus:border-blue-500" />
-          <input placeholder="Số điện thoại" value={form.phone} onChange={e => setForm({...form, phone: e.target.value})} className="w-full p-2.5 border rounded-lg outline-none focus:border-blue-500" />
-          <input placeholder="Địa chỉ" value={form.address} onChange={e => setForm({...form, address: e.target.value})} className="w-full p-2.5 border rounded-lg outline-none focus:border-blue-500" />
-          
-          <div className="bg-orange-50 p-3 rounded-lg border border-orange-100">
-            <label className="text-xs font-semibold text-orange-800 mb-1 block">Điều chỉnh nợ thủ công (Thanh toán / Thêm nợ)</label>
-            <input type="number" value={form.totalDebt} onChange={e => setForm({...form, totalDebt: e.target.value})} className="w-full p-2 border border-orange-200 rounded-lg outline-none bg-white font-bold text-red-600" />
-          </div>
-
+          <input required placeholder="Tên *" value={form.name} onChange={e => setForm({...form, name: e.target.value})} className="w-full p-2.5 border rounded-lg outline-none" />
+          <input placeholder="Điện thoại" value={form.phone} onChange={e => setForm({...form, phone: e.target.value})} className="w-full p-2.5 border rounded-lg outline-none" />
+          <input placeholder="Địa chỉ" value={form.address} onChange={e => setForm({...form, address: e.target.value})} className="w-full p-2.5 border rounded-lg outline-none" />
           <button type="submit" className={`w-full ${btnColor} text-white py-2.5 rounded-lg font-medium mt-2`}>Lưu thông tin</button>
         </form>
       </Modal>
@@ -932,9 +954,6 @@ function ContactManager({ type, data, db, appId, user, showToast }) {
   );
 }
 
-// ==========================================
-// 6. QUẢN LÝ CHI PHÍ (EXPENSES)
-// ==========================================
 function ExpenseView({ expenses, db, appId, user, showToast }) {
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [form, setForm] = useState({ amount: '', note: '' });
@@ -944,9 +963,7 @@ function ExpenseView({ expenses, db, appId, user, showToast }) {
     if (!user) return;
     try {
       await addDoc(collection(db, 'artifacts', appId, 'users', user.uid, 'expenses'), { 
-        amount: Number(form.amount), 
-        note: form.note, 
-        date: new Date().toISOString() 
+        amount: Number(form.amount), note: form.note, date: new Date().toISOString() 
       });
       setIsModalOpen(false); setForm({amount: '', note: ''});
       showToast("Đã thêm chi phí");
@@ -954,28 +971,27 @@ function ExpenseView({ expenses, db, appId, user, showToast }) {
   };
 
   const handleDelete = async (id) => {
-    if(!user || !confirm("Bạn có chắc chắn muốn xóa chi phí này?")) return;
+    if(!user || !confirm("Xóa chi phí này?")) return;
     try {
       await deleteDoc(doc(db, 'artifacts', appId, 'users', user.uid, 'expenses', id));
       showToast("Đã xóa chi phí");
-    } catch (e) { showToast("Lỗi xóa chi phí", "error"); }
+    } catch (e) { showToast("Lỗi xóa", "error"); }
   };
 
   return (
     <div className="flex-1 flex flex-col bg-gray-50 p-4 md:p-6 overflow-hidden h-full">
       <div className="flex justify-between mb-4">
         <h2 className="text-2xl font-bold text-gray-800">Chi phí hoạt động</h2>
-        <button onClick={() => setIsModalOpen(true)} className="bg-orange-600 hover:bg-orange-700 text-white px-4 py-2 rounded-lg font-medium flex gap-2"><Plus size={20}/> Thêm chi phí</button>
+        <button onClick={() => setIsModalOpen(true)} className="bg-orange-600 hover:bg-orange-700 text-white px-4 py-2 rounded-lg font-medium flex gap-2"><Plus size={20}/> Thêm</button>
       </div>
-      
       <div className="flex-1 bg-white rounded-xl border border-gray-200 overflow-hidden shadow-sm flex flex-col">
         <div className="overflow-x-auto flex-1">
           <table className="w-full text-left">
             <thead className="bg-gray-50 border-b sticky top-0 z-10">
               <tr>
-                <th className="p-4 font-semibold text-gray-600">Ngày ghi nhận</th>
-                <th className="p-4 font-semibold text-gray-600">Nội dung chi phí</th>
-                <th className="p-4 font-semibold text-gray-600">Số tiền chi</th>
+                <th className="p-4 font-semibold text-gray-600">Ngày</th>
+                <th className="p-4 font-semibold text-gray-600">Nội dung</th>
+                <th className="p-4 font-semibold text-gray-600">Số tiền</th>
                 <th className="p-4 font-semibold text-gray-600 text-right">Xóa</th>
               </tr>
             </thead>
@@ -990,23 +1006,15 @@ function ExpenseView({ expenses, db, appId, user, showToast }) {
                   </td>
                 </tr>
               ))}
-              {expenses.length === 0 && <tr><td colSpan="4" className="p-8 text-center text-gray-500">Chưa có dữ liệu chi phí</td></tr>}
             </tbody>
           </table>
         </div>
       </div>
-      
       <Modal isOpen={isModalOpen} onClose={() => setIsModalOpen(false)} title="Thêm Chi Phí Mới">
         <form onSubmit={handleSave} className="space-y-4">
-          <div>
-            <label className="text-sm font-semibold text-gray-700 block mb-1">Số tiền chi (VNĐ) *</label>
-            <input required type="number" min="0" value={form.amount} onChange={e => setForm({...form, amount: e.target.value})} className="w-full p-2.5 border rounded-lg outline-none focus:border-orange-500" />
-          </div>
-          <div>
-            <label className="text-sm font-semibold text-gray-700 block mb-1">Nội dung / Ghi chú *</label>
-            <textarea required value={form.note} onChange={e => setForm({...form, note: e.target.value})} placeholder="VD: Tiền kéo cáp, mua vật tư phụ, tiền điện..." className="w-full p-2.5 border rounded-lg outline-none focus:border-orange-500 resize-none h-24"></textarea>
-          </div>
-          <button type="submit" className="w-full bg-orange-600 text-white py-2.5 rounded-lg font-medium hover:bg-orange-700">Lưu Chi Phí</button>
+          <input required type="number" min="0" placeholder="Số tiền *" value={form.amount} onChange={e => setForm({...form, amount: e.target.value})} className="w-full p-2.5 border rounded-lg outline-none" />
+          <textarea required value={form.note} onChange={e => setForm({...form, note: e.target.value})} placeholder="Nội dung chi phí *" className="w-full p-2.5 border rounded-lg outline-none resize-none h-24"></textarea>
+          <button type="submit" className="w-full bg-orange-600 text-white py-2.5 rounded-lg font-medium">Lưu</button>
         </form>
       </Modal>
     </div>
