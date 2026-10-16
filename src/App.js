@@ -697,7 +697,7 @@ function ContactManager({ type, data, orders, db, storeId, showToast }) {
           </thead>
           <tbody>{sortedData.map(i => (
             <tr key={i.id} className="border-b hover:bg-blue-50/50 cursor-pointer" onClick={() => setDetailTarget(i)}>
-              <td className="p-4" onClick={e=>e.stopPropagation()}><input type="checkbox" checked={selectedIds.includes(i.id)} onChange={()=>setSelectedIds(prev=>prev.includes(i.id)?prev.filter(x=>x!==i.id):[...prev, i.id]} className="w-4 h-4"/></td>
+              <td className="p-4" onClick={e=>e.stopPropagation()}><input type="checkbox" checked={selectedIds.includes(i.id)} onChange={()=>setSelectedIds(prev=>prev.includes(i.id)?prev.filter(x=>x!==i.id):[...prev, i.id])} className="w-4 h-4"/></td>
               <td className="p-4 font-medium text-blue-600 underline">{i.name}</td>
               <td className="p-4 text-gray-600">{i.phone}</td>
               <td className={`p-4 font-bold ${i.totalDebt > 0 ? (isCus?'text-red-600':'text-orange-600') : 'text-gray-400'}`}>{formatCurrency(i.totalDebt)}</td>
@@ -875,7 +875,7 @@ function InventoryView({ products, orders, imports, db, storeId, showToast }) {
           </thead>
           <tbody>{filteredProducts.map(p => (
             <tr key={p.id} className="border-b hover:bg-blue-50/50 cursor-pointer" onClick={() => setDetailProduct(p)}>
-              <td className="p-4" onClick={e=>e.stopPropagation()}><input type="checkbox" checked={selectedIds.includes(p.id)} onChange={()=>setSelectedIds(prev=>prev.includes(p.id)?prev.filter(x=>x!==p.id):[...prev, p.id]} className="w-4 h-4"/></td>
+              <td className="p-4" onClick={e=>e.stopPropagation()}><input type="checkbox" checked={selectedIds.includes(p.id)} onChange={()=>setSelectedIds(prev=>prev.includes(p.id)?prev.filter(x=>x!==p.id):[...prev, p.id])} className="w-4 h-4"/></td>
               <td className="p-4 font-medium text-blue-600 underline">{p.name}</td>
               <td className="p-4 text-gray-600">{formatCurrency(p.cost)}</td>
               <td className="p-4 font-bold text-blue-600">{formatCurrency(p.price)}</td>
@@ -1048,7 +1048,7 @@ function ExpenseView({ expenses, db, storeId, showToast }) {
           </thead>
           <tbody>{filteredExpenses.map(e => (
             <tr key={e.id} className="border-b hover:bg-gray-50 cursor-pointer" onClick={() => setDetailExpense(e)}>
-              <td className="p-4" onClick={evt=>evt.stopPropagation()}><input type="checkbox" checked={selectedIds.includes(e.id)} onChange={()=>setSelectedIds(prev=>prev.includes(e.id)?prev.filter(x=>x!==e.id):[...prev, e.id]} className="w-4 h-4"/></td>
+              <td className="p-4" onClick={evt=>evt.stopPropagation()}><input type="checkbox" checked={selectedIds.includes(e.id)} onChange={()=>setSelectedIds(prev=>prev.includes(e.id)?prev.filter(x=>x!==e.id):[...prev, e.id])} className="w-4 h-4"/></td>
               <td className="p-4 text-gray-500">{formatDate(e.date)}</td>
               <td className="p-4 font-medium text-blue-600 underline">{e.note}</td>
               <td className="p-4 font-bold text-orange-600">{formatCurrency(e.amount)}</td>
