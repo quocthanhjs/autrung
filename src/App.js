@@ -15,11 +15,8 @@ import {
 } from 'firebase/auth';
 import { getFirestore, doc, setDoc, getDoc, getDocs, addDoc, updateDoc, deleteDoc, onSnapshot, collection, writeBatch, query, orderBy, where } from 'firebase/firestore';
 
-// ==========================================
-// 1. CẤU HÌNH FIREBASE
-// ==========================================
 const firebaseConfig = {
- apiKey: "AIzaSyClQogCLby6OYpVzRwJ9181rmg1Lho5FV8",
+  apiKey: "AIzaSyClQogCLby6OYpVzRwJ9181rmg1Lho5FV8",
   authDomain: "smartpos-5f5cf.firebaseapp.com",
   projectId: "smartpos-5f5cf",
   storageBucket: "smartpos-5f5cf.firebasestorage.app",
@@ -32,9 +29,6 @@ const app = initializeApp(firebaseConfig);
 const auth = getAuth(app);
 const db = getFirestore(app);
 
-// ==========================================
-// 2. CẤU TRÚC PHÂN QUYỀN
-// ==========================================
 const PERMISSION_TREE = [
   { module: 'Tổng quan', perms: [{ id: 'tong_quan_xem', label: 'Xem tổng quan' }] },
   { module: 'Hàng hóa', perms: [{ id: 'hh_danh_sach', label: 'Danh sách hàng hóa' }, { id: 'hh_gia', label: 'Thiết lập giá' }] },
@@ -43,9 +37,6 @@ const PERMISSION_TREE = [
   { module: 'Sổ quỹ', perms: [{ id: 'quy_so_quy', label: 'Sổ quỹ / Chi phí' }] }
 ];
 
-// ==========================================
-// 3. TIỆN ÍCH (UTILS)
-// ==========================================
 const formatCurrency = (amount) => new Intl.NumberFormat('vi-VN', { style: 'currency', currency: 'VND' }).format(amount || 0);
 const formatDate = (iso) => new Intl.DateTimeFormat('vi-VN', { dateStyle: 'short', timeStyle: 'short' }).format(new Date(iso));
 const getDaysDifference = (isoDate) => Math.floor(Math.abs(new Date() - new Date(isoDate)) / (1000 * 60 * 60 * 24));
@@ -56,9 +47,6 @@ const getDeviceInfo = () => {
   return "Máy tính";
 };
 
-// ==========================================
-// 4. COMPONENT MODAL (POPUP)
-// ==========================================
 const Modal = ({ isOpen, onClose, title, children, maxWidth = "max-w-md", hideHeaderInPrint = false }) => {
   if (!isOpen) return null;
   return (
@@ -76,9 +64,6 @@ const Modal = ({ isOpen, onClose, title, children, maxWidth = "max-w-md", hideHe
   );
 };
 
-// ==========================================
-// 5. MÀN HÌNH ĐĂNG NHẬP
-// ==========================================
 function LoginView({ onLoginSuccess }) {
   const [loginInput, setLoginInput] = useState('');
   const [password, setPassword] = useState('');
@@ -91,8 +76,6 @@ function LoginView({ onLoginSuccess }) {
     e.preventDefault(); setError(''); setLoading(true);
     try {
       let loginEmail = loginInput.trim();
-      
-      // CHUYỂN ĐỔI USERNAME THÀNH EMAIL NẾU NGƯỜI DÙNG NHẬP USERNAME NGẮN
       if (!loginEmail.includes('@')) {
         const q = query(collection(db, 'users_db'), where('username', '==', loginEmail));
         const querySnapshot = await getDocs(q);
@@ -162,9 +145,6 @@ function LoginView({ onLoginSuccess }) {
   );
 }
 
-// ==========================================
-// 6. COMPONENT CHÍNH (APP)
-// ==========================================
 export default function EnhancedPOS() {
   const [user, setUser] = useState(null);
   const [userData, setUserData] = useState({ role: null, name: '', perms: {} });
@@ -283,8 +263,8 @@ export default function EnhancedPOS() {
           {activeTab === 'pos' && <POSView products={products} customers={customers} db={db} storeId={storeId} user={user} storeConfig={storeConfig} showToast={showToast} />}
           {activeTab === 'imports' && <ImportView products={products} suppliers={suppliers} db={db} storeId={storeId} user={user} showToast={showToast} />}
           {activeTab === 'products' && <InventoryView products={products} db={db} storeId={storeId} showToast={showToast} />}
-          {activeTab === 'customers' && <ContactManager type="customers" data={customers} db={db} storeId={storeId} showToast={showToast} />}
-          {activeTab === 'suppliers' && <ContactManager type="suppliers" data={suppliers} db={db} storeId={storeId} showToast={showToast} />}
+          {activeTab === 'customers' && <ContactManager type="customers" data={customers} orders={orders} db={db} storeId={storeId} showToast={showToast} />}
+          {activeTab === 'suppliers' && <ContactManager type="suppliers" data={suppliers} orders={imports} db={db} storeId={storeId} showToast={showToast} />}
           {activeTab === 'expenses' && <ExpenseView expenses={expenses} db={db} storeId={storeId} showToast={showToast} />}
           {activeTab === 'settings' && <SettingsView db={db} storeId={storeId} showToast={showToast} storeConfig={storeConfig} />}
           {activeTab === 'staff' && <StaffManagerView db={db} showToast={showToast} />}
@@ -293,10 +273,6 @@ export default function EnhancedPOS() {
     </>
   );
 }
-
-// ==========================================
-// CÁC MODULE CHỨC NĂNG 
-// ==========================================
 
 function DashboardView({ orders, imports, showToast }) {
   const currentDate = new Date();
@@ -310,7 +286,6 @@ function DashboardView({ orders, imports, showToast }) {
     const totalRev = fOrders.reduce((s, o) => s + o.total, 0);
     const totalCost = fOrders.reduce((s, o) => s + (o.totalCost || 0), 0);
     
-    // Nợ quá hạn
     const overdueCust = orders.filter(o => o.status === 'DEBT').sort((a,b)=>new Date(b.date)-new Date(a.date));
     const overdueSupp = imports.filter(i => i.status === 'DEBT').sort((a,b)=>new Date(b.date)-new Date(a.date));
 
@@ -336,7 +311,6 @@ function DashboardView({ orders, imports, showToast }) {
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-        {/* Nhắc nợ Khách hàng */}
         <div className="bg-white rounded-2xl shadow-sm border border-red-200 overflow-hidden">
           <div className="p-4 bg-red-50 border-b flex justify-between items-center font-bold text-red-700">
             <div className="flex gap-2"><AlertCircle size={20}/> Phải Thu (Khách nợ)</div>
@@ -358,7 +332,6 @@ function DashboardView({ orders, imports, showToast }) {
           </div>
         </div>
 
-        {/* Nhắc nợ Nhà Cung Cấp */}
         <div className="bg-white rounded-2xl shadow-sm border border-orange-200 overflow-hidden">
           <div className="p-4 bg-orange-50 border-b flex justify-between items-center font-bold text-orange-700">
             <div className="flex gap-2"><Truck size={20}/> Phải Trả (Nợ NCC)</div>
@@ -391,10 +364,6 @@ const StatCard = ({ icon, title, value, color, highlight = false }) => (
   </div>
 );
 
-// ==========================================
-// CÁC MODULE QUẢN TRỊ (NHÂN VIÊN, CÀI ĐẶT, DATA...)
-// ==========================================
-
 function StaffManagerView({ db, showToast }) {
   const [staff, setStaff] = useState([]); 
   const [logs, setLogs] = useState([]);
@@ -417,13 +386,12 @@ function StaffManagerView({ db, showToast }) {
         setIsModalOpen(false); 
       } else {
         if(!window.confirm("Hệ thống sẽ ĐĂNG XUẤT tài khoản Admin hiện tại để thiết lập bảo mật khởi tạo tài khoản Nhân viên mới. Bạn có đồng ý?")) { setLoading(false); return; }
-        // Tạo User thật trong Firebase Auth
         const res = await createUserWithEmailAndPassword(auth, form.email, form.password);
         await setDoc(doc(db, 'users_db', res.user.uid), { 
           username: form.username, email: form.email, name: form.name, role: form.role, permissions: form.perms || {}
         });
         showToast("Tạo thành công! Vui lòng đăng nhập lại.", "success");
-        await signOut(auth); // Sẽ tự động đá về màn hình đăng nhập
+        await signOut(auth);
       }
     } catch (err) { showToast("Lỗi: " + err.message, "error"); } finally { setLoading(false); }
   };
@@ -489,7 +457,6 @@ function SettingsView({ db, storeId, showToast, storeConfig }) {
   const [form, setForm] = useState(storeConfig);
   const [loadingFile, setLoadingFile] = useState(false);
 
-  // Script load XLSX dynamically
   useEffect(() => {
     if (!window.XLSX) {
       const s = document.createElement('script'); 
@@ -553,7 +520,6 @@ function SettingsView({ db, storeId, showToast, storeConfig }) {
     <div className="flex-1 p-4 md:p-6 bg-gray-50 overflow-auto">
       <h2 className="text-2xl font-bold mb-6">Cài đặt & Dữ liệu Excel</h2>
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-        {/* THÔNG TIN CỬA HÀNG */}
         <div className="bg-white p-6 rounded-xl border shadow-sm">
           <h3 className="font-bold border-b pb-2 mb-4 text-gray-800">Cấu hình Hóa đơn & Giao diện</h3>
           <form onSubmit={handleSaveConfig} className="space-y-4">
@@ -568,7 +534,6 @@ function SettingsView({ db, storeId, showToast, storeConfig }) {
           </form>
         </div>
         
-        {/* IMPORT / EXPORT EXCEL */}
         <div className="bg-white p-6 rounded-xl border shadow-sm">
           <h3 className="font-bold border-b pb-2 mb-4 text-gray-800">Quản lý File Excel (Xuất & Nhập)</h3>
           {loadingFile && <div className="mb-4 text-blue-600 font-bold flex items-center gap-2"><div className="animate-spin h-4 w-4 border-2 border-blue-600 border-t-transparent rounded-full"></div> Đang xử lý file...</div>}
@@ -598,11 +563,16 @@ function SettingsView({ db, storeId, showToast, storeConfig }) {
   );
 }
 
-function ContactManager({ type, data, db, storeId, showToast }) {
+function ContactManager({ type, data, orders, db, storeId, showToast }) {
   const isCus = type === 'customers'; const title = isCus ? "Khách Hàng" : "Nhà Cung Cấp";
   const [isModalOpen, setIsModalOpen] = useState(false); 
   const [form, setForm] = useState({});
-  const [sortOrder, setSortOrder] = useState('none'); // none, asc, desc
+  const [sortOrder, setSortOrder] = useState('none');
+  const [selectedIds, setSelectedIds] = useState([]);
+  
+  const currentDate = new Date();
+  const [filterMonth, setFilterMonth] = useState((currentDate.getMonth() + 1).toString());
+  const [filterYear, setFilterYear] = useState(currentDate.getFullYear().toString());
 
   const handleSave = async (e) => { 
     e.preventDefault(); 
@@ -614,55 +584,317 @@ function ContactManager({ type, data, db, storeId, showToast }) {
     } catch (e) { showToast("Lỗi", "error"); } 
   };
 
+  const handleDelete = async (id) => {
+    if(window.confirm("Bạn có chắc chắn muốn xóa?")) {
+      await deleteDoc(doc(db, 'stores', storeId, type, id));
+      showToast("Đã xóa thành công");
+    }
+  };
+
+  const handleBatchDelete = async () => {
+    if(selectedIds.length === 0) return;
+    if(window.confirm(`Xác nhận xóa ${selectedIds.length} mục đã chọn?`)) {
+      let batch = writeBatch(db);
+      selectedIds.forEach(id => batch.delete(doc(db, 'stores', storeId, type, id)));
+      await batch.commit();
+      setSelectedIds([]);
+      showToast("Đã xóa các mục đã chọn");
+    }
+  };
+
+  // Lọc theo thời gian trên banner & tính toán tổng số tiền
+  const bannerStats = useMemo(() => {
+    const filteredOrders = (orders || []).filter(o => {
+      const d = new Date(o.date);
+      return (filterMonth === 'ALL' || (d.getMonth() + 1).toString() === filterMonth) && d.getFullYear().toString() === filterYear;
+    });
+
+    const totalDebt = data.reduce((s, i) => s + (Number(i.totalDebt) || 0), 0);
+    const totalTraded = filteredOrders.reduce((s, o) => s + (Number(o.total) || 0), 0);
+    const totalPaid = filteredOrders.filter(o => o.status === 'PAID').reduce((s, o) => s + (Number(o.total) || 0), 0);
+
+    return { totalDebt, totalTraded, totalPaid, balance: totalTraded - totalPaid };
+  }, [data, orders, filterMonth, filterYear]);
+
   const sortedData = useMemo(() => {
     if (sortOrder === 'none') return data;
     return [...data].sort((a, b) => sortOrder === 'asc' ? a.totalDebt - b.totalDebt : b.totalDebt - a.totalDebt);
   }, [data, sortOrder]);
 
-  const toggleSort = () => {
-    setSortOrder(prev => prev === 'none' ? 'desc' : prev === 'desc' ? 'asc' : 'none');
+  const toggleSelectAll = () => {
+    if (selectedIds.length === data.length) setSelectedIds([]);
+    else setSelectedIds(data.map(i => i.id));
   };
 
   return (
     <div className="flex-1 flex flex-col p-4 md:p-6 bg-gray-50 overflow-hidden h-full">
-      <div className="flex justify-between mb-4">
+      <div className="flex justify-between items-center mb-4">
         <h2 className="text-2xl font-bold text-gray-800">Quản lý {title}</h2>
         <button onClick={() => {setForm({});setIsModalOpen(true);}} className="bg-blue-600 text-white px-4 py-2 rounded-lg font-bold flex gap-2"><Plus size={18}/> Thêm mới</button>
       </div>
+
+      {/* BANNER TỔNG SỐ TIỀN & BỘ LỌC THỜI GIAN */}
+      <div className="bg-white p-4 rounded-2xl border shadow-sm mb-4 flex flex-col lg:flex-row justify-between items-start lg:items-center gap-4">
+        <div className="grid grid-cols-2 sm:grid-cols-4 gap-4 flex-1 w-full">
+          <div className="bg-blue-50 p-3 rounded-xl border border-blue-100"><p className="text-xs text-blue-600 font-bold uppercase">Tổng Nợ</p><p className="text-lg font-bold text-blue-800">{formatCurrency(bannerStats.totalDebt)}</p></div>
+          <div className="bg-gray-50 p-3 rounded-xl border border-gray-200"><p className="text-xs text-gray-500 font-bold uppercase">Tổng Giao Dịch</p><p className="text-lg font-bold text-gray-800">{formatCurrency(bannerStats.bannerStats?.totalTraded || bannerStats.totalTraded)}</p></div>
+          <div className="bg-green-50 p-3 rounded-xl border border-green-100"><p className="text-xs text-green-600 font-bold uppercase">Đã Thanh Toán</p><p className="text-lg font-bold text-green-700">{formatCurrency(bannerStats.totalPaid)}</p></div>
+          <div className="bg-orange-50 p-3 rounded-xl border border-orange-100"><p className="text-xs text-orange-600 font-bold uppercase">Số Dư Còn Lại</p><p className="text-lg font-bold text-orange-700">{formatCurrency(bannerStats.balance)}</p></div>
+        </div>
+        <div className="flex items-center gap-2 bg-gray-50 p-2 rounded-xl border shrink-0">
+          <select value={filterMonth} onChange={e=>setFilterMonth(e.target.value)} className="bg-transparent text-sm font-medium outline-none"><option value="ALL">Cả năm</option>{Array.from({length: 12}, (_, i) => <option key={i+1} value={i+1}>Tháng {i+1}</option>)}</select>
+          <div className="w-px h-4 bg-gray-300"></div>
+          <select value={filterYear} onChange={e=>setFilterYear(e.target.value)} className="bg-transparent text-sm font-medium outline-none">{Array.from({length: 5}, (_, i) => new Date().getFullYear() - i).map(y => <option key={y} value={y}>Năm {y}</option>)}</select>
+        </div>
+      </div>
+
+      {selectedIds.length > 0 && (
+        <div className="bg-red-50 border border-red-200 p-2.5 rounded-xl mb-3 flex justify-between items-center">
+          <span className="text-xs font-bold text-red-700">Đã chọn {selectedIds.length} mục</span>
+          <button onClick={handleBatchDelete} className="bg-red-600 hover:bg-red-700 text-white px-3 py-1 rounded-lg text-xs font-bold flex items-center gap-1"><Trash2 size={14}/> Xóa đã chọn</button>
+        </div>
+      )}
+
       <div className="flex-1 bg-white rounded-xl border shadow-sm overflow-auto">
         <table className="w-full text-left text-sm">
           <thead className="bg-gray-100 sticky top-0 border-b">
             <tr>
+              <th className="p-4 w-10"><input type="checkbox" onChange={toggleSelectAll} checked={data.length > 0 && selectedIds.length === data.length} className="w-4 h-4"/></th>
               <th className="p-4 font-bold text-gray-600">Tên {title}</th>
               <th className="p-4 font-bold text-gray-600">SĐT</th>
-              <th className="p-4 font-bold text-gray-600 cursor-pointer hover:bg-gray-200 flex items-center gap-1 select-none" onClick={toggleSort}>
+              <th className="p-4 font-bold text-gray-600 cursor-pointer hover:bg-gray-200 flex items-center gap-1 select-none" onClick={()=>setSortOrder(p=>p==='none'?'desc':p==='desc'?'asc':'none')}>
                 Tổng Nợ {sortOrder !== 'none' && <ArrowUpDown size={14} className={sortOrder==='desc'?'text-red-500':'text-green-500'} />}
               </th>
-              <th className="p-4 font-bold text-gray-600 text-right">Sửa</th>
+              <th className="p-4 font-bold text-gray-600 text-right">Thao tác</th>
             </tr>
           </thead>
           <tbody>{sortedData.map(i => (
             <tr key={i.id} className="border-b hover:bg-gray-50">
+              <td className="p-4"><input type="checkbox" checked={selectedIds.includes(i.id)} onChange={()=>setSelectedIds(prev=>prev.includes(i.id)?prev.filter(x=>x!==i.id):[...prev, i.id])} className="w-4 h-4"/></td>
               <td className="p-4 font-medium text-gray-900">{i.name}</td>
               <td className="p-4 text-gray-600">{i.phone}</td>
               <td className={`p-4 font-bold ${i.totalDebt > 0 ? (isCus?'text-red-600':'text-orange-600') : 'text-gray-400'}`}>{formatCurrency(i.totalDebt)}</td>
-              <td className="p-4 text-right"><button onClick={() => {setForm(i);setIsModalOpen(true);}} className="text-blue-600 bg-blue-50 p-2 rounded-lg"><Edit size={16}/></button></td>
+              <td className="p-4 text-right flex justify-end gap-1">
+                <button onClick={() => {setForm(i);setIsModalOpen(true);}} className="text-blue-600 bg-blue-50 p-2 rounded-lg hover:bg-blue-100"><Edit size={16}/></button>
+                <button onClick={() => handleDelete(i.id)} className="text-red-600 bg-red-50 p-2 rounded-lg hover:bg-red-100"><Trash2 size={16}/></button>
+              </td>
             </tr>
           ))}</tbody>
         </table>
       </div>
+
       <Modal isOpen={isModalOpen} onClose={() => setIsModalOpen(false)} title={form.id ? `Cập nhật ${title}` : `Thêm ${title}`}>
         <form onSubmit={handleSave} className="space-y-4">
           <input required placeholder="Tên *" value={form.name||''} onChange={e=>setForm({...form,name:e.target.value})} className="w-full p-2.5 border rounded-lg outline-none"/>
           <input placeholder="SĐT" value={form.phone||''} onChange={e=>setForm({...form,phone:e.target.value})} className="w-full p-2.5 border rounded-lg outline-none"/>
           <input placeholder="Địa chỉ" value={form.address||''} onChange={e=>setForm({...form,address:e.target.value})} className="w-full p-2.5 border rounded-lg outline-none"/>
           <div>
-            <label className="text-xs font-bold text-gray-500">Nợ hiện tại (sửa thủ công nếu cần)</label>
+            <label className="text-xs font-bold text-gray-500">Nợ hiện tại</label>
             <input type="number" placeholder="Nợ hiện tại" value={form.totalDebt||0} onChange={e=>setForm({...form,totalDebt:e.target.value})} className={`w-full p-2.5 border rounded-lg outline-none font-bold ${isCus?'text-red-600':'text-orange-600'}`}/>
           </div>
           <button className="w-full bg-blue-600 text-white font-bold p-3 rounded-lg">Lưu thông tin</button>
         </form>
       </Modal>
+    </div>
+  );
+}
+
+function InventoryView({ products, db, storeId, showToast }) {
+  const [isModalOpen, setIsModalOpen] = useState(false); 
+  const [form, setForm] = useState({});
+  const [selectedIds, setSelectedIds] = useState([]);
+
+  const handleSave = async (e) => { 
+    e.preventDefault(); 
+    try { 
+      const d = { name: form.name, price: Number(form.price), cost: Number(form.cost||0), stock: Number(form.stock) }; 
+      if (form.id) await updateDoc(doc(db, 'stores', storeId, 'products', form.id), d); 
+      else await addDoc(collection(db, 'stores', storeId, 'products'), d); 
+      setIsModalOpen(false); showToast("Đã lưu Hàng hóa"); 
+    } catch (e) { showToast("Lỗi", "error"); } 
+  };
+
+  const handleDelete = async (id) => {
+    if(window.confirm("Xác nhận xóa sản phẩm này?")) {
+      await deleteDoc(doc(db, 'stores', storeId, 'products', id));
+      showToast("Đã xóa sản phẩm");
+    }
+  };
+
+  const handleBatchDelete = async () => {
+    if(selectedIds.length === 0) return;
+    if(window.confirm(`Xác nhận xóa ${selectedIds.length} sản phẩm đã chọn?`)) {
+      let batch = writeBatch(db);
+      selectedIds.forEach(id => batch.delete(doc(db, 'stores', storeId, 'products', id)));
+      await batch.commit();
+      setSelectedIds([]);
+      showToast("Đã xóa các sản phẩm đã chọn");
+    }
+  };
+
+  const bannerStats = useMemo(() => {
+    const totalStock = products.reduce((s, p) => s + (Number(p.stock) || 0), 0);
+    const totalValue = products.reduce((s, p) => s + (Number(p.price) * (Number(p.stock) || 0)), 0);
+    return { totalStock, totalValue, count: products.length };
+  }, [products]);
+
+  return (
+    <div className="flex-1 flex flex-col p-4 md:p-6 bg-gray-50 overflow-hidden h-full">
+      <div className="flex justify-between items-center mb-4">
+        <h2 className="text-2xl font-bold text-gray-800">Kho Hàng</h2>
+        <button onClick={() => {setForm({}); setIsModalOpen(true);}} className="bg-blue-600 text-white px-4 py-2 rounded-lg font-bold flex items-center gap-2"><Plus size={18}/> Thêm mới</button>
+      </div>
+
+      {/* BANNER TỔNG QUAN KHO */}
+      <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 mb-4">
+        <div className="bg-white p-4 rounded-2xl border shadow-sm"><p className="text-xs text-gray-500 font-bold uppercase">Tổng Số Sản Phẩm</p><p className="text-xl font-bold text-gray-800">{bannerStats.count}</p></div>
+        <div className="bg-white p-4 rounded-2xl border shadow-sm"><p className="text-xs text-blue-600 font-bold uppercase">Tổng Tồn Kho</p><p className="text-xl font-bold text-blue-600">{bannerStats.totalStock}</p></div>
+        <div className="bg-white p-4 rounded-2xl border shadow-sm"><p className="text-xs text-green-600 font-bold uppercase">Tổng Giá Trị Kho</p><p className="text-xl font-bold text-green-600">{formatCurrency(bannerStats.totalValue)}</p></div>
+      </div>
+
+      {selectedIds.length > 0 && (
+        <div className="bg-red-50 border border-red-200 p-2.5 rounded-xl mb-3 flex justify-between items-center">
+          <span className="text-xs font-bold text-red-700">Đã chọn {selectedIds.length} mục</span>
+          <button onClick={handleBatchDelete} className="bg-red-600 hover:bg-red-700 text-white px-3 py-1 rounded-lg text-xs font-bold flex items-center gap-1"><Trash2 size={14}/> Xóa đã chọn</button>
+        </div>
+      )}
+
+      <div className="flex-1 bg-white rounded-xl border shadow-sm overflow-auto">
+        <table className="w-full text-left text-sm">
+          <thead className="bg-gray-100 sticky top-0 border-b">
+            <tr>
+              <th className="p-4 w-10"><input type="checkbox" onChange={()=>setSelectedIds(selectedIds.length === products.length ? [] : products.map(p=>p.id))} checked={products.length > 0 && selectedIds.length === products.length} className="w-4 h-4"/></th>
+              <th className="p-4 font-bold text-gray-600">Sản phẩm</th>
+              <th className="p-4 font-bold text-gray-600">Giá vốn</th>
+              <th className="p-4 font-bold text-gray-600">Giá bán</th>
+              <th className="p-4 font-bold text-gray-600">Tồn</th>
+              <th className="p-4 font-bold text-gray-600 text-right">Thao tác</th>
+            </tr>
+          </thead>
+          <tbody>{products.map(p => (
+            <tr key={p.id} className="border-b hover:bg-gray-50">
+              <td className="p-4"><input type="checkbox" checked={selectedIds.includes(p.id)} onChange={()=>setSelectedIds(prev=>prev.includes(p.id)?prev.filter(x=>x!==p.id):[...prev, p.id])} className="w-4 h-4"/></td>
+              <td className="p-4 font-medium text-gray-900">{p.name}</td>
+              <td className="p-4 text-gray-600">{formatCurrency(p.cost)}</td>
+              <td className="p-4 font-bold text-blue-600">{formatCurrency(p.price)}</td>
+              <td className="p-4 font-bold text-gray-800">{p.stock}</td>
+              <td className="p-4 text-right flex justify-end gap-1">
+                <button onClick={() => {setForm(p); setIsModalOpen(true);}} className="text-blue-600 bg-blue-50 p-2 rounded-lg hover:bg-blue-100"><Edit size={16}/></button>
+                <button onClick={() => handleDelete(p.id)} className="text-red-600 bg-red-50 p-2 rounded-lg hover:bg-red-100"><Trash2 size={16}/></button>
+              </td>
+            </tr>
+          ))}</tbody>
+        </table>
+      </div>
+
+      <Modal isOpen={isModalOpen} onClose={() => setIsModalOpen(false)} title="Thông tin Hàng hóa">
+        <form onSubmit={handleSave} className="space-y-4">
+          <input required placeholder="Tên sản phẩm *" value={form.name||''} onChange={e=>setForm({...form,name:e.target.value})} className="w-full p-2.5 border rounded-lg outline-none"/>
+          <div className="grid grid-cols-2 gap-4">
+            <input required type="number" placeholder="Giá vốn *" value={form.cost||''} onChange={e=>setForm({...form,cost:e.target.value})} className="p-2.5 border rounded-lg outline-none"/>
+            <input required type="number" placeholder="Giá bán *" value={form.price||''} onChange={e=>setForm({...form,price:e.target.value})} className="p-2.5 border rounded-lg outline-none"/>
+          </div>
+          <input required type="number" placeholder="Tồn kho *" value={form.stock||''} onChange={e=>setForm({...form,stock:e.target.value})} className="w-full p-2.5 border rounded-lg outline-none"/>
+          <button className="w-full bg-blue-600 text-white font-bold p-3 rounded-lg">Lưu lại</button>
+        </form>
+      </Modal>
+    </div>
+  );
+}
+
+function ExpenseView({ expenses, db, storeId, showToast }) {
+  const [form, setForm] = useState({ amount: '', note: '' });
+  const [selectedIds, setSelectedIds] = useState([]);
+  
+  const currentDate = new Date();
+  const [filterMonth, setFilterMonth] = useState((currentDate.getMonth() + 1).toString());
+  const [filterYear, setFilterYear] = useState(currentDate.getFullYear().toString());
+
+  const handleSave = async (e) => { 
+    e.preventDefault(); 
+    await addDoc(collection(db, 'stores', storeId, 'expenses'), { amount: Number(form.amount), note: form.note, date: new Date().toISOString() }); 
+    setForm({amount:'',note:''}); 
+    showToast("Đã thêm chi phí"); 
+  };
+
+  const handleDelete = async (id) => {
+    if(window.confirm("Xác nhận xóa chi phí này?")) {
+      await deleteDoc(doc(db, 'stores', storeId, 'expenses', id));
+      showToast("Đã xóa chi phí");
+    }
+  };
+
+  const handleBatchDelete = async () => {
+    if(selectedIds.length === 0) return;
+    if(window.confirm(`Xác nhận xóa ${selectedIds.length} mục đã chọn?`)) {
+      let batch = writeBatch(db);
+      selectedIds.forEach(id => batch.delete(doc(db, 'stores', storeId, 'expenses', id)));
+      await batch.commit();
+      setSelectedIds([]);
+      showToast("Đã xóa các chi phí đã chọn");
+    }
+  };
+
+  const filteredExpenses = useMemo(() => {
+    return expenses.filter(e => {
+      const d = new Date(e.date);
+      return (filterMonth === 'ALL' || (d.getMonth() + 1).toString() === filterMonth) && d.getFullYear().toString() === filterYear;
+    }).sort((a,b)=>new Date(b.date)-new Date(a.date));
+  }, [expenses, filterMonth, filterYear]);
+
+  const totalExpense = useMemo(() => {
+    return filteredExpenses.reduce((s, e) => s + (Number(e.amount) || 0), 0);
+  }, [filteredExpenses]);
+
+  return (
+    <div className="flex-1 p-4 md:p-6 bg-gray-50 overflow-auto h-full flex flex-col">
+      <h2 className="text-2xl font-bold mb-4 text-gray-800">Quản lý Chi phí</h2>
+      
+      {/* BANNER TỔNG CHI PHÍ & BỘ LỌC */}
+      <div className="bg-white p-4 rounded-2xl border shadow-sm mb-4 flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
+        <div><p className="text-xs text-orange-600 font-bold uppercase">Tổng Chi Phí Kỳ Này</p><p className="text-2xl font-bold text-orange-700">{formatCurrency(totalExpense)}</p></div>
+        <div className="flex items-center gap-2 bg-gray-50 p-2 rounded-xl border">
+          <select value={filterMonth} onChange={e=>setFilterMonth(e.target.value)} className="bg-transparent text-sm font-medium outline-none"><option value="ALL">Cả năm</option>{Array.from({length: 12}, (_, i) => <option key={i+1} value={i+1}>Tháng {i+1}</option>)}</select>
+          <div className="w-px h-4 bg-gray-300"></div>
+          <select value={filterYear} onChange={e=>setFilterYear(e.target.value)} className="bg-transparent text-sm font-medium outline-none">{Array.from({length: 5}, (_, i) => new Date().getFullYear() - i).map(y => <option key={y} value={y}>Năm {y}</option>)}</select>
+        </div>
+      </div>
+
+      <form onSubmit={handleSave} className="bg-white p-4 rounded-xl border shadow-sm mb-4 flex flex-col md:flex-row gap-4 shrink-0">
+        <input required type="number" placeholder="Số tiền chi *" value={form.amount} onChange={e=>setForm({...form,amount:e.target.value})} className="p-2.5 border rounded-lg outline-none flex-1"/>
+        <input required placeholder="Nội dung chi (VD: Trả tiền điện) *" value={form.note} onChange={e=>setForm({...form,note:e.target.value})} className="p-2.5 border rounded-lg outline-none flex-1 md:flex-[2]"/>
+        <button className="bg-orange-600 text-white px-8 rounded-lg font-bold py-2.5">Ghi Nhận</button>
+      </form>
+
+      {selectedIds.length > 0 && (
+        <div className="bg-red-50 border border-red-200 p-2.5 rounded-xl mb-3 flex justify-between items-center">
+          <span className="text-xs font-bold text-red-700">Đã chọn {selectedIds.length} mục</span>
+          <button onClick={handleBatchDelete} className="bg-red-600 hover:bg-red-700 text-white px-3 py-1 rounded-lg text-xs font-bold flex items-center gap-1"><Trash2 size={14}/> Xóa đã chọn</button>
+        </div>
+      )}
+
+      <div className="bg-white rounded-xl border shadow-sm flex-1 overflow-auto">
+        <table className="w-full text-left text-sm">
+          <thead className="bg-gray-100 sticky top-0 border-b">
+            <tr>
+              <th className="p-4 w-10"><input type="checkbox" onChange={()=>setSelectedIds(selectedIds.length === filteredExpenses.length ? [] : filteredExpenses.map(e=>e.id))} checked={filteredExpenses.length > 0 && selectedIds.length === filteredExpenses.length} className="w-4 h-4"/></th>
+              <th className="p-4 font-bold text-gray-600">Thời gian</th>
+              <th className="p-4 font-bold text-gray-600">Nội dung</th>
+              <th className="p-4 font-bold text-gray-600">Số tiền</th>
+              <th className="p-4 font-bold text-gray-600 text-right">Xóa</th>
+            </tr>
+          </thead>
+          <tbody>{filteredExpenses.map(e => (
+            <tr key={e.id} className="border-b hover:bg-gray-50">
+              <td className="p-4"><input type="checkbox" checked={selectedIds.includes(e.id)} onChange={()=>setSelectedIds(prev=>prev.includes(e.id)?prev.filter(x=>x!==e.id):[...prev, e.id])} className="w-4 h-4"/></td>
+              <td className="p-4 text-gray-500">{formatDate(e.date)}</td>
+              <td className="p-4 font-medium">{e.note}</td>
+              <td className="p-4 font-bold text-orange-600">{formatCurrency(e.amount)}</td>
+              <td className="p-4 text-right"><button onClick={()=>handleDelete(e.id)} className="text-red-500 bg-red-50 p-2 rounded-lg hover:bg-red-100"><Trash2 size={16}/></button></td>
+            </tr>
+          ))}</tbody>
+        </table>
+      </div>
     </div>
   );
 }
@@ -767,17 +999,6 @@ function POSView({ products, customers, db, storeId, user, storeConfig, showToas
   );
 }
 
-function InventoryView({ products, db, storeId, showToast }) {
-  const [isModalOpen, setIsModalOpen] = useState(false); const [form, setForm] = useState({});
-  const handleSave = async (e) => { e.preventDefault(); try { const d = { name: form.name, price: Number(form.price), cost: Number(form.cost||0), stock: Number(form.stock) }; if (form.id) await updateDoc(doc(db, 'stores', storeId, 'products', form.id), d); else await addDoc(collection(db, 'stores', storeId, 'products'), d); setIsModalOpen(false); showToast("Đã lưu Hàng hóa"); } catch (e) { showToast("Lỗi", "error"); } };
-  return (
-    <div className="flex-1 flex flex-col p-4 md:p-6 bg-gray-50 overflow-hidden"><div className="flex justify-between mb-4"><h2 className="text-2xl font-bold text-gray-800">Kho Hàng</h2><button onClick={() => {setForm({}); setIsModalOpen(true);}} className="bg-blue-600 text-white px-4 py-2 rounded-lg font-bold flex items-center gap-2"><Plus size={18}/> Thêm mới</button></div>
-      <div className="flex-1 bg-white rounded-xl border shadow-sm overflow-auto"><table className="w-full text-left text-sm"><thead className="bg-gray-100 sticky top-0 border-b"><tr><th className="p-4 font-bold text-gray-600">Sản phẩm</th><th className="p-4 font-bold text-gray-600">Giá vốn</th><th className="p-4 font-bold text-gray-600">Giá bán</th><th className="p-4 font-bold text-gray-600">Tồn</th><th className="p-4 font-bold text-gray-600 text-right">Sửa</th></tr></thead><tbody>{products.map(p => (<tr key={p.id} className="border-b hover:bg-gray-50"><td className="p-4 font-medium text-gray-900">{p.name}</td><td className="p-4 text-gray-600">{formatCurrency(p.cost)}</td><td className="p-4 font-bold text-blue-600">{formatCurrency(p.price)}</td><td className="p-4 font-bold text-gray-800">{p.stock}</td><td className="p-4 text-right"><button onClick={() => {setForm(p); setIsModalOpen(true);}} className="text-blue-600 bg-blue-50 p-2 rounded-lg"><Edit size={16}/></button></td></tr>))}</tbody></table></div>
-      <Modal isOpen={isModalOpen} onClose={() => setIsModalOpen(false)} title="Thông tin Hàng hóa"><form onSubmit={handleSave} className="space-y-4"><input required placeholder="Tên sản phẩm *" value={form.name||''} onChange={e=>setForm({...form,name:e.target.value})} className="w-full p-2.5 border rounded-lg outline-none"/><div className="grid grid-cols-2 gap-4"><input required type="number" placeholder="Giá vốn *" value={form.cost||''} onChange={e=>setForm({...form,cost:e.target.value})} className="p-2.5 border rounded-lg outline-none"/><input required type="number" placeholder="Giá bán *" value={form.price||''} onChange={e=>setForm({...form,price:e.target.value})} className="p-2.5 border rounded-lg outline-none"/></div><input required type="number" placeholder="Tồn kho *" value={form.stock||''} onChange={e=>setForm({...form,stock:e.target.value})} className="w-full p-2.5 border rounded-lg outline-none"/><button className="w-full bg-blue-600 text-white font-bold p-3 rounded-lg">Lưu lại</button></form></Modal>
-    </div>
-  );
-}
-
 function ImportView({ products, suppliers, db, storeId, user, showToast }) {
   const [cart, setCart] = useState([]);
   const [supplierId, setSupplierId] = useState('');
@@ -811,17 +1032,6 @@ function ImportView({ products, suppliers, db, storeId, user, showToast }) {
           <button onClick={handleImport} disabled={!supplierId || cart.length===0} className="w-full bg-gray-800 disabled:bg-gray-300 text-white py-3.5 rounded-xl font-bold mt-2 shadow-sm">Hoàn tất Nhập Hàng</button>
         </div>
       </div>
-    </div>
-  );
-}
-
-function ExpenseView({ expenses, db, storeId, showToast }) {
-  const [form, setForm] = useState({ amount: '', note: '' });
-  const handleSave = async (e) => { e.preventDefault(); await addDoc(collection(db, 'stores', storeId, 'expenses'), { amount: Number(form.amount), note: form.note, date: new Date().toISOString() }); setForm({amount:'',note:''}); showToast("Đã thêm chi phí"); };
-  return (
-    <div className="flex-1 p-4 md:p-6 bg-gray-50 overflow-auto h-full flex flex-col"><h2 className="text-2xl font-bold mb-6 text-gray-800">Quản lý Chi phí</h2>
-      <form onSubmit={handleSave} className="bg-white p-4 rounded-xl border shadow-sm mb-6 flex flex-col md:flex-row gap-4 shrink-0"><input required type="number" placeholder="Số tiền chi *" value={form.amount} onChange={e=>setForm({...form,amount:e.target.value})} className="p-2.5 border rounded-lg outline-none flex-1"/><input required placeholder="Nội dung chi (VD: Trả tiền điện) *" value={form.note} onChange={e=>setForm({...form,note:e.target.value})} className="p-2.5 border rounded-lg outline-none flex-1 md:flex-[2]"/><button className="bg-orange-600 text-white px-8 rounded-lg font-bold py-2.5">Ghi Nhận</button></form>
-      <div className="bg-white rounded-xl border shadow-sm flex-1 overflow-auto"><table className="w-full text-left text-sm"><thead className="bg-gray-100 sticky top-0 border-b"><tr><th className="p-4 font-bold text-gray-600">Thời gian</th><th className="p-4 font-bold text-gray-600">Nội dung</th><th className="p-4 font-bold text-gray-600">Số tiền</th><th className="p-4 font-bold text-gray-600 text-right">Xóa</th></tr></thead><tbody>{expenses.sort((a,b)=>new Date(b.date)-new Date(a.date)).map(e => (<tr key={e.id} className="border-b hover:bg-gray-50"><td className="p-4 text-gray-500">{formatDate(e.date)}</td><td className="p-4 font-medium">{e.note}</td><td className="p-4 font-bold text-orange-600">{formatCurrency(e.amount)}</td><td className="p-4 text-right"><button onClick={()=>deleteDoc(doc(db,'stores',storeId,'expenses',e.id))} className="text-red-500 bg-red-50 p-2 rounded-lg"><Trash2 size={16}/></button></td></tr>))}</tbody></table></div>
     </div>
   );
 }
