@@ -272,11 +272,9 @@ function DashboardView({ orders, imports, expenses, customers, suppliers, showTo
   const [filterMonth, setFilterMonth] = useState((currentDate.getMonth() + 1).toString());
   const [filterYear, setFilterYear] = useState(currentDate.getFullYear().toString());
 
-  // Trạng thái sắp xếp cho bảng Nhắc nợ Khách hàng và Nhà cung cấp
-  const [custSortOrder, setCustSortOrder] = useState('desc'); // 'desc' (lâu nhất/nhiều nhất trước), 'asc' (ngược lại)
+  const [custSortOrder, setCustSortOrder] = useState('desc');
   const [suppSortOrder, setSuppSortOrder] = useState('desc');
   
-  // Trạng thái Xem thêm / Thu gọn cho 10 dòng đầu
   const [showAllCust, setShowAllCust] = useState(false);
   const [showAllSupp, setShowAllSupp] = useState(false);
 
@@ -290,7 +288,6 @@ function DashboardView({ orders, imports, expenses, customers, suppliers, showTo
     const totalExp = fExpenses.reduce((s, e) => s + (Number(e.amount) || 0), 0);
     const netProfit = totalRev - totalCost - totalExp;
     
-    // Lọc và sắp xếp công nợ khách hàng (ưu tiên thời gian lâu nhất / nợ nhiều nhất)
     const filteredCustDebt = (customers || []).filter(c => {
       if (!c.createdAt) return filterMonth === 'ALL';
       const d = new Date(c.createdAt);
@@ -298,7 +295,6 @@ function DashboardView({ orders, imports, expenses, customers, suppliers, showTo
     }).sort((a, b) => {
       const timeA = new Date(a.createdAt || 0);
       const timeB = new Date(b.createdAt || 0);
-      // Mặc định desc: ngày cũ hơn (thời gian nợ lâu hơn) lên trước
       if (custSortOrder === 'desc') {
         return timeA - timeB; 
       } else {
@@ -306,7 +302,6 @@ function DashboardView({ orders, imports, expenses, customers, suppliers, showTo
       }
     });
 
-    // Lọc và sắp xếp công nợ nhà cung cấp
     const filteredSuppDebt = (suppliers || []).filter(s => {
       if (!s.createdAt) return filterMonth === 'ALL';
       const d = new Date(s.createdAt);
@@ -376,9 +371,7 @@ function DashboardView({ orders, imports, expenses, customers, suppliers, showTo
         </div>
       </div>
 
-      {/* 2 PHẦN NHẮC NỢ RIÊNG BIỆT: KHÁCH HÀNG & NHÀ CUNG CẤP (10 DÒNG + XEM THÊM + SẮP XẾP TĂNG/GIẢM) */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-        {/* KHÁCH HÀNG */}
         <div className="bg-white p-5 rounded-2xl shadow-sm border border-gray-200 flex flex-col">
           <div className="flex justify-between items-center mb-3">
             <h3 className="font-bold text-gray-800 flex items-center gap-2 text-blue-600">
@@ -387,7 +380,6 @@ function DashboardView({ orders, imports, expenses, customers, suppliers, showTo
             <button 
               onClick={() => setCustSortOrder(prev => prev === 'desc' ? 'asc' : 'desc')} 
               className="text-xs bg-gray-100 hover:bg-gray-200 text-gray-700 px-2.5 py-1 rounded-lg font-medium flex items-center gap-1 transition"
-              title="Đổi chiều sắp xếp thời gian nợ"
             >
               <ArrowUpDown size={12}/> {custSortOrder === 'desc' ? 'Lâu nhất trước' : 'Gần nhất trước'}
             </button>
@@ -424,7 +416,6 @@ function DashboardView({ orders, imports, expenses, customers, suppliers, showTo
           )}
         </div>
 
-        {/* NHÀ CUNG CẤP */}
         <div className="bg-white p-5 rounded-2xl shadow-sm border border-gray-200 flex flex-col">
           <div className="flex justify-between items-center mb-3">
             <h3 className="font-bold text-gray-800 flex items-center gap-2 text-orange-600">
@@ -433,7 +424,6 @@ function DashboardView({ orders, imports, expenses, customers, suppliers, showTo
             <button 
               onClick={() => setSuppSortOrder(prev => prev === 'desc' ? 'asc' : 'desc')} 
               className="text-xs bg-gray-100 hover:bg-gray-200 text-gray-700 px-2.5 py-1 rounded-lg font-medium flex items-center gap-1 transition"
-              title="Đổi chiều sắp xếp thời gian nợ"
             >
               <ArrowUpDown size={12}/> {suppSortOrder === 'desc' ? 'Lâu nhất trước' : 'Gần nhất trước'}
             </button>
@@ -550,9 +540,6 @@ function DashboardView({ orders, imports, expenses, customers, suppliers, showTo
   );
 }
 
-// ==========================================
-// QUẢN LÝ BÁN HÀNG (HÓA ĐƠN CHI TIẾT KIOTVIET)
-// ==========================================
 function SalesHistoryView({ orders, products, db, storeId, showToast }) {
   const currentDate = new Date();
   const [filterType, setFilterType] = useState('day'); 
@@ -1248,7 +1235,6 @@ function InventoryView({ products, orders, imports, db, storeId, showToast }) {
   const [selectedIds, setSelectedIds] = useState([]);
   const [searchTerm, setSearchTerm] = useState('');
   
-  // Trạng thái sắp xếp cho Kho hàng
   const [sortConfig, setSortConfig] = useState({ field: null, direction: 'none' });
 
   const [detailProduct, setDetailProduct] = useState(null);
@@ -1490,7 +1476,7 @@ function ExpenseView({ expenses, db, storeId, showToast }) {
   };
 
   const handleDelete = async (id) => { if (window.confirm("Xác nhận xóa chi phí này?")) { await deleteDoc(doc(db, 'stores', storeId, 'expenses', id)); showToast("Đã xóa chi phí"); } };
-  const handleBatchDelete = async () => { if (selectedIds.length === 0) return; const confirmMsg = "Xác nhận xóa " + selectedIds.length + " mục đã chọn?"; if (window.confirm(confirmMsg)) { let batch = writeBatch(db); selectedIds.setSelectedIds(id => batch.delete(doc(db, 'stores', storeId, 'expenses', id))); await batch.commit(); setSelectedIds([]); showToast("Đã xóa các chi phí đã chọn"); } };
+  const handleBatchDelete = async () => { if (selectedIds.length === 0) return; const confirmMsg = "Xác nhận xóa " + selectedIds.length + " mục đã chọn?"; if (window.confirm(confirmMsg)) { let batch = writeBatch(db); selectedIds.forEach(id => batch.delete(doc(db, 'stores', storeId, 'expenses', id))); await batch.commit(); setSelectedIds([]); showToast("Đã xóa các chi phí đã chọn"); } };
 
   const filteredExpenses = useMemo(() => {
     return expenses.filter(e => {
@@ -1539,7 +1525,7 @@ function ExpenseView({ expenses, db, storeId, showToast }) {
           <tbody>
             {filteredExpenses.map(e => (
               <tr key={e.id} className="border-b hover:bg-gray-50 cursor-pointer" onClick={() => setDetailExpense(e)}>
-                <td className="p-4" onClick={evt=>evt.stopPropagation()}><input type="checkbox" checked={selectedIds.includes(e.id)} onChange={() => setSelectedIds(prev => prev.includes(e.id) ? prev.filter(x=>x!==e.id) : [...prev, e.id]} className="w-4 h-4"/></td>
+                <td className="p-4" onClick={evt=>evt.stopPropagation()}><input type="checkbox" checked={selectedIds.includes(e.id)} onChange={() => setSelectedIds(prev => prev.includes(e.id) ? prev.filter(x=>x!==e.id) : [...prev, e.id])} className="w-4 h-4"/></td>
                 <td className="p-4 text-gray-500">{formatDate(e.date)}</td><td className="p-4 font-medium text-blue-600 underline">{e.note}</td><td className="p-4 font-bold text-orange-600">{formatCurrency(e.amount)}</td>
                 <td className="p-4 text-right" onClick={evt=>evt.stopPropagation()}><button onClick={() => handleDelete(e.id)} className="text-red-500 bg-red-50 p-2 rounded-lg hover:bg-red-100"><Trash2 size={16}/></button></td>
               </tr>
