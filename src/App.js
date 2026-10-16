@@ -253,7 +253,7 @@ export default function EnhancedPOS() {
           
           {activeTab === 'dashboard' && <DashboardView orders={orders} imports={imports} expenses={expenses} customers={customers} suppliers={suppliers} showToast={showToast} />}
           {activeTab === 'pos' && <POSView products={products} customers={customers} db={db} storeId={storeId} user={user} storeConfig={storeConfig} showToast={showToast} />}
-          {activeTab === 'sales_history' && <SalesHistoryView orders={orders} products={products} db={db} storeId={storeId} showToast={showToast} />}
+          {activeTab === 'sales_history' && <SalesHistoryView orders={orders} products={products} storeConfig={storeConfig} db={db} storeId={storeId} showToast={showToast} />}
           {activeTab === 'imports' && <ImportView products={products} suppliers={suppliers} db={db} storeId={storeId} user={user} showToast={showToast} />}
           {activeTab === 'products' && <InventoryView products={products} orders={orders} imports={imports} db={db} storeId={storeId} showToast={showToast} />}
           {activeTab === 'customers' && <ContactManager type="customers" data={customers} orders={orders} db={db} storeId={storeId} showToast={showToast} />}
@@ -540,7 +540,7 @@ function DashboardView({ orders, imports, expenses, customers, suppliers, showTo
   );
 }
 
-function SalesHistoryView({ orders, products, db, storeId, showToast }) {
+function SalesHistoryView({ orders, products, storeConfig, db, storeId, showToast }) {
   const currentDate = new Date();
   const [filterType, setFilterType] = useState('day'); 
   const [selectedDate, setSelectedDate] = useState(currentDate.toISOString().split('T')[0]);
@@ -549,6 +549,18 @@ function SalesHistoryView({ orders, products, db, storeId, showToast }) {
   const [searchTerm, setSearchTerm] = useState('');
   
   const [editingOrder, setEditingOrder] = useState(null);
+  const [viewingOrderPrint, setViewingOrderPrint] = useState(null);
+  const [printType, setPrintType] = useState('bill');
+
+  useEffect(() => {
+    const handleKeyDown = (e) => {
+      if (e.key === 'Escape') {
+        setViewingOrderPrint(null);
+      }
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, []);
 
   const filteredOrders = useMemo(() => {
     return (orders || []).filter(o => {
@@ -625,7 +637,7 @@ function SalesHistoryView({ orders, products, db, storeId, showToast }) {
       <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center mb-4 gap-3">
         <div>
           <h2 className="text-2xl font-bold text-gray-800 flex items-center gap-2"><Receipt className="text-blue-600"/> Quản lý Bán Hàng</h2>
-          <p className="text-xs text-gray-500 mt-0.5">Theo dõi chi tiết giá nhập, giá bán, tiền lãi và thao tác hóa đơn chuẩn KiotViet</p>
+          <p className="text-xs text-gray-500 mt-0.5">Theo dõi chi tiết giá nhập, giá bán, tiền lãi, bảo hành, ghi chú và in ấn chuẩn KiotViet</p>
         </div>
         <div className="relative w-full sm:w-64">
           <Search size={16} className="absolute left-3 top-3 text-gray-400"/>
@@ -676,7 +688,7 @@ function SalesHistoryView({ orders, products, db, storeId, showToast }) {
             <tr>
               <th className="p-3">Mã HĐ / Thời gian</th>
               <th className="p-3">Khách hàng</th>
-              <th className="p-3">Chi tiết hàng bán (SL / Giá vốn / Giá bán)</th>
+              <th className="p-3">Chi tiết hàng bán & Bảo hành / Ghi chú</th>
               <th className="p-3">Tổng Tiền</th>
               <th className="p-3">Tiền Lãi</th>
               <th className="p-3">Trạng thái</th>
@@ -703,12 +715,19 @@ function SalesHistoryView({ orders, products, db, storeId, showToast }) {
                     <div className="space-y-1">
                       {o.items?.map((it, idx) => {
                         const itemQty = Number(it.quantity || 1);
-                        const itemCost = Number(it.cost || 0);
                         const itemPrice = Number(it.price || 0);
                         return (
-                          <div key={idx} className="text-xs bg-gray-50 p-1.5 rounded border border-gray-100 flex justify-between items-center gap-2">
-                            <span className="font-semibold text-gray-700">{it.name} (x{itemQty})</span>
-                            <span className="text-gray-500 font-mono">Vốn: {formatCurrency(itemCost)} | Bán: {formatCurrency(itemPrice)}</span>
+                          <div key={idx} className="text-xs bg-gray-50 p-2 rounded border border-gray-100 flex flex-col gap-0.5">
+                            <div className="flex justify-between items-center">
+                              <span className="font-bold text-gray-700">{it.name} (x{itemQty})</span>
+                              <span className="text-blue-600 font-mono font-bold">{formatCurrency(itemPrice * itemQty)}</span>
+                            </div>
+                            {(it.warrantyValue || it.note) && (
+                              <div className="text-[11px] text-gray-500 flex gap-3 mt-0.5">
+                                {it.warrantyValue && <span>🛡️ BH: <strong className="text-gray-700">{it.warrantyValue} {it.warrantyUnit}</strong></span>}
+                                {it.note && <span>📝 Ghi chú: <strong className="text-gray-700">{it.note}</strong></span>}
+                              </div>
+                            )}
                           </div>
                         );
                       })}
@@ -723,6 +742,7 @@ function SalesHistoryView({ orders, products, db, storeId, showToast }) {
                   </td>
                   <td className="p-3 text-right">
                     <div className="flex justify-end gap-1">
+                      <button onClick={() => setViewingOrderPrint(o)} title="In lại hóa đơn" className="text-green-600 bg-green-50 p-2 rounded-lg hover:bg-green-100"><Printer size={16}/></button>
                       <button onClick={() => setEditingOrder(o)} title="Chỉnh sửa hóa đơn" className="text-blue-600 bg-blue-50 p-2 rounded-lg hover:bg-blue-100"><Edit size={16}/></button>
                       <button onClick={() => handleDeleteOrder(o)} title="Xóa hóa đơn" className="text-red-600 bg-red-50 p-2 rounded-lg hover:bg-red-100"><Trash2 size={16}/></button>
                     </div>
@@ -757,6 +777,141 @@ function SalesHistoryView({ orders, products, db, storeId, showToast }) {
             </div>
             <button type="submit" className="w-full bg-blue-600 text-white font-bold p-3 rounded-lg text-sm">Lưu Thay Đổi</button>
           </form>
+        )}
+      </Modal>
+
+      <Modal isOpen={!!viewingOrderPrint} onClose={() => setViewingOrderPrint(null)} title="In Lại Hóa Đơn" maxWidth="max-w-2xl" hideHeaderInPrint={true}>
+        {viewingOrderPrint && (
+          <div className="space-y-4">
+            <div className="flex justify-between items-center bg-gray-100 p-3 rounded-lg no-print">
+              <div className="flex items-center gap-3">
+                <span className="text-xs font-bold text-gray-700">Khổ giấy in:</span>
+                <select value={printType} onChange={e => setPrintType(e.target.value)} className="p-1.5 border rounded text-xs bg-white font-medium outline-none">
+                  <option value="bill">Bill nhỏ (K80)</option>
+                  <option value="a4">Giấy A4</option>
+                  <option value="a5">Giấy A5</option>
+                </select>
+              </div>
+              <div className="flex gap-2">
+                <button onClick={() => window.print()} className="bg-blue-600 hover:bg-blue-700 text-white px-4 py-1.5 rounded-lg text-xs font-bold flex items-center gap-1.5 shadow"><Printer size={14}/> In Phiếu</button>
+                <button onClick={() => setViewingOrderPrint(null)} className="bg-gray-200 hover:bg-gray-300 text-gray-700 px-3 py-1.5 rounded-lg text-xs font-bold">Thoát (ESC)</button>
+              </div>
+            </div>
+
+            <div className="p-6 bg-white print-container text-gray-900 font-sans">
+              {printType === 'bill' ? (
+                <div>
+                  <div className="text-center mb-4 border-b pb-3">
+                    {storeConfig?.logo && (<img src={storeConfig.logo} alt="Logo" className="max-h-12 mx-auto mb-1 object-contain grayscale print:grayscale-0" />)}
+                    <h2 className="text-base font-bold">{storeConfig?.name || 'SmartPOS Pro'}</h2>
+                    <p className="text-xs text-gray-600">ĐC: {storeConfig?.address || '...'}</p>
+                    <p className="text-xs text-gray-600">SĐT: {storeConfig?.phone || '...'}</p>
+                    <h1 className="text-sm font-bold mt-2 uppercase tracking-wide">HÓA ĐƠN BÁN HÀNG</h1>
+                    <p className="text-[10px] text-gray-500">Mã: #{viewingOrderPrint.id.slice(0,6).toUpperCase()} | Ngày: {formatDate(viewingOrderPrint.date)}</p>
+                  </div>
+                  <div className="mb-3 text-xs">
+                    <p><strong>Khách hàng:</strong> {viewingOrderPrint.customerName}</p>
+                    {viewingOrderPrint.phone && <p><strong>SĐT:</strong> {viewingOrderPrint.phone}</p>}
+                  </div>
+                  <table className="w-full text-xs mb-4">
+                    <thead className="border-b border-gray-800">
+                      <tr><th className="py-1.5 text-left">Sản phẩm</th><th className="py-1.5 text-center">SL</th><th className="py-1.5 text-right">Thành tiền</th></tr>
+                    </thead>
+                    <tbody>
+                      {viewingOrderPrint.items.map((i, x) => (
+                        <tr key={x} className="border-b border-dashed border-gray-200">
+                          <td className="py-1.5">
+                            <p className="font-bold">{i.name}</p>
+                            {(i.warrantyValue || i.note) && (
+                              <p className="text-[10px] text-gray-500">
+                                {i.warrantyValue ? `BH: ${i.warrantyValue} ${i.warrantyUnit} ` : ''}
+                                {i.note ? `| ${i.note}` : ''}
+                              </p>
+                            )}
+                          </td>
+                          <td className="py-1.5 text-center align-top">{i.quantity}</td>
+                          <td className="py-1.5 text-right align-top font-medium">{formatCurrency(i.price * i.quantity)}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                    <tfoot className="border-t border-gray-800 font-bold">
+                      <tr><td colSpan="2" className="py-2 text-right">TỔNG CỘNG:</td><td className="py-2 text-right text-sm">{formatCurrency(viewingOrderPrint.total)}</td></tr>
+                    </tfoot>
+                  </table>
+                  <div className="text-center text-[10px] text-gray-500 mt-6 pt-2 border-t border-dashed">
+                    <p>Cảm ơn quý khách và hẹn gặp lại!</p>
+                  </div>
+                </div>
+              ) : (
+                <div className={printType === 'a4' ? 'max-w-[210mm] mx-auto p-4' : 'max-w-[148mm] mx-auto p-2'}>
+                  <div className="flex justify-between items-start border-b-2 border-gray-800 pb-4 mb-4">
+                    <div className="flex items-center gap-3">
+                      {storeConfig?.logo && (<img src={storeConfig.logo} alt="Logo" className="max-h-16 object-contain" />)}
+                      <div>
+                        <h2 className="text-lg font-bold">{storeConfig?.name || 'SmartPOS Pro'}</h2>
+                        <p className="text-xs text-gray-600">Địa chỉ: {storeConfig?.address || '...'}</p>
+                        <p className="text-xs text-gray-600">Điện thoại: {storeConfig?.phone || '...'}</p>
+                      </div>
+                    </div>
+                    <div className="text-right">
+                      <h1 className="text-xl font-bold uppercase text-blue-800">PHIẾU BÁN HÀNG</h1>
+                      <p className="text-xs text-gray-500 mt-1">Mã HĐ: #{viewingOrderPrint.id.slice(0,6).toUpperCase()}</p>
+                      <p className="text-xs text-gray-500">Ngày: {formatDate(viewingOrderPrint.date)}</p>
+                    </div>
+                  </div>
+
+                  <div className="grid grid-cols-2 gap-4 bg-gray-50 p-3 rounded-lg border border-gray-200 text-xs mb-4">
+                    <div><span className="text-gray-500">Khách hàng:</span> <strong className="text-gray-800 text-sm">{viewingOrderPrint.customerName}</strong></div>
+                    <div><span className="text-gray-500">Trạng thái:</span> <strong className="text-blue-600">{viewingOrderPrint.status === 'PAID' ? 'Đã thanh toán' : 'Ghi nợ'}</strong></div>
+                  </div>
+
+                  <table className="w-full text-xs mb-6 border-collapse">
+                    <thead>
+                      <tr className="bg-gray-100 border-y-2 border-gray-800">
+                        <th className="py-2.5 px-2 text-left">STT</th>
+                        <th className="py-2.5 px-2 text-left">Tên sản phẩm</th>
+                        <th className="py-2.5 px-2 text-center">SL</th>
+                        <th className="py-2.5 px-2 text-right">Đơn giá</th>
+                        <th className="py-2.5 px-2 text-right">Thành tiền</th>
+                        <th className="py-2.5 px-2 text-center">Bảo hành</th>
+                        <th className="py-2.5 px-2 text-left">Ghi chú</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {viewingOrderPrint.items.map((i, x) => (
+                        <tr key={x} className="border-b border-gray-200">
+                          <td className="py-2.5 px-2 text-center">{x + 1}</td>
+                          <td className="py-2.5 px-2 font-medium">{i.name}</td>
+                          <td className="py-2.5 px-2 text-center font-bold">{i.quantity}</td>
+                          <td className="py-2.5 px-2 text-right">{formatCurrency(i.price)}</td>
+                          <td className="py-2.5 px-2 text-right font-bold">{formatCurrency(i.price * i.quantity)}</td>
+                          <td className="py-2.5 px-2 text-center text-gray-600">{i.warrantyValue ? `${i.warrantyValue} ${i.warrantyUnit}` : '-'}</td>
+                          <td className="py-2.5 px-2 text-gray-600">{i.note || '-'}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                    <tfoot>
+                      <tr className="border-t-2 border-gray-800 font-bold text-sm bg-gray-50">
+                        <td colSpan="4" className="py-3 px-2 text-right">TỔNG CỘNG THANH TOÁN:</td>
+                        <td colSpan="3" className="py-3 px-2 text-right text-blue-600 text-base">{formatCurrency(viewingOrderPrint.total)}</td>
+                      </tr>
+                    </tfoot>
+                  </table>
+
+                  <div className="grid grid-cols-2 gap-8 text-center pt-8 text-xs">
+                    <div>
+                      <p className="font-bold">Khách hàng ký nhận</p>
+                      <p className="text-gray-400 italic mt-1">(Ký, ghi rõ họ tên)</p>
+                    </div>
+                    <div>
+                      <p className="font-bold">Người bán hàng</p>
+                      <p className="text-gray-400 italic mt-1">(Ký, ghi rõ họ tên)</p>
+                    </div>
+                  </div>
+                </div>
+              )}
+            </div>
+          </div>
         )}
       </Modal>
     </div>
@@ -1179,7 +1334,7 @@ function ContactManager({ type, data, orders, db, storeId, showToast }) {
               <div className="max-h-80 overflow-y-auto border rounded-xl">
                 <table className="w-full text-xs text-left">
                   <thead className="bg-gray-100 sticky top-0 border-b">
-                    <tr><th className="p-2.5">Thời gian</th><th className="p-2.5">Mặt hàng & Số lượng</th><th className="p-2.5">Giá trị đơn</th><th className="p-2.5">Trạng thái nợ</th></tr>
+                    <tr><th className="p-2.5">Thời gian</th><th className="p-2.5">Mặt hàng & Ghi chú/BH</th><th className="p-2.5">Giá trị đơn</th><th className="p-2.5">Trạng thái nợ</th></tr>
                   </thead>
                   <tbody>
                     {detailData.list.map(ord => {
@@ -1189,21 +1344,29 @@ function ContactManager({ type, data, orders, db, storeId, showToast }) {
                         <tr key={ord.id} className="border-b hover:bg-gray-50">
                           <td className="p-2.5 whitespace-nowrap">{formatDate(ord.date)}</td>
                           <td className="p-2.5">
-                            <ul className="list-disc pl-4 space-y-1">
+                            <ul className="space-y-1.5">
                               {ord.items?.map((it, idx) => {
                                 const qty = it.quantity || it.qty || 1;
                                 const itemPrice = it.price || it.importCost || 0;
                                 return (
-                                  <li key={idx} className="font-medium text-gray-700">
-                                    <span className="text-blue-600">{it.name}</span> x {qty} 
-                                    <span className="text-gray-400 ml-1">({formatCurrency(itemPrice)}/sp)</span>
+                                  <li key={idx} className="bg-gray-50 p-1.5 rounded border border-gray-100">
+                                    <div className="flex justify-between font-medium text-gray-800">
+                                      <span><strong className="text-blue-600">{it.name}</strong> x {qty}</span>
+                                      <span>{formatCurrency(itemPrice * qty)}</span>
+                                    </div>
+                                    {(it.warrantyValue || it.note) && (
+                                      <div className="text-[10px] text-gray-500 mt-0.5 flex gap-2">
+                                        {it.warrantyValue && <span>🛡️ BH: {it.warrantyValue} {it.warrantyUnit}</span>}
+                                        {it.note && <span>📝 {it.note}</span>}
+                                      </div>
+                                    )}
                                   </li>
                                 );
                               })}
                             </ul>
                           </td>
-                          <td className="p-2.5 font-bold text-gray-800">{formatCurrency(ord.total)}</td>
-                          <td className="p-2.5"><span className={"px-2 py-0.5 rounded text-[10px] font-bold " + statusClass}>{statusText}</span></td>
+                          <td className="p-2.5 font-bold text-gray-800 align-top">{formatCurrency(ord.total)}</td>
+                          <td className="p-2.5 align-top"><span className={"px-2 py-0.5 rounded text-[10px] font-bold " + statusClass}>{statusText}</span></td>
                         </tr>
                       );
                     })}
@@ -1555,14 +1718,33 @@ function POSView({ products, customers, db, storeId, user, storeConfig, showToas
   const [showModal, setShowModal] = useState(false);
   const [searchTerm, setSearchTerm] = useState('');
   const [printInvoice, setPrintInvoice] = useState(true);
+  const [printType, setPrintType] = useState('bill');
   const [showAddCusModal, setShowAddCusModal] = useState(false);
   const [newCusForm, setNewCusForm] = useState({ name: '', phone: '', address: '' });
 
+  useEffect(() => {
+    const handleKeyDown = (e) => {
+      if (e.key === 'Escape') {
+        setShowModal(false);
+      }
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, []);
+
   const filteredProducts = useMemo(() => { return products.filter(p => p.name && p.name.toLowerCase().includes(searchTerm.toLowerCase())); }, [products, searchTerm]);
 
-  const addToCart = (product) => { setCart(prev => { const ex = prev.find(i => i.id === product.id); if (ex) return prev.map(i => i.id === product.id ? { ...i, quantity: i.quantity + 1 } : i); return [...prev, { ...product, quantity: 1, price: product.price }]; }); };
+  const addToCart = (product) => { 
+    setCart(prev => { 
+      const ex = prev.find(i => i.id === product.id); 
+      if (ex) return prev.map(i => i.id === product.id ? { ...i, quantity: i.quantity + 1 } : i); 
+      return [...prev, { ...product, quantity: 1, price: product.price, warrantyValue: '', warrantyUnit: 'tháng', note: '' }]; 
+    }); 
+  };
   const updateQty = (id, delta) => setCart(prev => prev.map(i => { if (i.id === id) { const nq = i.quantity + delta; if (nq > 0) return { ...i, quantity: nq }; } return i; }));
   const updatePrice = (id, newPrice) => setCart(prev => prev.map(i => i.id === id ? { ...i, price: Number(newPrice) || 0 } : i));
+  const updateItemField = (id, field, val) => setCart(prev => prev.map(i => i.id === id ? { ...i, [field]: val } : i));
+  
   const cartTotal = cart.reduce((s, i) => s + i.price * i.quantity, 0);
 
   const handleAddCustomerQuick = async (e) => {
@@ -1584,7 +1766,16 @@ function POSView({ products, customers, db, storeId, user, storeConfig, showToas
         customerName: c ? c.name : 'Khách lẻ', 
         sellerUid: user.uid, 
         note: orderNote, 
-        items: cart.map(i => ({ id: i.id, name: i.name, price: i.price, cost: i.cost || 0, quantity: i.quantity })), 
+        items: cart.map(i => ({ 
+          id: i.id, 
+          name: i.name, 
+          price: i.price, 
+          cost: i.cost || 0, 
+          quantity: i.quantity,
+          warrantyValue: i.warrantyValue || '',
+          warrantyUnit: i.warrantyUnit || 'tháng',
+          note: i.note || ''
+        })), 
         total: cartTotal, 
         totalCost: cart.reduce((s, item) => s + ((item.cost || 0) * item.quantity), 0), 
         status: isDebt ? 'DEBT' : 'PAID', 
@@ -1623,15 +1814,33 @@ function POSView({ products, customers, db, storeId, user, storeConfig, showToas
         </div>
       </div>
       
-      <div className="w-full lg:w-[420px] bg-white border-l shadow-lg shrink-0 flex flex-col z-20 h-[65vh] lg:h-auto">
+      <div className="w-full lg:w-[460px] bg-white border-l shadow-lg shrink-0 flex flex-col z-20 h-[65vh] lg:h-auto">
         <div className="p-4 border-b bg-blue-50/50"><h2 className="font-bold flex items-center gap-2"><ShoppingCart size={20} className="text-blue-600"/> Giỏ hàng</h2></div>
         <div className="flex-1 overflow-y-auto p-4 space-y-3">
           {cart.map(item => (
-            <div key={item.id} className="bg-white p-3 border rounded-xl shadow-sm space-y-2">
+            <div key={item.id} className="bg-white p-3 border rounded-xl shadow-sm space-y-2.5">
               <div className="flex justify-between items-start"><h4 className="font-semibold text-sm text-gray-800 truncate">{item.name}</h4><button onClick={() => setCart(c => c.filter(i => i.id !== item.id))} className="text-red-400"><X size={16}/></button></div>
               <div className="flex justify-between items-center gap-2">
-                <div><label className="text-[10px] text-gray-400 uppercase font-bold">Giá bán (Có thể sửa)</label><input type="number" value={item.price} onChange={e => updatePrice(item.id, e.target.value)} className="w-28 p-1.5 border rounded text-sm font-bold text-blue-600 outline-none"/></div>
+                <div><label className="text-[10px] text-gray-400 uppercase font-bold">Giá bán</label><input type="number" value={item.price} onChange={e => updatePrice(item.id, e.target.value)} className="w-28 p-1.5 border rounded text-sm font-bold text-blue-600 outline-none"/></div>
                 <div className="flex bg-gray-50 rounded p-1 items-center"><button onClick={() => updateQty(item.id, -1)} className="w-6 h-6 border bg-white rounded shadow-sm text-gray-600">-</button><span className="w-6 text-center text-sm font-medium">{item.quantity}</span><button onClick={() => updateQty(item.id, 1)} className="w-6 h-6 border bg-white rounded shadow-sm text-gray-600">+</button></div>
+              </div>
+              <div className="grid grid-cols-2 gap-2 pt-1 border-t border-gray-100">
+                <div>
+                  <label className="text-[10px] text-gray-500 font-bold block mb-0.5">Bảo hành</label>
+                  <div className="flex gap-1">
+                    <input type="number" placeholder="Số" value={item.warrantyValue || ''} onChange={e => updateItemField(item.id, 'warrantyValue', e.target.value)} className="w-12 p-1 border rounded text-xs outline-none text-center font-bold"/>
+                    <select value={item.warrantyUnit || 'tháng'} onChange={e => updateItemField(item.id, 'warrantyUnit', e.target.value)} className="p-1 border rounded text-xs bg-white outline-none flex-1">
+                      <option value="ngày">Ngày</option>
+                      <option value="tuần">Tuần</option>
+                      <option value="tháng">Tháng</option>
+                      <option value="năm">Năm</option>
+                    </select>
+                  </div>
+                </div>
+                <div>
+                  <label className="text-[10px] text-gray-500 font-bold block mb-0.5">Ghi chú sản phẩm</label>
+                  <input type="text" placeholder="IMEI, Serial..." value={item.note || ''} onChange={e => updateItemField(item.id, 'note', e.target.value)} className="w-full p-1 border rounded text-xs outline-none"/>
+                </div>
               </div>
             </div>
           ))}
@@ -1643,7 +1852,14 @@ function POSView({ products, customers, db, storeId, user, storeConfig, showToas
           </div>
           <textarea value={orderNote} onChange={e=>setOrderNote(e.target.value)} placeholder="Ghi chú đơn hàng..." className="w-full p-2.5 border rounded-lg outline-none text-sm resize-none h-12 bg-white"></textarea>
           <div className="flex gap-2"><button onClick={() => setIsDebt(false)} className={"flex-1 py-2 rounded-lg border font-bold " + (!isDebt ? 'bg-blue-600 text-white border-blue-600' : 'bg-white text-gray-600 border-gray-300')}>Tiền mặt</button><button onClick={() => setIsDebt(true)} className={"flex-1 py-2 rounded-lg border font-bold " + (isDebt ? 'bg-orange-500 text-white border-orange-500' : 'bg-white text-gray-600 border-gray-300')}>Ghi nợ</button></div>
-          <label className="flex items-center gap-2 text-xs font-medium text-gray-700 cursor-pointer select-none pt-1"><input type="checkbox" checked={printInvoice} onChange={e => setPrintInvoice(e.target.checked)} className="w-4 h-4 text-blue-600 rounded"/> In phiếu mua hàng sau khi thanh toán</label>
+          <div className="flex items-center justify-between gap-2 pt-1">
+            <label className="flex items-center gap-2 text-xs font-medium text-gray-700 cursor-pointer select-none"><input type="checkbox" checked={printInvoice} onChange={e => setPrintInvoice(e.target.checked)} className="w-4 h-4 text-blue-600 rounded"/> In phiếu mua hàng</label>
+            <select value={printType} onChange={e => setPrintType(e.target.value)} className="p-1 border rounded text-xs bg-white font-medium outline-none">
+              <option value="bill">Khổ Bill nhỏ (K80)</option>
+              <option value="a4">Giấy A4</option>
+              <option value="a5">Giấy A5</option>
+            </select>
+          </div>
           <div className="flex justify-between items-center py-1"><span className="font-medium text-gray-600">Tổng tiền:</span><span className="text-2xl font-bold text-blue-600">{formatCurrency(cartTotal)}</span></div>
           <button onClick={handleCheckout} disabled={cart.length === 0 || (isDebt && !customerId)} className="w-full bg-green-600 disabled:bg-gray-300 text-white font-bold py-3 rounded-xl shadow-sm">Thanh toán</button>
         </div>
@@ -1658,22 +1874,130 @@ function POSView({ products, customers, db, storeId, user, storeConfig, showToas
         </form>
       </Modal>
 
-      <Modal isOpen={showModal} onClose={() => setShowModal(false)} title="Hóa đơn" maxWidth="max-w-md" hideHeaderInPrint={true}>
+      <Modal isOpen={showModal} onClose={() => setShowModal(false)} title="Hóa đơn" maxWidth="max-w-2xl" hideHeaderInPrint={true}>
         {completedOrder && (
-          <div className="p-6 bg-white print-container">
-            <div className="text-center mb-6 border-b pb-4">
-              {storeConfig?.logo && (<img src={storeConfig.logo} alt="Logo" className="max-h-16 mx-auto mb-2 object-contain grayscale print:grayscale-0" />)}
-              <h2 className="text-xl font-bold">{storeConfig?.name || 'SmartPOS Pro'}</h2>
-              <p className="text-sm text-gray-600">ĐC: {storeConfig?.address || '...'}</p><p className="text-sm text-gray-600">SĐT: {storeConfig?.phone || '...'}</p>
-              <h1 className="text-xl font-bold mt-4 uppercase">HÓA ĐƠN BÁN HÀNG</h1>
-              <p className="text-xs">Mã: #{completedOrder.id.slice(0,6).toUpperCase()} | Ngày: {formatDate(completedOrder.date)}</p>
+          <div className="space-y-4">
+            <div className="flex justify-between items-center bg-gray-100 p-3 rounded-lg no-print">
+              <span className="text-xs font-bold text-gray-700">Đã thanh toán thành công! Nhấn ESC hoặc nút dưới để bỏ qua in:</span>
+              <div className="flex gap-2">
+                <button onClick={() => window.print()} className="bg-blue-600 hover:bg-blue-700 text-white px-4 py-1.5 rounded-lg text-xs font-bold flex items-center gap-1.5 shadow"><Printer size={14}/> In Phiếu</button>
+                <button onClick={() => setShowModal(false)} className="bg-gray-200 hover:bg-gray-300 text-gray-700 px-3 py-1.5 rounded-lg text-xs font-bold">Bỏ qua (ESC)</button>
+              </div>
             </div>
-            <div className="mb-4 text-sm text-gray-800"><p>Khách hàng: {completedOrder.customerName}</p>{completedOrder.phone && <p>SĐT: {completedOrder.phone}</p>}</div>
-            <table className="w-full text-sm mb-6"><thead className="border-b-2 border-gray-800"><tr><th className="py-2 text-left">Sản phẩm</th><th className="py-2">SL</th><th className="py-2 text-right">Thành tiền</th></tr></thead>
-              <tbody>{completedOrder.items.map((i, x) => (<tr key={x} className="border-b"><td className="py-2">{i.name}</td><td className="py-2 text-center">{i.quantity}</td><td className="py-2 text-right font-medium">{formatCurrency(i.price * i.quantity)}</td></tr>))}</tbody>
-              <tfoot className="border-t-2 border-gray-800 font-bold"><tr><td colSpan="2" className="py-3 text-right">TỔNG CỘNG:</td><td className="py-3 text-right text-lg">{formatCurrency(completedOrder.total)}</td></tr></tfoot>
-            </table>
-            <div className="no-print flex justify-end"><button onClick={() => window.print()} className="bg-blue-600 text-white px-4 py-2 rounded-lg flex items-center gap-2"><Printer size={18}/> In Phiếu</button></div>
+
+            <div className="p-6 bg-white print-container text-gray-900 font-sans">
+              {printType === 'bill' ? (
+                <div>
+                  <div className="text-center mb-4 border-b pb-3">
+                    {storeConfig?.logo && (<img src={storeConfig.logo} alt="Logo" className="max-h-12 mx-auto mb-1 object-contain grayscale print:grayscale-0" />)}
+                    <h2 className="text-base font-bold">{storeConfig?.name || 'SmartPOS Pro'}</h2>
+                    <p className="text-xs text-gray-600">ĐC: {storeConfig?.address || '...'}</p>
+                    <p className="text-xs text-gray-600">SĐT: {storeConfig?.phone || '...'}</p>
+                    <h1 className="text-sm font-bold mt-2 uppercase tracking-wide">HÓA ĐƠN BÁN HÀNG</h1>
+                    <p className="text-[10px] text-gray-500">Mã: #{completedOrder.id.slice(0,6).toUpperCase()} | Ngày: {formatDate(completedOrder.date)}</p>
+                  </div>
+                  <div className="mb-3 text-xs">
+                    <p><strong>Khách hàng:</strong> {completedOrder.customerName}</p>
+                    {completedOrder.phone && <p><strong>SĐT:</strong> {completedOrder.phone}</p>}
+                  </div>
+                  <table className="w-full text-xs mb-4">
+                    <thead className="border-b border-gray-800">
+                      <tr><th className="py-1.5 text-left">Sản phẩm</th><th className="py-1.5 text-center">SL</th><th className="py-1.5 text-right">Thành tiền</th></tr>
+                    </thead>
+                    <tbody>
+                      {completedOrder.items.map((i, x) => (
+                        <tr key={x} className="border-b border-dashed border-gray-200">
+                          <td className="py-1.5">
+                            <p className="font-bold">{i.name}</p>
+                            {(i.warrantyValue || i.note) && (
+                              <p className="text-[10px] text-gray-500">
+                                {i.warrantyValue ? `BH: ${i.warrantyValue} ${i.warrantyUnit} ` : ''}
+                                {i.note ? `| ${i.note}` : ''}
+                              </p>
+                            )}
+                          </td>
+                          <td className="py-1.5 text-center align-top">{i.quantity}</td>
+                          <td className="py-1.5 text-right align-top font-medium">{formatCurrency(i.price * i.quantity)}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                    <tfoot className="border-t border-gray-800 font-bold">
+                      <tr><td colSpan="2" className="py-2 text-right">TỔNG CỘNG:</td><td className="py-2 text-right text-sm">{formatCurrency(completedOrder.total)}</td></tr>
+                    </tfoot>
+                  </table>
+                  <div className="text-center text-[10px] text-gray-500 mt-6 pt-2 border-t border-dashed">
+                    <p>Cảm ơn quý khách và hẹn gặp lại!</p>
+                  </div>
+                </div>
+              ) : (
+                <div className={printType === 'a4' ? 'max-w-[210mm] mx-auto p-4' : 'max-w-[148mm] mx-auto p-2'}>
+                  <div className="flex justify-between items-start border-b-2 border-gray-800 pb-4 mb-4">
+                    <div className="flex items-center gap-3">
+                      {storeConfig?.logo && (<img src={storeConfig.logo} alt="Logo" className="max-h-16 object-contain" />)}
+                      <div>
+                        <h2 className="text-lg font-bold">{storeConfig?.name || 'SmartPOS Pro'}</h2>
+                        <p className="text-xs text-gray-600">Địa chỉ: {storeConfig?.address || '...'}</p>
+                        <p className="text-xs text-gray-600">Điện thoại: {storeConfig?.phone || '...'}</p>
+                      </div>
+                    </div>
+                    <div className="text-right">
+                      <h1 className="text-xl font-bold uppercase text-blue-800">PHIẾU BÁN HÀNG</h1>
+                      <p className="text-xs text-gray-500 mt-1">Mã HĐ: #{completedOrder.id.slice(0,6).toUpperCase()}</p>
+                      <p className="text-xs text-gray-500">Ngày: {formatDate(completedOrder.date)}</p>
+                    </div>
+                  </div>
+
+                  <div className="grid grid-cols-2 gap-4 bg-gray-50 p-3 rounded-lg border border-gray-200 text-xs mb-4">
+                    <div><span className="text-gray-500">Khách hàng:</span> <strong className="text-gray-800 text-sm">{completedOrder.customerName}</strong></div>
+                    <div><span className="text-gray-500">Trạng thái:</span> <strong className="text-blue-600">{completedOrder.status === 'PAID' ? 'Đã thanh toán' : 'Ghi nợ'}</strong></div>
+                  </div>
+
+                  <table className="w-full text-xs mb-6 border-collapse">
+                    <thead>
+                      <tr className="bg-gray-100 border-y-2 border-gray-800">
+                        <th className="py-2.5 px-2 text-left">STT</th>
+                        <th className="py-2.5 px-2 text-left">Tên sản phẩm</th>
+                        <th className="py-2.5 px-2 text-center">SL</th>
+                        <th className="py-2.5 px-2 text-right">Đơn giá</th>
+                        <th className="py-2.5 px-2 text-right">Thành tiền</th>
+                        <th className="py-2.5 px-2 text-center">Bảo hành</th>
+                        <th className="py-2.5 px-2 text-left">Ghi chú</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {completedOrder.items.map((i, x) => (
+                        <tr key={x} className="border-b border-gray-200">
+                          <td className="py-2.5 px-2 text-center">{x + 1}</td>
+                          <td className="py-2.5 px-2 font-medium">{i.name}</td>
+                          <td className="py-2.5 px-2 text-center font-bold">{i.quantity}</td>
+                          <td className="py-2.5 px-2 text-right">{formatCurrency(i.price)}</td>
+                          <td className="py-2.5 px-2 text-right font-bold">{formatCurrency(i.price * i.quantity)}</td>
+                          <td className="py-2.5 px-2 text-center text-gray-600">{i.warrantyValue ? `${i.warrantyValue} ${i.warrantyUnit}` : '-'}</td>
+                          <td className="py-2.5 px-2 text-gray-600">{i.note || '-'}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                    <tfoot>
+                      <tr className="border-t-2 border-gray-800 font-bold text-sm bg-gray-50">
+                        <td colSpan="4" className="py-3 px-2 text-right">TỔNG CỘNG THANH TOÁN:</td>
+                        <td colSpan="3" className="py-3 px-2 text-right text-blue-600 text-base">{formatCurrency(completedOrder.total)}</td>
+                      </tr>
+                    </tfoot>
+                  </table>
+
+                  <div className="grid grid-cols-2 gap-8 text-center pt-8 text-xs">
+                    <div>
+                      <p className="font-bold">Khách hàng ký nhận</p>
+                      <p className="text-gray-400 italic mt-1">(Ký, ghi rõ họ tên)</p>
+                    </div>
+                    <div>
+                      <p className="font-bold">Người bán hàng</p>
+                      <p className="text-gray-400 italic mt-1">(Ký, ghi rõ họ tên)</p>
+                    </div>
+                  </div>
+                </div>
+              )}
+            </div>
           </div>
         )}
       </Modal>
