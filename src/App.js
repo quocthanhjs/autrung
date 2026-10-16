@@ -34,7 +34,7 @@ const db = getFirestore(app);
 
 const PERMISSION_TREE = [
   { module: 'Tổng quan', perms: [{ id: 'tong_quan_xem', label: 'Xem tổng quan' }] },
-  { module: 'Bán hàng (POS & Hóa đơn)', perms: [{ id: 'ban_hang', label: 'Quản lý bán hàng & Hóa đơn' }] },
+  { module: 'Quản lý Bán hàng', perms: [{ id: 'ban_hang', label: 'Quản lý bán hàng & Hóa đơn' }] },
   { module: 'Hàng hóa', perms: [{ id: 'hh_danh_sach', label: 'Danh sách hàng hóa' }, { id: 'hh_gia', label: 'Thiết lập giá' }] },
   { module: 'Mua hàng', perms: [{ id: 'mua_ncc', label: 'Danh sách nhà cung cấp' }, { id: 'mua_nhap_hang', label: 'Nhập hàng' }] },
   { module: 'Khách hàng', perms: [{ id: 'kh_danh_sach', label: 'Danh sách khách hàng' }] },
@@ -205,7 +205,7 @@ export default function EnhancedPOS() {
   const allTabs = [
     { id: 'dashboard', icon: LayoutDashboard, label: 'Báo cáo & Nhắc nợ', permId: 'tong_quan_xem' },
     { id: 'pos', icon: ShoppingCart, label: 'Bán hàng (POS)', permId: 'ALWAYS' },
-    { id: 'sales_history', icon: Receipt, label: 'Thẻ Bán Hàng (Hóa đơn)', permId: 'ban_hang' },
+    { id: 'sales_history', icon: Receipt, label: 'Quản lý Bán Hàng', permId: 'ban_hang' },
     { id: 'imports', icon: ArrowDownToLine, label: 'Nhập hàng', permId: 'mua_nhap_hang' },
     { id: 'products', icon: Package, label: 'Kho hàng', permId: 'hh_danh_sach' },
     { id: 'customers', icon: Users, label: 'Khách hàng', permId: 'kh_danh_sach' },
@@ -417,7 +417,7 @@ function DashboardView({ orders, imports, expenses, showToast }) {
 }
 
 // ==========================================
-// THẺ BÁN HÀNG (QUẢN LÝ HÓA ĐƠN THEO KIOTVIET)
+// QUẢN LÝ BÁN HÀNG (HÓA ĐƠN CHI TIẾT KIOTVIET)
 // ==========================================
 function SalesHistoryView({ orders, products, db, storeId, showToast }) {
   const currentDate = new Date();
@@ -467,7 +467,6 @@ function SalesHistoryView({ orders, products, db, storeId, showToast }) {
     if (window.confirm("CẢNH BÁO: Xóa hóa đơn này sẽ hoàn lại tồn kho cho sản phẩm. Bạn có chắc chắn muốn xóa?")) {
       try {
         let batch = writeBatch(db);
-        // Hoàn kho
         for (let item of (order.items || [])) {
           const matchedProd = products.find(p => p.id === item.id);
           if (matchedProd) {
@@ -504,7 +503,7 @@ function SalesHistoryView({ orders, products, db, storeId, showToast }) {
     <div className="flex-1 flex flex-col p-4 md:p-6 bg-gray-50 overflow-hidden h-full">
       <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center mb-4 gap-3">
         <div>
-          <h2 className="text-2xl font-bold text-gray-800 flex items-center gap-2"><Receipt className="text-blue-600"/> Thẻ Bán Hàng (Quản lý Hóa Đơn)</h2>
+          <h2 className="text-2xl font-bold text-gray-800 flex items-center gap-2"><Receipt className="text-blue-600"/> Quản lý Bán Hàng</h2>
           <p className="text-xs text-gray-500 mt-0.5">Theo dõi chi tiết giá nhập, giá bán, tiền lãi và thao tác hóa đơn chuẩn KiotViet</p>
         </div>
         <div className="relative w-full sm:w-64">
@@ -513,7 +512,6 @@ function SalesHistoryView({ orders, products, db, storeId, showToast }) {
         </div>
       </div>
 
-      {/* THANH LỌC THỜI GIAN & THỐNG KÊ NHANH */}
       <div className="bg-white p-4 rounded-2xl border shadow-sm mb-4 flex flex-col lg:flex-row justify-between items-start lg:items-center gap-4">
         <div className="flex flex-wrap items-center gap-2 bg-gray-100 p-1 rounded-xl">
           <button onClick={() => setFilterType('day')} className={"px-3 py-1.5 rounded-lg text-xs font-bold transition " + (filterType==='day'?'bg-blue-600 text-white shadow':'text-gray-600 hover:bg-white')}>Theo Ngày</button>
@@ -551,7 +549,6 @@ function SalesHistoryView({ orders, products, db, storeId, showToast }) {
         </div>
       </div>
 
-      {/* BẢNG DANH SÁCH HÓA ĐƠN CHI TIẾT */}
       <div className="flex-1 bg-white rounded-xl border shadow-sm overflow-auto">
         <table className="w-full text-left text-sm">
           <thead className="bg-gray-100 sticky top-0 border-b">
@@ -567,7 +564,6 @@ function SalesHistoryView({ orders, products, db, storeId, showToast }) {
           </thead>
           <tbody>
             {filteredOrders.map(o => {
-              // Tính tổng vốn của đơn hàng này
               let orderTotalCost = o.totalCost || 0;
               if (!orderTotalCost && o.items) {
                 orderTotalCost = o.items.reduce((sum, it) => sum + (Number(it.cost || 0) * Number(it.quantity || 1)), 0);
@@ -620,7 +616,6 @@ function SalesHistoryView({ orders, products, db, storeId, showToast }) {
         </table>
       </div>
 
-      {/* MODAL CHỈNH SỬA HÓA ĐƠN */}
       <Modal isOpen={!!editingOrder} onClose={() => setEditingOrder(null)} title="Chỉnh sửa Hóa đơn">
         {editingOrder && (
           <form onSubmit={handleSaveEditOrder} className="space-y-4">
@@ -793,7 +788,6 @@ function SettingsView({ db, storeId, showToast, storeConfig }) {
     <div className="flex-1 p-4 md:p-6 bg-gray-50 overflow-auto space-y-6">
       <h2 className="text-2xl font-bold mb-2">Cài đặt & Dữ liệu Excel (Drive)</h2>
       
-      {/* VÙNG NGUY HIỂM: XÓA TRẮNG DỮ LIỆU */}
       <div className="bg-red-50 p-6 rounded-xl border border-red-200 shadow-sm">
         <h3 className="font-bold border-b border-red-200 pb-2 mb-4 text-red-700">Vùng nguy hiểm: Xóa trắng toàn bộ dữ liệu hệ thống</h3>
         <p className="text-sm text-red-600 mb-4">Thao tác này sẽ xóa sạch toàn bộ sản phẩm, hóa đơn, khách hàng, nhà cung cấp và chi phí trên cửa hàng để bạn làm lại từ đầu.</p>
