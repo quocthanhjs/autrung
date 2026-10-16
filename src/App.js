@@ -15,9 +15,6 @@ import {
 } from 'firebase/auth';
 import { getFirestore, doc, setDoc, getDoc, getDocs, addDoc, updateDoc, deleteDoc, onSnapshot, collection, writeBatch, query, orderBy, where } from 'firebase/firestore';
 
-// ==========================================
-// 1. CẤU HÌNH FIREBASE
-// ==========================================
 const firebaseConfig = {
   apiKey: "AIzaSyClQogCLby6OYpVzRwJ9181rmg1Lho5FV8",
   authDomain: "smartpos-5f5cf.firebaseapp.com",
@@ -32,9 +29,6 @@ const app = initializeApp(firebaseConfig);
 const auth = getAuth(app);
 const db = getFirestore(app);
 
-// ==========================================
-// 2. CẤU TRÚC PHÂN QUYỀN
-// ==========================================
 const PERMISSION_TREE = [
   { module: 'Tổng quan', perms: [{ id: 'tong_quan_xem', label: 'Xem tổng quan' }] },
   { module: 'Hàng hóa', perms: [{ id: 'hh_danh_sach', label: 'Danh sách hàng hóa' }, { id: 'hh_gia', label: 'Thiết lập giá' }] },
@@ -43,9 +37,6 @@ const PERMISSION_TREE = [
   { module: 'Sổ quỹ', perms: [{ id: 'quy_so_quy', label: 'Sổ quỹ / Chi phí' }] }
 ];
 
-// ==========================================
-// 3. TIỆN ÍCH (UTILS)
-// ==========================================
 const formatCurrency = (amount) => new Intl.NumberFormat('vi-VN', { style: 'currency', currency: 'VND' }).format(amount || 0);
 const formatDate = (iso) => new Intl.DateTimeFormat('vi-VN', { dateStyle: 'short', timeStyle: 'short' }).format(new Date(iso));
 const getDaysDifference = (isoDate) => Math.floor(Math.abs(new Date() - new Date(isoDate)) / (1000 * 60 * 60 * 24));
@@ -56,9 +47,6 @@ const getDeviceInfo = () => {
   return "Máy tính";
 };
 
-// ==========================================
-// 4. COMPONENT MODAL (POPUP)
-// ==========================================
 const Modal = ({ isOpen, onClose, title, children, maxWidth = "max-w-md", hideHeaderInPrint = false }) => {
   if (!isOpen) return null;
   return (
@@ -76,9 +64,6 @@ const Modal = ({ isOpen, onClose, title, children, maxWidth = "max-w-md", hideHe
   );
 };
 
-// ==========================================
-// 5. MÀN HÌNH ĐĂNG NHẬP
-// ==========================================
 function LoginView({ onLoginSuccess }) {
   const [loginInput, setLoginInput] = useState('');
   const [password, setPassword] = useState('');
@@ -91,8 +76,6 @@ function LoginView({ onLoginSuccess }) {
     e.preventDefault(); setError(''); setLoading(true);
     try {
       let loginEmail = loginInput.trim();
-      
-      // CHUYỂN ĐỔI USERNAME THÀNH EMAIL NẾU NGƯỜI DÙNG NHẬP USERNAME NGẮN
       if (!loginEmail.includes('@')) {
         const q = query(collection(db, 'users_db'), where('username', '==', loginEmail));
         const querySnapshot = await getDocs(q);
@@ -162,9 +145,6 @@ function LoginView({ onLoginSuccess }) {
   );
 }
 
-// ==========================================
-// 6. COMPONENT CHÍNH (APP)
-// ==========================================
 export default function EnhancedPOS() {
   const [user, setUser] = useState(null);
   const [userData, setUserData] = useState({ role: null, name: '', perms: {} });
@@ -228,4 +208,119 @@ export default function EnhancedPOS() {
     { id: 'pos', icon: ShoppingCart, label: 'Bán hàng (POS)', permId: 'ALWAYS' },
     { id: 'imports', icon: ArrowDownToLine, label: 'Nhập hàng', permId: 'mua_nhap_hang' },
     { id: 'products', icon: Package, label: 'Kho hàng', permId: 'hh_danh_sach' },
-    { id: 'customers', icon: Users, label: 'Khách hàng', permId: '
+    { id: 'customers', icon: Users, label: 'Khách hàng', permId: 'kh_danh_sach' },
+    { id: 'suppliers', icon: Truck, label: 'Nhà cung cấp', permId: 'mua_ncc' },
+    { id: 'expenses', icon: CreditCard, label: 'Chi phí', permId: 'quy_so_quy' },
+    { id: 'settings', icon: Database, label: 'Cài đặt & Dữ liệu', permId: 'ADMIN_ONLY' },
+    { id: 'staff', icon: UserCog, label: 'Quản trị Nhân viên', permId: 'ADMIN_ONLY' },
+  ];
+
+  const visibleTabs = allTabs.filter(t => {
+    if (userData.role === 'admin') return true;
+    if (t.permId === 'ADMIN_ONLY') return false;
+    if (t.permId === 'ALWAYS') return true;
+    return userData.perms[t.permId];
+  });
+
+  return (
+    <>
+      <style>{`@media print { body * { visibility: hidden; } .print-container, .print-container * { visibility: visible; } .print-container { position: absolute; left: 0; top: 0; width: 100%; padding: 20px; } .no-print { display: none !important; } }`}</style>
+      
+      <div className="min-h-screen bg-gray-50 flex flex-col md:flex-row font-sans text-sm md:text-base print:hidden">
+        <aside className="w-full md:w-64 bg-white border-r border-gray-200 flex flex-col shadow-sm z-10 shrink-0">
+          <div className="p-5 border-b border-gray-100 flex items-center gap-3">
+            {storeConfig.logo ? (
+              <img src={storeConfig.logo} alt="Logo" className="w-10 h-10 object-contain rounded bg-white p-1 shadow-sm" />
+            ) : (
+              <div className="bg-blue-600 text-white p-2 rounded-lg"><ShoppingBag size={24} /></div>
+            )}
+            <div className="min-w-0"><h1 className="text-lg font-bold tracking-tight text-gray-800 truncate">{storeConfig.name || 'SmartPOS'}</h1></div>
+          </div>
+          
+          <nav className="flex-1 p-3 flex flex-row md:flex-col gap-1 overflow-x-auto md:overflow-visible scrollbar-hide">
+            {visibleTabs.map(tab => (
+              <button key={tab.id} onClick={() => setActiveTab(tab.id)} className={`flex items-center gap-3 px-4 py-3 rounded-xl transition-all whitespace-nowrap md:whitespace-normal ${activeTab === tab.id ? 'bg-blue-50 text-blue-700 font-semibold' : 'text-gray-600 hover:bg-gray-50 font-medium'}`}>
+                <tab.icon size={20} className={activeTab === tab.id ? "text-blue-600" : "text-gray-400"} />{tab.label}
+              </button>
+            ))}
+          </nav>
+
+          <div className="p-4 border-t border-gray-100 bg-gray-50">
+            <div className="flex items-center justify-between">
+              <div className="flex flex-col min-w-0">
+                <p className="text-sm font-bold text-gray-800 truncate">{userData.name}</p>
+                <p className="text-xs text-gray-500 uppercase">{userData.role === 'admin' ? 'Quản trị viên' : 'Nhân viên'}</p>
+              </div>
+              <button onClick={() => signOut(auth)} className="text-gray-500 hover:text-red-600 p-2 rounded-lg hover:bg-red-50"><LogOut size={18} /></button>
+            </div>
+          </div>
+        </aside>
+
+        <main className="flex-1 overflow-hidden flex flex-col h-[calc(100vh-80px)] md:h-screen relative">
+          {toast && <div className={`absolute top-4 right-4 z-50 px-6 py-3 rounded-lg shadow-lg flex items-center gap-2 text-white ${toast.type === 'success' ? 'bg-green-600' : 'bg-red-600'}`}>{toast.type === 'success' ? <Check size={20} /> : <AlertCircle size={20} />}<span className="font-medium">{toast.msg}</span></div>}
+
+          {activeTab === 'dashboard' && <DashboardView orders={orders} imports={imports} showToast={showToast} />}
+          {activeTab === 'pos' && <POSView products={products} customers={customers} db={db} storeId={storeId} user={user} storeConfig={storeConfig} showToast={showToast} />}
+          {activeTab === 'imports' && <ImportView products={products} suppliers={suppliers} db={db} storeId={storeId} user={user} showToast={showToast} />}
+          {activeTab === 'products' && <InventoryView products={products} db={db} storeId={storeId} showToast={showToast} />}
+          {activeTab === 'customers' && <ContactManager type="customers" data={customers} db={db} storeId={storeId} showToast={showToast} />}
+          {activeTab === 'suppliers' && <ContactManager type="suppliers" data={suppliers} db={db} storeId={storeId} showToast={showToast} />}
+          {activeTab === 'expenses' && <ExpenseView expenses={expenses} db={db} storeId={storeId} showToast={showToast} />}
+          {activeTab === 'settings' && <SettingsView db={db} storeId={storeId} showToast={showToast} storeConfig={storeConfig} />}
+          {activeTab === 'staff' && <StaffManagerView db={db} showToast={showToast} />}
+        </main>
+      </div>
+    </>
+  );
+}
+
+function DashboardView({ orders, imports, showToast }) {
+  const currentDate = new Date();
+  const [filterMonth, setFilterMonth] = useState((currentDate.getMonth() + 1).toString());
+  const [filterYear, setFilterYear] = useState(currentDate.getFullYear().toString());
+
+  const stats = useMemo(() => {
+    const fOrders = orders.filter(o => { const d = new Date(o.date); return (filterMonth === 'ALL' || (d.getMonth() + 1).toString() === filterMonth) && d.getFullYear().toString() === filterYear; });
+    const fImports = imports.filter(i => { const d = new Date(i.date); return (filterMonth === 'ALL' || (d.getMonth() + 1).toString() === filterMonth) && d.getFullYear().toString() === filterYear; });
+    
+    const totalRev = fOrders.reduce((s, o) => s + o.total, 0);
+    const totalCost = fOrders.reduce((s, o) => s + (o.totalCost || 0), 0);
+    
+    const overdueCust = orders.filter(o => o.status === 'DEBT').sort((a,b)=>new Date(b.date)-new Date(a.date));
+    const overdueSupp = imports.filter(i => i.status === 'DEBT').sort((a,b)=>new Date(b.date)-new Date(a.date));
+
+    return { totalRev, totalCost, overdueCust, overdueSupp };
+  }, [orders, imports, filterMonth, filterYear]);
+
+  const years = Array.from({length: 5}, (_, i) => currentDate.getFullYear() - i);
+
+  return (
+    <div className="flex-1 overflow-y-auto p-4 md:p-6 bg-gray-50/50">
+      <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center mb-6 gap-4">
+        <h2 className="text-2xl font-bold text-gray-800">Báo cáo Kinh doanh & Nhắc nợ</h2>
+        <div className="flex items-center gap-3 bg-white p-2 rounded-xl shadow-sm border border-gray-200">
+          <select value={filterMonth} onChange={e=>setFilterMonth(e.target.value)} className="bg-transparent font-medium outline-none"><option value="ALL">Cả năm</option>{Array.from({length: 12}, (_, i) => <option key={i+1} value={i+1}>Tháng {i+1}</option>)}</select>
+          <div className="w-px h-5 bg-gray-300"></div>
+          <select value={filterYear} onChange={e=>setFilterYear(e.target.value)} className="bg-transparent font-medium outline-none">{years.map(y => <option key={y} value={y}>Năm {y}</option>)}</select>
+        </div>
+      </div>
+      
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-8">
+        <StatCard icon={<TrendingUp />} title="Tổng Doanh Thu" value={formatCurrency(stats.totalRev)} color="bg-blue-100 text-blue-600" />
+        <StatCard icon={<Package />} title="Tổng Giá Vốn" value={formatCurrency(stats.totalCost)} color="bg-gray-200 text-gray-700" />
+      </div>
+
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+        <div className="bg-white rounded-2xl shadow-sm border border-red-200 overflow-hidden">
+          <div className="p-4 bg-red-50 border-b flex justify-between items-center font-bold text-red-700">
+            <div className="flex gap-2"><AlertCircle size={20}/> Phải Thu (Khách nợ)</div>
+          </div>
+          <div className="max-h-80 overflow-y-auto">
+            <table className="w-full text-left text-sm"><thead className="bg-gray-50 sticky top-0"><tr><th className="p-3">Khách hàng</th><th className="p-3">Thời gian</th><th className="p-3">Số tiền</th></tr></thead>
+              <tbody>{stats.overdueCust.map(o => (
+                <tr key={o.id} className="border-b">
+                  <td className="p-3 font-bold">{o.customerName}</td>
+                  <td className="p-3">
+                    {getDaysDifference(o.date) > 30 ? <span className="text-red-600 font-bold">> 1 Tháng</span> : getDaysDifference(o.date) > 7 ? <span className="text-orange-600 font-bold">> 1 Tuần</span> : <span>Mới đây</span>}
+                  </td>
+                  <td className="p-3 font-bold text-red-600">{format
