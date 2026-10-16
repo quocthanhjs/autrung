@@ -13,11 +13,19 @@ import { getFirestore, doc, addDoc, updateDoc, deleteDoc, onSnapshot, collection
 
 let app, auth, db, appId;
 try {
-  const firebaseConfig = typeof __firebase_config !== 'undefined' ? JSON.parse(__firebase_config) : {};
+  const firebaseConfig = {
+    apiKey: "AIzaSyClQogCLby6OYpVzRwJ9181rmg1Lho5FV8",
+  authDomain: "smartpos-5f5cf.firebaseapp.com",
+  projectId: "smartpos-5f5cf",
+  storageBucket: "smartpos-5f5cf.firebasestorage.app",
+  messagingSenderId: "458225351603",
+  appId: "1:458225351603:web:f67d06427def5a33dca9c6",
+  measurementId: "G-0YW45XF8QL"
+  };
   app = initializeApp(firebaseConfig);
   auth = getAuth(app);
   db = getFirestore(app);
-  appId = typeof __app_id !== 'undefined' ? __app_id : 'default-pos-app';
+  appId = 'cua-hang-cua-thanh'; // Không cần sửa dòng này
 } catch (error) {
   console.error("Firebase init error:", error);
 }
