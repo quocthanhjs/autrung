@@ -648,13 +648,21 @@ const [editingOrder, setEditingOrder] = useState(null);
  const dataUrl = canvas.toDataURL("image/png");
  const win = window.open('', '_blank');
  win.document.write(`
- <html><head><title>Hóa Đơn Bán Hàng</title></head>
+ <html><head><title>Hóa Đơn Bán Hàng</title>
+ <style>
+ @media print {
+ .no-print { display: none !important; }
+ body { background: #fff !important; padding: 0 !important; }
+ img { box-shadow: none !important; max-width: 100% !important; }
+ }
+ </style>
+ </head>
  <body style="margin:0; background:#f3f4f6; display:flex; flex-direction:column; align-items:center; padding:20px; font-family:sans-serif;">
- <div style="margin-bottom:20px; display:flex; gap:10px;">
+ <div class="no-print" style="margin-bottom:20px; display:flex; gap:10px;">
  <button onclick="window.print()" style="padding:10px 20px; font-size:14px; font-weight:bold; cursor:pointer; background:#2563eb; color:white; border:none; border-radius:8px; box-shadow:0 2px 4px rgba(0,0,0,0.1);">🖨️ Tiến Hành In</button>
  <a href="${dataUrl}" download="HoaDon_${viewingOrderPrint?.id.slice(0,6)}.png" style="text-decoration:none; padding:10px 20px; font-size:14px; font-weight:bold; cursor:pointer; background:#10b981; color:white; border:none; border-radius:8px; box-shadow:0 2px 4px rgba(0,0,0,0.1);">💾 Tải Ảnh Xuống</a>
  </div>
- <img src="${dataUrl}" style="max-width:100%; max-height:85vh; box-shadow: 0 10px 15px -3px rgba(0,0,0,0.1), 0 4px 6px -2px rgba(0,0,0,0.05);" />
+ <img src="${dataUrl}" style="max-width:100%; object-fit:contain; box-shadow: 0 10px 15px -3px rgba(0,0,0,0.1), 0 4px 6px -2px rgba(0,0,0,0.05);" />
  </body></html>
  `);
  win.document.close();
@@ -1022,9 +1030,9 @@ const [editingOrder, setEditingOrder] = useState(null);
  <p><strong>Khách hàng:</strong> {viewingOrderPrint.customerName}</p>
  {viewingOrderPrint.phone && <p><strong>SĐT:</strong> {viewingOrderPrint.phone}</p>}
  </div>
- <table className="w-full text-xs mb-4">
+ <table className="w-full text-[11px] mb-4">
  <thead className="border-b border-gray-800">
- <tr><th className="py-1.5 text-left">Sản phẩm</th><th className="py-1.5 text-center">SL</th><th className="py-1.5 text-right">Thành tiền</th></tr>
+ <tr><th className="py-1.5 text-left">Sản phẩm</th><th className="py-1.5 text-center w-8">SL</th><th className="py-1.5 text-right w-20">Thành tiền</th></tr>
  </thead>
  <tbody>
  {viewingOrderPrint.items.map((i, x) => (
@@ -1067,35 +1075,35 @@ const [editingOrder, setEditingOrder] = useState(null);
  <div><span className="text-gray-500">Trạng thái:</span> <strong className="text-blue-600">{viewingOrderPrint.status === 'PAID' ? 'Đã thanh toán' : 'Ghi nợ'}</strong></div>
  </div>
 
- <table className="w-full text-xs mb-6 border-collapse">
+ <table className="w-full text-[11px] mb-6 border-collapse border border-gray-400">
  <thead>
- <tr className="bg-gray-100 border-y-2 border-gray-800">
- <th className="py-2.5 px-2 text-left">STT</th>
- <th className="py-2.5 px-2 text-left">Tên sản phẩm</th>
- <th className="py-2.5 px-2 text-center">SL</th>
- <th className="py-2.5 px-2 text-right">Đơn giá</th>
- <th className="py-2.5 px-2 text-right">Thành tiền</th>
- <th className="py-2.5 px-2 text-center">Bảo hành</th>
- <th className="py-2.5 px-2 text-left">Ghi chú</th>
+ <tr className="bg-gray-100 border-b-2 border-gray-400 text-gray-800">
+ <th className="py-2 px-1 border border-gray-400 text-center">STT</th>
+ <th className="py-2 px-2 border border-gray-400 text-left">Tên sản phẩm</th>
+ <th className="py-2 px-1 border border-gray-400 text-center">SL</th>
+ <th className="py-2 px-2 border border-gray-400 text-right">Đơn giá</th>
+ <th className="py-2 px-2 border border-gray-400 text-right">Thành tiền</th>
+ <th className="py-2 px-1 border border-gray-400 text-center">Bảo hành</th>
+ <th className="py-2 px-2 border border-gray-400 text-left w-20">Ghi chú</th>
  </tr>
  </thead>
  <tbody>
  {viewingOrderPrint.items.map((i, x) => (
- <tr key={x} className="border-b border-gray-200">
- <td className="py-2.5 px-2 text-center">{x + 1}</td>
- <td className="py-2.5 px-2 font-medium">{i.name}</td>
- <td className="py-2.5 px-2 text-center font-bold">{i.quantity}</td>
- <td className="py-2.5 px-2 text-right">{formatCurrency(i.price)}</td>
- <td className="py-2.5 px-2 text-right font-bold">{formatCurrency(i.price * i.quantity)}</td>
- <td className="py-2.5 px-2 text-center text-gray-600">{i.warrantyValue ? `${i.warrantyValue} ${i.warrantyUnit}` : '-'}</td>
- <td className="py-2.5 px-2 text-gray-600">{i.note || '-'}</td>
+ <tr key={x} className="border-b border-gray-300">
+ <td className="py-1.5 px-1 border border-gray-300 text-center">{x + 1}</td>
+ <td className="py-1.5 px-2 border border-gray-300 font-medium">{i.name}</td>
+ <td className="py-1.5 px-1 border border-gray-300 text-center font-bold">{i.quantity}</td>
+ <td className="py-1.5 px-2 border border-gray-300 text-right">{formatCurrency(i.price)}</td>
+ <td className="py-1.5 px-2 border border-gray-300 text-right font-bold">{formatCurrency(i.price * i.quantity)}</td>
+ <td className="py-1.5 px-1 border border-gray-300 text-center text-gray-600">{i.warrantyValue ? `${i.warrantyValue} ${i.warrantyUnit}` : ''}</td>
+ <td className="py-1.5 px-2 border border-gray-300 text-gray-600">{i.note || ''}</td>
  </tr>
  ))}
  </tbody>
  <tfoot>
- <tr className="border-t-2 border-gray-800 font-bold text-sm bg-gray-50">
- <td colSpan="4" className="py-3 px-2 text-right">TỔNG CỘNG THANH TOÁN:</td>
- <td colSpan="3" className="py-3 px-2 text-right text-blue-600 text-base">{formatCurrency(viewingOrderPrint.total)}</td>
+ <tr className="border-t-2 border-gray-400 font-bold text-xs bg-gray-50">
+ <td colSpan="4" className="py-2.5 px-2 border border-gray-400 text-right text-gray-800">TỔNG CỘNG THANH TOÁN:</td>
+ <td colSpan="3" className="py-2.5 px-2 border border-gray-400 text-right text-blue-600 text-sm">{formatCurrency(viewingOrderPrint.total)}</td>
  </tr>
  </tfoot>
  </table>
@@ -2025,13 +2033,21 @@ let batch = writeBatch(db);
  const dataUrl = canvas.toDataURL("image/png");
  const win = window.open('', '_blank');
  win.document.write(`
- <html><head><title>Hóa Đơn Bán Hàng</title></head>
+ <html><head><title>Hóa Đơn Bán Hàng</title>
+ <style>
+ @media print {
+ .no-print { display: none !important; }
+ body { background: #fff !important; padding: 0 !important; }
+ img { box-shadow: none !important; max-width: 100% !important; }
+ }
+ </style>
+ </head>
  <body style="margin:0; background:#f3f4f6; display:flex; flex-direction:column; align-items:center; padding:20px; font-family:sans-serif;">
- <div style="margin-bottom:20px; display:flex; gap:10px;">
+ <div class="no-print" style="margin-bottom:20px; display:flex; gap:10px;">
  <button onclick="window.print()" style="padding:10px 20px; font-size:14px; font-weight:bold; cursor:pointer; background:#2563eb; color:white; border:none; border-radius:8px; box-shadow:0 2px 4px rgba(0,0,0,0.1);">🖨️ Tiến Hành In</button>
  <a href="${dataUrl}" download="HoaDon_${completedOrder?.id.slice(0,6)}.png" style="text-decoration:none; padding:10px 20px; font-size:14px; font-weight:bold; cursor:pointer; background:#10b981; color:white; border:none; border-radius:8px; box-shadow:0 2px 4px rgba(0,0,0,0.1);">💾 Tải Ảnh Xuống</a>
  </div>
- <img src="${dataUrl}" style="max-width:100%; max-height:85vh; box-shadow: 0 10px 15px -3px rgba(0,0,0,0.1), 0 4px 6px -2px rgba(0,0,0,0.05);" />
+ <img src="${dataUrl}" style="max-width:100%; object-fit:contain; box-shadow: 0 10px 15px -3px rgba(0,0,0,0.1), 0 4px 6px -2px rgba(0,0,0,0.05);" />
  </body></html>
  `);
  win.document.close();
@@ -2156,9 +2172,9 @@ let batch = writeBatch(db);
  <p><strong>Khách hàng:</strong> {completedOrder.customerName}</p>
  {completedOrder.phone && <p><strong>SĐT:</strong> {completedOrder.phone}</p>}
  </div>
- <table className="w-full text-xs mb-4">
+ <table className="w-full text-[11px] mb-4">
  <thead className="border-b border-gray-800">
- <tr><th className="py-1.5 text-left">Sản phẩm</th><th className="py-1.5 text-center">SL</th><th className="py-1.5 text-right">Thành tiền</th></tr>
+ <tr><th className="py-1.5 text-left">Sản phẩm</th><th className="py-1.5 text-center w-8">SL</th><th className="py-1.5 text-right w-20">Thành tiền</th></tr>
  </thead>
  <tbody>
  {completedOrder.items.map((i, x) => (
@@ -2201,35 +2217,35 @@ let batch = writeBatch(db);
  <div><span className="text-gray-500">Trạng thái:</span> <strong className="text-blue-600">{completedOrder.status === 'PAID' ? 'Đã thanh toán' : 'Ghi nợ'}</strong></div>
  </div>
 
- <table className="w-full text-xs mb-6 border-collapse">
+ <table className="w-full text-[11px] mb-6 border-collapse border border-gray-400">
  <thead>
- <tr className="bg-gray-100 border-y-2 border-gray-800">
- <th className="py-2.5 px-2 text-left">STT</th>
- <th className="py-2.5 px-2 text-left">Tên sản phẩm</th>
- <th className="py-2.5 px-2 text-center">SL</th>
- <th className="py-2.5 px-2 text-right">Đơn giá</th>
- <th className="py-2.5 px-2 text-right">Thành tiền</th>
- <th className="py-2.5 px-2 text-center">Bảo hành</th>
- <th className="py-2.5 px-2 text-left">Ghi chú</th>
+ <tr className="bg-gray-100 border-b-2 border-gray-400 text-gray-800">
+ <th className="py-2 px-1 border border-gray-400 text-center">STT</th>
+ <th className="py-2 px-2 border border-gray-400 text-left">Tên sản phẩm</th>
+ <th className="py-2 px-1 border border-gray-400 text-center">SL</th>
+ <th className="py-2 px-2 border border-gray-400 text-right">Đơn giá</th>
+ <th className="py-2 px-2 border border-gray-400 text-right">Thành tiền</th>
+ <th className="py-2 px-1 border border-gray-400 text-center">Bảo hành</th>
+ <th className="py-2 px-2 border border-gray-400 text-left w-20">Ghi chú</th>
  </tr>
  </thead>
  <tbody>
  {completedOrder.items.map((i, x) => (
- <tr key={x} className="border-b border-gray-200">
- <td className="py-2.5 px-2 text-center">{x + 1}</td>
- <td className="py-2.5 px-2 font-medium">{i.name}</td>
- <td className="py-2.5 px-2 text-center font-bold">{i.quantity}</td>
- <td className="py-2.5 px-2 text-right">{formatCurrency(i.price)}</td>
- <td className="py-2.5 px-2 text-right font-bold">{formatCurrency(i.price * i.quantity)}</td>
- <td className="py-2.5 px-2 text-center text-gray-600">{i.warrantyValue ? `${i.warrantyValue} ${i.warrantyUnit}` : '-'}</td>
- <td className="py-2.5 px-2 text-gray-600">{i.note || '-'}</td>
+ <tr key={x} className="border-b border-gray-300">
+ <td className="py-1.5 px-1 border border-gray-300 text-center">{x + 1}</td>
+ <td className="py-1.5 px-2 border border-gray-300 font-medium">{i.name}</td>
+ <td className="py-1.5 px-1 border border-gray-300 text-center font-bold">{i.quantity}</td>
+ <td className="py-1.5 px-2 border border-gray-300 text-right">{formatCurrency(i.price)}</td>
+ <td className="py-1.5 px-2 border border-gray-300 text-right font-bold">{formatCurrency(i.price * i.quantity)}</td>
+ <td className="py-1.5 px-1 border border-gray-300 text-center text-gray-600">{i.warrantyValue ? `${i.warrantyValue} ${i.warrantyUnit}` : ''}</td>
+ <td className="py-1.5 px-2 border border-gray-300 text-gray-600">{i.note || ''}</td>
  </tr>
  ))}
  </tbody>
  <tfoot>
- <tr className="border-t-2 border-gray-800 font-bold text-sm bg-gray-50">
- <td colSpan="4" className="py-3 px-2 text-right">TỔNG CỘNG THANH TOÁN:</td>
- <td colSpan="3" className="py-3 px-2 text-right text-blue-600 text-base">{formatCurrency(completedOrder.total)}</td>
+ <tr className="border-t-2 border-gray-400 font-bold text-xs bg-gray-50">
+ <td colSpan="4" className="py-2.5 px-2 border border-gray-400 text-right text-gray-800">TỔNG CỘNG THANH TOÁN:</td>
+ <td colSpan="3" className="py-2.5 px-2 border border-gray-400 text-right text-blue-600 text-sm">{formatCurrency(completedOrder.total)}</td>
  </tr>
  </tfoot>
  </table>
