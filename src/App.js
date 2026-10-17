@@ -27,7 +27,6 @@ const db = getFirestore(app);
 const formatCurrency = (amount) => new Intl.NumberFormat('vi-VN', { style: 'currency', currency: 'VND' }).format(amount || 0);
 const formatDate = (iso) => new Intl.DateTimeFormat('vi-VN', { dateStyle: 'short', timeStyle: 'short' }).format(new Date(iso));
 const getDaysDifference = (isoDate) => Math.floor(Math.abs(new Date() - new Date(isoDate)) / (1000 * 60 * 60 * 24));
-const getDeviceInfo = () => { const ua = navigator.userAgent; if (/android/i.test(ua)) return "Android"; if (/iPad|iPhone|iPod/.test(ua)) return "iOS"; return "Máy tính"; };
 
 const Modal = ({ isOpen, onClose, title, children, maxWidth = "max-w-md", hideHeaderInPrint = false }) => {
   if (!isOpen) return null;
@@ -188,6 +187,7 @@ export default function EnhancedPOS() {
         </aside>
         <main className="flex-1 overflow-hidden flex flex-col h-[calc(100vh-80px)] md:h-screen relative no-print print:block print:overflow-visible print:h-auto print:absolute print:inset-0 print:w-full">
           {toast && <div className={`absolute top-4 right-4 z-50 px-6 py-3 rounded-lg shadow-lg flex items-center gap-2 text-white no-print ${toast.type === 'success' ? 'bg-green-600' : 'bg-red-600'}`}>{toast.type === 'success' ? <Check size={20} /> : <AlertCircle size={20} />}<span className="font-medium">{toast.msg}</span></div>}
+          
           {activeTab === 'dashboard' && <DashboardView orders={orders} imports={imports} expenses={expenses} customers={customers} suppliers={suppliers} />}
           {activeTab === 'pos' && <POSView products={products} customers={customers} db={db} storeId={storeId} user={user} storeConfig={storeConfig} showToast={showToast} />}
           {activeTab === 'sales_history' && <SalesHistoryView orders={orders} products={products} storeConfig={storeConfig} db={db} storeId={storeId} showToast={showToast} />}
@@ -216,6 +216,7 @@ function DashboardView({ orders, imports, expenses, customers, suppliers }) {
     const totalExp = fExpenses.reduce((s, e) => s + (Number(e.amount) || 0), 0);
     return { totalRev, totalCost, totalExp, netProfit: totalRev - totalCost - totalExp };
   }, [orders, expenses, filterMonth, filterYear]);
+
   return (
     <div className="flex-1 overflow-y-auto p-4 md:p-6 bg-gray-50/50 space-y-6">
       <div className="flex justify-between items-center"><h2 className="text-2xl font-bold text-gray-800">Báo cáo Kinh doanh</h2>
@@ -234,13 +235,12 @@ function DashboardView({ orders, imports, expenses, customers, suppliers }) {
   );
 }
 
-// ---------------- POS VIEW (BÁN HÀNG - FIX PDF) ----------------
+// ---------------- POS VIEW (BÁN HÀNG) ----------------
 function POSView({ products, customers, db, storeId, user, storeConfig, showToast }) {
   const [cart, setCart] = useState([]); const [searchTerm, setSearchTerm] = useState('');
   const [selectedCustomer, setSelectedCustomer] = useState(null); const [isProcessing, setIsProcessing] = useState(false);
   const [viewingOrderPrint, setViewingOrderPrint] = useState(null);
   const [printType, setPrintType] = useState(storeConfig?.printDefaultSize || 'a4');
-  const [printOptions, setPrintOptions] = useState({ showLogo: true, showNote: true, showWarranty: true });
 
   const addToCart = (product) => { setCart(prev => { const ex = prev.find(i => i.id === product.id); if (ex) return prev.map(i => i.id === product.id ? { ...i, quantity: i.quantity + 1 } : i); return [...prev, { ...product, quantity: 1, cost: product.cost || 0 }]; }); };
   const updateCartItem = (id, field, value) => setCart(prev => prev.map(i => i.id === id ? { ...i, [field]: Number(value) } : i));
@@ -258,7 +258,12 @@ function POSView({ products, customers, db, storeId, user, storeConfig, showToas
       batch.set(doc(collection(db, 'stores', storeId, 'orders'), orderId), orderData);
       if (status === 'DEBT' && selectedCustomer) batch.update(doc(db, 'stores', storeId, 'customers', selectedCustomer.id), { totalDebt: (selectedCustomer.totalDebt || 0) + totalAmount });
       await batch.commit();
-      if (shouldPrint) setViewingOrderPrint(orderData); else showToast("Lưu đơn hàng thành công!");
+      
+      if (shouldPrint) {
+        setViewingOrderPrint(orderData);
+      } else {
+        showToast("Lưu đơn hàng thành công!");
+      }
       setCart([]); setSelectedCustomer(null);
     } catch (error) { showToast("Lỗi thanh toán", "error"); } finally { setIsProcessing(false); }
   };
@@ -268,7 +273,7 @@ function POSView({ products, customers, db, storeId, user, storeConfig, showToas
   return (
     <div className="flex flex-col md:flex-row h-full overflow-hidden bg-gray-50">
       <div className="flex-1 flex flex-col p-4 border-r overflow-hidden no-print">
-        <input type="text" placeholder="Tìm sản phẩm..." value={searchTerm} onChange={e => setSearchTerm(e.target.value)} className="w-full p-3 mb-4 border rounded-lg outline-none shadow-sm" />
+        <input type="text" placeholder="Tìm tên sản phẩm..." value={searchTerm} onChange={e => setSearchTerm(e.target.value)} className="w-full p-3 mb-4 border rounded-lg outline-none shadow-sm font-medium" />
         <div className="flex-1 overflow-auto grid grid-cols-2 md:grid-cols-4 gap-4 pb-4">
           {filteredProducts.map(p => (
             <div key={p.id} onClick={() => addToCart(p)} className="bg-white p-4 rounded-xl border shadow-sm cursor-pointer hover:border-blue-500 transition">
@@ -278,58 +283,60 @@ function POSView({ products, customers, db, storeId, user, storeConfig, showToas
           ))}
         </div>
       </div>
+
       <div className="w-full md:w-[400px] flex flex-col bg-white border-l shadow-xl no-print">
         <div className="p-4 border-b bg-gray-50">
-          <select className="w-full p-2.5 border rounded-lg outline-none text-sm font-medium" value={selectedCustomer ? selectedCustomer.id : ''} onChange={e => setSelectedCustomer(customers.find(c => c.id === e.target.value) || null)}>
+          <select className="w-full p-2.5 border rounded-lg outline-none text-sm font-medium bg-white" value={selectedCustomer ? selectedCustomer.id : ''} onChange={e => setSelectedCustomer(customers.find(c => c.id === e.target.value) || null)}>
             <option value="">-- Chọn Khách lẻ --</option>{customers.map(c => <option key={c.id} value={c.id}>{c.name} - {c.phone}</option>)}
           </select>
         </div>
         <div className="flex-1 overflow-auto p-4 space-y-3">
-          {cart.map(item => (
-            <div key={item.id} className="border p-3 rounded-lg bg-gray-50 flex flex-col gap-2">
-              <div className="flex justify-between items-start"><p className="font-bold text-sm text-gray-800">{item.name}</p><button onClick={() => removeFromCart(item.id)} className="text-red-500 px-2 py-0.5 bg-red-100 rounded text-xs">Xóa</button></div>
+          {cart.map((item) => (
+            <div key={item.id} className="flex flex-col border p-3 rounded-lg bg-gray-50 gap-2">
+              <div className="flex justify-between items-start"><p className="font-bold text-sm text-gray-800">{item.name}</p><button onClick={() => removeFromCart(item.id)} className="text-red-500 font-bold px-2 py-0.5 bg-red-100 rounded text-xs">Xóa</button></div>
               <div className="flex gap-2 items-center">
-                <div className="flex-1"><label className="text-[10px] text-gray-500 uppercase font-bold">Giá bán</label><input type="number" value={item.price} onChange={(e) => updateCartItem(item.id, 'price', e.target.value)} className="w-full p-1.5 border rounded text-sm font-bold text-blue-600 outline-none" /></div>
-                <div className="w-16"><label className="text-[10px] text-gray-500 uppercase font-bold">SL</label><input type="number" value={item.quantity} onChange={(e) => updateCartItem(item.id, 'quantity', e.target.value)} className="w-full p-1.5 border rounded text-sm text-center font-bold outline-none" /></div>
+                <div className="flex flex-col flex-1"><label className="text-[10px] font-bold text-gray-500 uppercase">Giá bán</label><input type="number" value={item.price} onChange={(e) => updateCartItem(item.id, 'price', e.target.value)} className="w-full p-1.5 border rounded text-sm text-blue-600 font-bold outline-none" /></div>
+                <div className="flex flex-col w-16"><label className="text-[10px] font-bold text-gray-500 uppercase">SL</label><input type="number" value={item.quantity} onChange={(e) => updateCartItem(item.id, 'quantity', e.target.value)} className="w-full p-1.5 border rounded text-sm outline-none text-center font-bold" /></div>
               </div>
-              <div className="text-right text-sm font-black text-blue-800">{formatCurrency(item.price * item.quantity)}</div>
+              <div className="text-right"><span className="text-[10px] text-gray-500 mr-2">Thành tiền:</span><span className="font-black text-blue-800 text-sm">{formatCurrency(item.price * item.quantity)}</span></div>
             </div>
           ))}
+          {cart.length === 0 && <div className="text-center text-gray-400 mt-10 p-6 border-2 border-dashed rounded-xl">Chưa có sản phẩm nào trong giỏ</div>}
         </div>
         <div className="p-4 border-t bg-gray-50 space-y-3">
-          <div className="flex justify-between bg-white p-3 rounded-lg border font-bold text-blue-600"><span className="text-gray-600">Tổng tiền:</span><span className="text-2xl">{formatCurrency(totalAmount)}</span></div>
+          <div className="flex justify-between items-center bg-white p-3 rounded-lg border"><span className="text-gray-600 font-bold uppercase text-sm">Tổng tiền:</span><span className="text-2xl font-black text-blue-600">{formatCurrency(totalAmount)}</span></div>
           <div className="grid grid-cols-2 gap-2">
-            <button disabled={isProcessing || cart.length===0} onClick={() => handleCheckout('DEBT', false)} className="bg-orange-100 text-orange-700 font-bold py-2.5 rounded-lg">Ghi Nợ (Ko In)</button>
-            <button disabled={isProcessing || cart.length===0} onClick={() => handleCheckout('PAID', false)} className="bg-green-100 text-green-700 font-bold py-2.5 rounded-lg">Tiền Mặt (Ko In)</button>
+            <button disabled={isProcessing || cart.length === 0} onClick={() => handleCheckout('DEBT', false)} className="bg-orange-100 text-orange-700 font-bold py-2.5 rounded-lg text-sm">Ghi Nợ (Không In)</button>
+            <button disabled={isProcessing || cart.length === 0} onClick={() => handleCheckout('PAID', false)} className="bg-green-100 text-green-700 font-bold py-2.5 rounded-lg text-sm">Tiền Mặt (Không In)</button>
           </div>
-          <button disabled={isProcessing || cart.length===0} onClick={() => handleCheckout('PAID', true)} className="w-full bg-blue-600 text-white font-bold py-3 rounded-lg shadow-md uppercase">Thanh Toán & Lưu PDF</button>
+          <button disabled={isProcessing || cart.length === 0} onClick={() => handleCheckout('PAID', true)} className="w-full bg-blue-600 text-white font-bold py-3 rounded-lg shadow-md text-sm uppercase">Thanh Toán & Xuất Hóa Đơn File PDF</button>
         </div>
       </div>
 
       {viewingOrderPrint && (
         <Modal isOpen={true} onClose={() => setViewingOrderPrint(null)} hideHeaderInPrint={true} maxWidth="max-w-2xl">
           <div className="bg-blue-50 border-b border-blue-100 p-4 shrink-0 no-print space-y-3">
-            <div className="flex justify-between items-center"><span className="font-bold text-blue-800">Tùy chọn Lưu File PDF / In</span><button onClick={() => setViewingOrderPrint(null)} className="text-gray-500 font-bold">X Đóng</button></div>
+            <div className="flex justify-between items-center"><span className="font-bold text-blue-800">Tùy chọn Xuất File / In Hóa Đơn</span><button onClick={() => setViewingOrderPrint(null)} className="text-gray-500 font-bold">X Đóng</button></div>
             <div className="flex items-center gap-4">
               <span>Khổ giấy:</span><select value={printType} onChange={e=>setPrintType(e.target.value)} className="p-1 border rounded bg-white outline-none"><option value="bill">Máy in nhiệt (K80)</option><option value="a4">Giấy A4</option><option value="a5">Giấy A5</option></select>
               <button onClick={() => window.print()} className="ml-auto bg-blue-600 hover:bg-blue-700 text-white px-6 py-2 rounded-lg font-bold shadow">Mở hộp thoại Lưu PDF / In</button>
             </div>
-            <p className="text-xs text-blue-600 italic">Mẹo: Chọn máy in là "Save as PDF" để xuất file.</p>
+            <p className="text-xs text-blue-600 italic">Mẹo: Khi hộp thoại mở ra, chọn máy in là "Save as PDF" (Lưu dưới dạng PDF) để xuất file thẳng ra máy tính.</p>
           </div>
           <div className="p-6 bg-white print-container font-sans print:w-full print:m-0">
-            {/* Template in */}
             <div className={printType === 'bill' ? "max-w-[80mm] mx-auto print:w-[80mm]" : "max-w-[210mm] mx-auto"}>
               <div className="text-center mb-4 border-b-2 border-gray-800 pb-3">
                 <h2 className="text-xl font-bold uppercase">{storeConfig?.name || 'SmartPOS Pro'}</h2>
                 <h1 className="text-sm font-bold mt-2 uppercase tracking-wide">HÓA ĐƠN BÁN HÀNG</h1>
-                <p className="text-[10px] text-gray-500">Ngày: {formatDate(viewingOrderPrint.date)}</p>
+                <p className="text-[10px] text-gray-500">Mã HĐ: #{viewingOrderPrint.id} | Ngày: {formatDate(viewingOrderPrint.date)}</p>
               </div>
-              <p className="text-xs mb-2"><strong>Khách:</strong> {viewingOrderPrint.customerName}</p>
+              <p className="text-xs mb-2"><strong>Khách hàng:</strong> {viewingOrderPrint.customerName}</p>
               <table className="w-full text-xs mb-4 border-collapse">
-                <thead className="border-b border-gray-800"><tr><th className="py-1 text-left">Sản phẩm</th><th className="py-1 text-center">SL</th><th className="py-1 text-right">Tiền</th></tr></thead>
-                <tbody>{viewingOrderPrint.items.map((i,x)=><tr key={x} className="border-b border-gray-200"><td className="py-1">{i.name}</td><td className="py-1 text-center">{i.quantity}</td><td className="py-1 text-right">{formatCurrency(i.price*i.quantity)}</td></tr>)}</tbody>
-                <tfoot><tr><td colSpan="2" className="py-2 text-right font-bold">TỔNG:</td><td className="py-2 text-right font-bold">{formatCurrency(viewingOrderPrint.total)}</td></tr></tfoot>
+                <thead className="border-b border-gray-800"><tr><th className="py-1 text-left">Sản phẩm</th><th className="py-1 text-center">SL</th><th className="py-1 text-right">Thành tiền</th></tr></thead>
+                <tbody>{viewingOrderPrint.items.map((i, x) => (<tr key={x} className="border-b border-gray-200"><td className="py-1 font-bold">{i.name}</td><td className="py-1 text-center">{i.quantity}</td><td className="py-1 text-right">{formatCurrency(i.price * i.quantity)}</td></tr>))}</tbody>
+                <tfoot className="border-t border-gray-800"><tr><td colSpan="2" className="py-2 text-right font-bold">TỔNG CỘNG:</td><td className="py-2 text-right font-bold text-sm">{formatCurrency(viewingOrderPrint.total)}</td></tr></tfoot>
               </table>
+              <div className="text-center text-[10px] text-gray-500 mt-6 pt-2 border-t border-dashed"><p>{storeConfig?.printFooterText || 'Cảm ơn quý khách!'}</p></div>
             </div>
           </div>
         </Modal>
@@ -342,6 +349,7 @@ function POSView({ products, customers, db, storeId, user, storeConfig, showToas
 function ImportView({ products, suppliers, db, storeId, user, showToast }) {
   const [cart, setCart] = useState([]); const [searchTerm, setSearchTerm] = useState('');
   const [selectedSupplier, setSelectedSupplier] = useState(null); const [isProcessing, setIsProcessing] = useState(false);
+
   const addToCart = (product) => { setCart(prev => { const ex = prev.find(i => i.id === product.id); if (ex) return prev.map(i => i.id === product.id ? { ...i, qty: i.qty + 1 } : i); return [...prev, { ...product, qty: 1, importCost: product.cost || 0 }]; }); };
   const updateCartItem = (id, field, value) => setCart(prev => prev.map(i => i.id === id ? { ...i, [field]: Number(value) } : i));
   const removeFromCart = (id) => setCart(prev => prev.filter(i => i.id !== id));
@@ -365,7 +373,7 @@ function ImportView({ products, suppliers, db, storeId, user, showToast }) {
   return (
     <div className="flex flex-col md:flex-row h-full overflow-hidden bg-gray-50">
       <div className="flex-1 flex flex-col p-4 border-r overflow-hidden">
-        <input type="text" placeholder="Tìm sản phẩm để nhập..." value={searchTerm} onChange={e => setSearchTerm(e.target.value)} className="w-full p-3 mb-4 border rounded-lg outline-none shadow-sm" />
+        <input type="text" placeholder="Tìm sản phẩm để nhập..." value={searchTerm} onChange={e => setSearchTerm(e.target.value)} className="w-full p-3 mb-4 border rounded-lg outline-none shadow-sm font-medium" />
         <div className="flex-1 overflow-auto grid grid-cols-2 md:grid-cols-4 gap-4 pb-4">
           {filteredProducts.map(p => (
             <div key={p.id} onClick={() => addToCart(p)} className="bg-white p-4 rounded-xl border shadow-sm cursor-pointer hover:border-purple-500 transition">
@@ -377,21 +385,22 @@ function ImportView({ products, suppliers, db, storeId, user, showToast }) {
       </div>
       <div className="w-full md:w-[400px] flex flex-col bg-white border-l shadow-xl">
         <div className="p-4 border-b bg-gray-50">
-          <select className="w-full p-2.5 border rounded-lg outline-none text-sm font-medium" value={selectedSupplier ? selectedSupplier.id : ''} onChange={e => setSelectedSupplier(suppliers.find(c => c.id === e.target.value) || null)}>
+          <select className="w-full p-2.5 border rounded-lg outline-none text-sm font-medium bg-white" value={selectedSupplier ? selectedSupplier.id : ''} onChange={e => setSelectedSupplier(suppliers.find(c => c.id === e.target.value) || null)}>
             <option value="">-- Chọn Nhà cung cấp --</option>{suppliers.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
           </select>
         </div>
         <div className="flex-1 overflow-auto p-4 space-y-3">
           {cart.map(item => (
             <div key={item.id} className="border p-3 rounded-lg bg-purple-50 flex flex-col gap-2">
-              <div className="flex justify-between"><p className="font-bold text-sm">{item.name}</p><button onClick={() => removeFromCart(item.id)} className="text-red-500 px-2 rounded text-xs bg-white">Xóa</button></div>
+              <div className="flex justify-between"><p className="font-bold text-sm">{item.name}</p><button onClick={() => removeFromCart(item.id)} className="text-red-500 font-bold px-2 rounded text-xs bg-white">Xóa</button></div>
               <div className="flex gap-2">
-                <div className="flex-1"><label className="text-[10px] uppercase font-bold text-gray-500">Giá nhập</label><input type="number" value={item.importCost} onChange={(e) => updateCartItem(item.id, 'importCost', e.target.value)} className="w-full p-1.5 border rounded text-sm font-bold text-purple-600 outline-none" /></div>
-                <div className="w-16"><label className="text-[10px] uppercase font-bold text-gray-500">SL</label><input type="number" value={item.qty} onChange={(e) => updateCartItem(item.id, 'qty', e.target.value)} className="w-full p-1.5 border rounded text-sm text-center font-bold outline-none" /></div>
+                <div className="flex-1"><label className="text-[10px] uppercase font-bold text-gray-500">Giá nhập (Cập nhật vốn)</label><input type="number" value={item.importCost} onChange={(e) => updateCartItem(item.id, 'importCost', e.target.value)} className="w-full p-1.5 border rounded text-sm font-bold text-purple-600 outline-none" /></div>
+                <div className="w-16"><label className="text-[10px] uppercase font-bold text-gray-500">Số lượng</label><input type="number" value={item.qty} onChange={(e) => updateCartItem(item.id, 'qty', e.target.value)} className="w-full p-1.5 border rounded text-sm text-center font-bold outline-none" /></div>
               </div>
               <div className="text-right text-sm font-black text-purple-800">{formatCurrency((item.importCost||0) * item.qty)}</div>
             </div>
           ))}
+          {cart.length === 0 && <div className="text-center text-gray-400 mt-10 p-6 border-2 border-dashed rounded-xl">Chưa chọn hàng nhập</div>}
         </div>
         <div className="p-4 border-t bg-gray-50 space-y-3">
           <div className="flex justify-between bg-white p-3 rounded-lg border font-bold text-purple-600"><span>Tổng cộng:</span><span className="text-2xl">{formatCurrency(totalAmount)}</span></div>
@@ -422,45 +431,189 @@ function StaffManagerView({ db, showToast }) {
       const userCredential = await createUserWithEmailAndPassword(secondaryAuth, form.email, form.password);
       await setDoc(doc(db, 'users_db', userCredential.user.uid), { username: form.username, email: form.email, name: form.name, role: form.role, createdAt: new Date().toISOString() });
       await secondaryAuth.signOut(); setIsModalOpen(false); showToast("Đã thêm nhân viên!"); setForm({ username: '', email: '', password: '', role: 'staff', name: '' });
-    } catch (err) { showToast("Lỗi: Email có thể đã tồn tại!", "error"); } finally { setLoading(false); }
+    } catch (err) { showToast("Lỗi: Email này đã tồn tại!", "error"); } finally { setLoading(false); }
   };
 
   const handleDeleteStaff = async (id) => { if (window.confirm("Xóa nhân viên này?")) { await deleteDoc(doc(db, 'users_db', id)); showToast("Đã xóa!"); } };
-  const handleResetPassword = async (email) => {
-    if (!email) return showToast("Không có email!", "error");
-    if (window.confirm(`Gửi link reset mật khẩu về: ${email}?`)) { await sendPasswordResetEmail(auth, email); showToast("Đã gửi link!"); }
-  };
+  const handleResetPassword = async (email) => { if (!email) return showToast("Không có email!", "error"); if (window.confirm(`Gửi link reset mật khẩu về: ${email}?`)) { await sendPasswordResetEmail(auth, email); showToast("Đã gửi link vào email!"); } };
 
   return (
     <div className="p-4 md:p-6 bg-gray-50 flex-1 overflow-auto">
-      <div className="flex justify-between mb-4"><h2 className="text-2xl font-bold">Quản trị Nhân viên</h2><button onClick={() => setIsModalOpen(true)} className="bg-blue-600 text-white px-4 py-2 rounded-lg font-bold">+ Thêm</button></div>
+      <div className="flex justify-between mb-4"><h2 className="text-2xl font-bold">Quản trị Nhân viên</h2><button onClick={() => setIsModalOpen(true)} className="bg-blue-600 text-white px-4 py-2 rounded-lg font-bold">+ Thêm Nhân Viên</button></div>
       <div className="bg-white rounded-xl border shadow-sm overflow-auto">
         <table className="w-full text-left text-sm">
-          <thead className="bg-gray-100 border-b"><tr><th className="p-4">Tên</th><th className="p-4">Email</th><th className="p-4">Vai trò</th><th className="p-4 text-right">Thao tác</th></tr></thead>
+          <thead className="bg-gray-100 border-b"><tr><th className="p-4">Tên hiển thị</th><th className="p-4">Tên đăng nhập / Email</th><th className="p-4">Vai trò</th><th className="p-4 text-right">Thao tác</th></tr></thead>
           <tbody>
             {staffList.map(staff => (
-              <tr key={staff.id} className="border-b"><td className="p-4 font-bold">{staff.name}</td><td className="p-4">{staff.email || staff.username}</td><td className="p-4"><span className="bg-blue-100 px-2 py-1 rounded text-xs font-bold">{staff.role}</span></td><td className="p-4 text-right space-x-2"><button onClick={() => handleResetPassword(staff.email)} className="bg-blue-50 text-blue-600 px-3 py-1 rounded">Reset MK</button>{staff.role !== 'admin' && <button onClick={() => handleDeleteStaff(staff.id)} className="bg-red-50 text-red-600 px-3 py-1 rounded">Xóa</button>}</td></tr>
+              <tr key={staff.id} className="border-b"><td className="p-4 font-bold">{staff.name}</td><td className="p-4 text-blue-600">{staff.email || staff.username}</td><td className="p-4"><span className="bg-blue-100 text-blue-700 px-2 py-1 rounded text-xs font-bold">{staff.role}</span></td><td className="p-4 text-right space-x-2"><button onClick={() => handleResetPassword(staff.email)} className="bg-blue-50 text-blue-600 px-3 py-1 rounded font-bold">Khôi phục MK</button>{staff.role !== 'admin' && <button onClick={() => handleDeleteStaff(staff.id)} className="bg-red-50 text-red-600 px-3 py-1 rounded font-bold">Xóa</button>}</td></tr>
             ))}
           </tbody>
         </table>
       </div>
-      <Modal isOpen={isModalOpen} onClose={() => setIsModalOpen(false)} title="Thêm Nhân viên">
+      <Modal isOpen={isModalOpen} onClose={() => setIsModalOpen(false)} title="Thêm Nhân viên mới">
         <form onSubmit={handleSaveStaff} className="space-y-3">
-          <input required placeholder="Tên" value={form.name} onChange={e=>setForm({...form, name: e.target.value})} className="w-full p-2.5 border rounded-lg"/>
-          <input required placeholder="Tên đăng nhập" value={form.username} onChange={e=>setForm({...form, username: e.target.value})} className="w-full p-2.5 border rounded-lg"/>
-          <input required type="email" placeholder="Email thực" value={form.email} onChange={e=>setForm({...form, email: e.target.value})} className="w-full p-2.5 border rounded-lg"/>
-          <input required type="password" placeholder="Mật khẩu" value={form.password} onChange={e=>setForm({...form, password: e.target.value})} className="w-full p-2.5 border rounded-lg"/>
-          <select value={form.role} onChange={e=>setForm({...form, role: e.target.value})} className="w-full p-2.5 border rounded-lg"><option value="staff">Nhân viên</option><option value="admin">Quản trị viên</option></select>
-          <button type="submit" disabled={loading} className="w-full bg-blue-600 text-white font-bold p-2.5 rounded-lg">{loading ? 'Đang tạo...' : 'Lưu'}</button>
+          <input required placeholder="Tên hiển thị" value={form.name} onChange={e=>setForm({...form, name: e.target.value})} className="w-full p-2.5 border rounded-lg outline-none"/>
+          <input required placeholder="Tên đăng nhập (viết liền, VD: nhanvien1)" value={form.username} onChange={e=>setForm({...form, username: e.target.value})} className="w-full p-2.5 border rounded-lg outline-none"/>
+          <input required type="email" placeholder="Email thực (để lấy lại mật khẩu)" value={form.email} onChange={e=>setForm({...form, email: e.target.value})} className="w-full p-2.5 border rounded-lg outline-none"/>
+          <input required type="password" placeholder="Mật khẩu (ít nhất 6 ký tự)" value={form.password} onChange={e=>setForm({...form, password: e.target.value})} className="w-full p-2.5 border rounded-lg outline-none"/>
+          <select value={form.role} onChange={e=>setForm({...form, role: e.target.value})} className="w-full p-2.5 border rounded-lg outline-none bg-white"><option value="staff">Nhân viên bán hàng</option><option value="admin">Quản trị viên (Toàn quyền)</option></select>
+          <div className="flex gap-2 pt-2"><button type="button" onClick={() => setIsModalOpen(false)} className="flex-1 bg-gray-200 text-gray-800 font-bold p-2.5 rounded-lg">Hủy</button><button type="submit" disabled={loading} className="flex-1 bg-blue-600 text-white font-bold p-2.5 rounded-lg">{loading ? 'Đang tạo...' : 'Lưu lại'}</button></div>
         </form>
       </Modal>
     </div>
   );
 }
 
-// ---------------- CÁC VIEW KHÁC (GIỮ NGUYÊN HOẶC RÚT GỌN CHÚT ĐỂ TIẾT KIỆM KÝ TỰ) ----------------
-function SalesHistoryView({ orders, showToast, db, storeId, storeConfig }) { return <div className="p-4 text-center text-gray-500">Giao diện Lịch sử Bán Hàng (Đã tích hợp trong Dashboard)</div>; }
-function InventoryView({ products, db, storeId, showToast }) { return <div className="p-4 text-center text-gray-500">Giao diện Kho hàng (Dùng tính năng Nhập/Bán tự cộng trừ)</div>; }
-function ContactManager({ type, data, db, storeId }) { return <div className="p-4 text-center text-gray-500">Giao diện Khách hàng / NCC</div>; }
-function ExpenseView({ expenses, db, storeId }) { return <div className="p-4 text-center text-gray-500">Giao diện Chi Phí</div>; }
-function SettingsView({ db, storeId }) { return <div className="p-4 text-center text-gray-500">Giao diện Cài Đặt</div>; }
+// ---------------- SALES HISTORY VIEW (LỊCH SỬ BÁN HÀNG) ----------------
+function SalesHistoryView({ orders, products, storeConfig, db, storeId, showToast }) {
+  const [searchTerm, setSearchTerm] = useState('');
+  const filteredOrders = useMemo(() => orders.filter(o => (o.customerName||'').toLowerCase().includes(searchTerm.toLowerCase()) || (o.id||'').toLowerCase().includes(searchTerm.toLowerCase())).sort((a,b) => new Date(b.date) - new Date(a.date)), [orders, searchTerm]);
+  const handleDelete = async (order) => {
+    if (window.confirm("Hủy đơn này và hoàn lại kho?")) {
+      try {
+        let batch = writeBatch(db);
+        order.items.forEach(it => { const p = products.find(x => x.id === it.id); if (p) batch.update(doc(db, 'stores', storeId, 'products', p.id), { stock: (p.stock || 0) + it.quantity }); });
+        batch.delete(doc(db, 'stores', storeId, 'orders', order.id)); await batch.commit(); showToast("Đã hủy đơn và hoàn kho");
+      } catch (e) { showToast("Lỗi xóa đơn", "error"); }
+    }
+  };
+  return (
+    <div className="flex-1 p-4 md:p-6 bg-gray-50 flex flex-col overflow-hidden h-full">
+      <div className="flex justify-between mb-4"><h2 className="text-2xl font-bold">Lịch sử Bán Hàng</h2><input placeholder="Tìm mã đơn hoặc tên khách..." value={searchTerm} onChange={e=>setSearchTerm(e.target.value)} className="p-2 border rounded-lg outline-none w-64 text-sm" /></div>
+      <div className="flex-1 bg-white border rounded-xl overflow-auto shadow-sm">
+        <table className="w-full text-left text-sm"><thead className="bg-gray-100 sticky top-0 border-b"><tr><th className="p-3">Mã Đơn / Ngày</th><th className="p-3">Khách hàng</th><th className="p-3">Sản phẩm</th><th className="p-3">Tổng Tiền</th><th className="p-3">Trạng thái</th><th className="p-3 text-right">Thao tác</th></tr></thead><tbody>
+          {filteredOrders.map(o => (
+            <tr key={o.id} className="border-b hover:bg-gray-50"><td className="p-3 font-bold text-blue-600">#{o.id}<p className="text-xs text-gray-500 font-normal">{formatDate(o.date)}</p></td><td className="p-3">{o.customerName}</td><td className="p-3">{o.items?.map((it, idx) => <div key={idx} className="text-xs">{it.name} (x{it.quantity})</div>)}</td><td className="p-3 font-bold">{formatCurrency(o.total)}</td><td className="p-3"><span className={`px-2 py-0.5 rounded text-[10px] font-bold ${o.status === 'PAID' ? 'bg-green-100 text-green-700' : 'bg-orange-100 text-orange-700'}`}>{o.status === 'PAID' ? 'Đã thu tiền' : 'Ghi nợ'}</span></td><td className="p-3 text-right"><button onClick={() => handleDelete(o)} className="text-red-600 bg-red-50 p-2 rounded-lg hover:bg-red-100"><Trash2 size={16}/></button></td></tr>
+          ))}
+        </tbody></table>
+      </div>
+    </div>
+  );
+}
+
+// ---------------- INVENTORY VIEW (KHO HÀNG) ----------------
+function InventoryView({ products, db, storeId, showToast }) {
+  const [searchTerm, setSearchTerm] = useState(''); const [isModalOpen, setIsModalOpen] = useState(false); const [form, setForm] = useState({});
+  const filteredProducts = products.filter(p => p.name && p.name.toLowerCase().includes(searchTerm.toLowerCase()));
+  const handleSave = async (e) => {
+    e.preventDefault();
+    try {
+      const d = { name: form.name, category: form.category || '', price: Number(form.price), cost: Number(form.cost || 0), stock: Number(form.stock), createdAt: new Date().toISOString() };
+      if (form.id) await updateDoc(doc(db, 'stores', storeId, 'products', form.id), d); else await addDoc(collection(db, 'stores', storeId, 'products'), d);
+      setIsModalOpen(false); showToast("Đã lưu hàng hóa");
+    } catch (err) { showToast("Lỗi", "error"); }
+  };
+  const handleDelete = async (id) => { if (window.confirm("Xóa sản phẩm này?")) { await deleteDoc(doc(db, 'stores', storeId, 'products', id)); showToast("Đã xóa"); } };
+  return (
+    <div className="flex-1 p-4 md:p-6 bg-gray-50 flex flex-col overflow-hidden h-full">
+      <div className="flex justify-between mb-4"><h2 className="text-2xl font-bold">Kho Hàng</h2><div className="flex gap-2"><input placeholder="Tìm sản phẩm..." value={searchTerm} onChange={e=>setSearchTerm(e.target.value)} className="p-2 border rounded-lg outline-none text-sm w-64" /><button onClick={() => { setForm({}); setIsModalOpen(true); }} className="bg-blue-600 text-white px-4 py-2 rounded-lg font-bold">+ Thêm</button></div></div>
+      <div className="flex-1 bg-white border rounded-xl overflow-auto shadow-sm">
+        <table className="w-full text-left text-sm"><thead className="bg-gray-100 sticky top-0 border-b"><tr><th className="p-4">Tên hàng</th><th className="p-4">Nhóm</th><th className="p-4">Giá vốn</th><th className="p-4">Giá bán</th><th className="p-4">Tồn kho</th><th className="p-4 text-right">Thao tác</th></tr></thead><tbody>
+          {filteredProducts.map(p => (
+            <tr key={p.id} className="border-b hover:bg-gray-50"><td className="p-4 font-bold text-blue-600">{p.name}</td><td className="p-4">{p.category || 'Khác'}</td><td className="p-4">{formatCurrency(p.cost)}</td><td className="p-4 font-bold text-blue-600">{formatCurrency(p.price)}</td><td className="p-4 font-bold">{p.stock}</td><td className="p-4 text-right flex justify-end gap-1"><button onClick={() => { setForm(p); setIsModalOpen(true); }} className="text-blue-600 bg-blue-50 p-2 rounded-lg"><Edit size={16}/></button><button onClick={() => handleDelete(p.id)} className="text-red-600 bg-red-50 p-2 rounded-lg"><Trash2 size={16}/></button></td></tr>
+          ))}
+        </tbody></table>
+      </div>
+      <Modal isOpen={isModalOpen} onClose={() => setIsModalOpen(false)} title="Thông tin Hàng hóa">
+        <form onSubmit={handleSave} className="space-y-4">
+          <input required placeholder="Tên sản phẩm *" value={form.name||''} onChange={e=>setForm({...form,name:e.target.value})} className="w-full p-2.5 border rounded-lg outline-none"/>
+          <input placeholder="Nhóm hàng" value={form.category||''} onChange={e=>setForm({...form,category:e.target.value})} className="w-full p-2.5 border rounded-lg outline-none"/>
+          <div className="grid grid-cols-2 gap-4">
+            <div><label className="text-xs font-bold text-gray-500 block mb-1">Giá vốn</label><input required type="number" value={form.cost||''} onChange={e=>setForm({...form,cost:e.target.value})} className="w-full p-2.5 border rounded-lg outline-none"/></div>
+            <div><label className="text-xs font-bold text-gray-500 block mb-1">Giá bán</label><input required type="number" value={form.price||''} onChange={e=>setForm({...form,price:e.target.value})} className="w-full p-2.5 border rounded-lg outline-none"/></div>
+          </div>
+          <div><label className="text-xs font-bold text-gray-500 block mb-1">Tồn kho</label><input required type="number" value={form.stock||''} onChange={e=>setForm({...form,stock:e.target.value})} className="w-full p-2.5 border rounded-lg outline-none"/></div>
+          <button className="w-full bg-blue-600 text-white font-bold p-3 rounded-lg">Lưu lại</button>
+        </form>
+      </Modal>
+    </div>
+  );
+}
+
+// ---------------- CONTACT MANAGER (KHÁCH HÀNG / NHÀ CUNG CẤP) ----------------
+function ContactManager({ type, data, db, storeId, showToast }) {
+  const isCus = type === 'customers'; const title = isCus ? "Khách Hàng" : "Nhà Cung Cấp";
+  const [searchTerm, setSearchTerm] = useState(''); const [isModalOpen, setIsModalOpen] = useState(false); const [form, setForm] = useState({});
+  const filteredData = data.filter(i => (i.name||'').toLowerCase().includes(searchTerm.toLowerCase()) || (i.phone||'').includes(searchTerm));
+  const handleSave = async (e) => {
+    e.preventDefault();
+    try {
+      const p = { name: form.name, phone: form.phone || '', totalDebt: Number(form.totalDebt || 0), createdAt: new Date().toISOString() };
+      if (form.id) await updateDoc(doc(db, 'stores', storeId, type, form.id), p); else await addDoc(collection(db, 'stores', storeId, type), p);
+      setIsModalOpen(false); showToast("Đã lưu thành công");
+    } catch (err) { showToast("Lỗi", "error"); }
+  };
+  const handleDelete = async (id) => { if (window.confirm("Xóa liên hệ này?")) { await deleteDoc(doc(db, 'stores', storeId, type, id)); showToast("Đã xóa"); } };
+  return (
+    <div className="flex-1 p-4 md:p-6 bg-gray-50 flex flex-col overflow-hidden h-full">
+      <div className="flex justify-between mb-4"><h2 className="text-2xl font-bold">Quản lý {title}</h2><div className="flex gap-2"><input placeholder="Tìm kiếm..." value={searchTerm} onChange={e=>setSearchTerm(e.target.value)} className="p-2 border rounded-lg outline-none text-sm w-64" /><button onClick={() => { setForm({}); setIsModalOpen(true); }} className="bg-blue-600 text-white px-4 py-2 rounded-lg font-bold">+ Thêm</button></div></div>
+      <div className="flex-1 bg-white border rounded-xl overflow-auto shadow-sm">
+        <table className="w-full text-left text-sm"><thead className="bg-gray-100 sticky top-0 border-b"><tr><th className="p-4">Tên</th><th className="p-4">SĐT</th><th className="p-4">Nợ hiện tại</th><th className="p-4 text-right">Thao tác</th></tr></thead><tbody>
+          {filteredData.map(i => (
+            <tr key={i.id} className="border-b hover:bg-gray-50"><td className="p-4 font-bold text-blue-600">{i.name}</td><td className="p-4">{i.phone}</td><td className="p-4 font-bold text-red-600">{formatCurrency(i.totalDebt)}</td><td className="p-4 text-right"><button onClick={() => { setForm(i); setIsModalOpen(true); }} className="text-blue-600 bg-blue-50 p-2 rounded-lg mr-2"><Edit size={16}/></button><button onClick={() => handleDelete(i.id)} className="text-red-600 bg-red-50 p-2 rounded-lg"><Trash2 size={16}/></button></td></tr>
+          ))}
+        </tbody></table>
+      </div>
+      <Modal isOpen={isModalOpen} onClose={() => setIsModalOpen(false)} title={"Thông tin " + title}>
+        <form onSubmit={handleSave} className="space-y-4">
+          <input required placeholder="Tên *" value={form.name||''} onChange={e=>setForm({...form,name:e.target.value})} className="w-full p-2.5 border rounded-lg outline-none"/>
+          <input placeholder="SĐT" value={form.phone||''} onChange={e=>setForm({...form,phone:e.target.value})} className="w-full p-2.5 border rounded-lg outline-none"/>
+          <div><label className="text-xs font-bold text-gray-500 block mb-1">Nợ ban đầu</label><input type="number" value={form.totalDebt||0} onChange={e=>setForm({...form,totalDebt:e.target.value})} className="w-full p-2.5 border rounded-lg outline-none"/></div>
+          <button className="w-full bg-blue-600 text-white font-bold p-3 rounded-lg">Lưu lại</button>
+        </form>
+      </Modal>
+    </div>
+  );
+}
+
+// ---------------- EXPENSE VIEW (CHI PHÍ) ----------------
+function ExpenseView({ expenses, db, storeId, showToast }) {
+  const [form, setForm] = useState({ amount: '', note: '' });
+  const handleSave = async (e) => { e.preventDefault(); await addDoc(collection(db, 'stores', storeId, 'expenses'), { amount: Number(form.amount), note: form.note, date: new Date().toISOString() }); setForm({ amount: '', note: '' }); showToast("Đã thêm chi phí"); };
+  const handleDelete = async (id) => { if (window.confirm("Xóa chi phí này?")) { await deleteDoc(doc(db, 'stores', storeId, 'expenses', id)); showToast("Đã xóa chi phí"); } };
+  return (
+    <div className="flex-1 p-4 md:p-6 bg-gray-50 flex flex-col overflow-hidden h-full">
+      <h2 className="text-2xl font-bold mb-4">Quản lý Chi phí</h2>
+      <form onSubmit={handleSave} className="bg-white p-4 rounded-xl border shadow-sm mb-4 flex gap-4 shrink-0">
+        <input required type="number" placeholder="Số tiền chi *" value={form.amount} onChange={e=>setForm({...form,amount:e.target.value})} className="p-2.5 border rounded-lg outline-none w-1/3"/>
+        <input required placeholder="Nội dung chi (VD: Trả tiền điện) *" value={form.note} onChange={e=>setForm({...form,note:e.target.value})} className="p-2.5 border rounded-lg outline-none flex-1"/>
+        <button className="bg-orange-600 text-white px-8 rounded-lg font-bold">Ghi Nhận</button>
+      </form>
+      <div className="flex-1 bg-white border rounded-xl overflow-auto shadow-sm">
+        <table className="w-full text-left text-sm"><thead className="bg-gray-100 sticky top-0 border-b"><tr><th className="p-4">Ngày ghi nhận</th><th className="p-4">Nội dung</th><th className="p-4">Số tiền</th><th className="p-4 text-right">Thao tác</th></tr></thead><tbody>
+          {expenses.sort((a,b)=>new Date(b.date)-new Date(a.date)).map(e => (
+            <tr key={e.id} className="border-b hover:bg-gray-50"><td className="p-4 text-gray-500">{formatDate(e.date)}</td><td className="p-4 font-bold">{e.note}</td><td className="p-4 font-bold text-orange-600">{formatCurrency(e.amount)}</td><td className="p-4 text-right"><button onClick={() => handleDelete(e.id)} className="text-red-600 bg-red-50 p-2 rounded-lg"><Trash2 size={16}/></button></td></tr>
+          ))}
+        </tbody></table>
+      </div>
+    </div>
+  );
+}
+
+// ---------------- SETTINGS VIEW (CÀI ĐẶT) ----------------
+function SettingsView({ db, storeId, storeConfig, showToast }) {
+  const [form, setForm] = useState(storeConfig);
+  const handleLogo = (e) => { const f = e.target.files[0]; if (f) { const r = new FileReader(); r.onloadend = () => setForm({...form, logo: r.result}); r.readAsDataURL(f); } };
+  const handleSaveConfig = async (e) => { e.preventDefault(); await setDoc(doc(db, 'stores', storeId), form, { merge: true }); showToast("Đã lưu Cấu hình"); };
+  return (
+    <div className="flex-1 p-4 md:p-6 bg-gray-50 overflow-auto h-full">
+      <h2 className="text-2xl font-bold mb-4">Cài đặt Cửa hàng</h2>
+      <div className="bg-white p-6 rounded-xl border shadow-sm max-w-2xl">
+        <form onSubmit={handleSaveConfig} className="space-y-4">
+          <div className="flex gap-4 items-center">
+            {form.logo ? <img src={form.logo} className="w-16 h-16 object-contain border p-1 rounded" alt="Logo" /> : <div className="w-16 h-16 bg-gray-100 border rounded flex items-center justify-center text-xs text-gray-400">Logo</div>}
+            <div><input type="file" accept="image/*" onChange={handleLogo} className="text-sm block" /><button type="button" onClick={() => setForm({...form, logo:''})} className="text-red-500 text-xs block mt-1 hover:underline">Xóa logo</button></div>
+          </div>
+          <div><label className="text-xs font-bold text-gray-500 block mb-1">Tên cửa hàng</label><input required value={form.name||''} onChange={e=>setForm({...form,name:e.target.value})} className="w-full p-2.5 border rounded-lg outline-none"/></div>
+          <div className="grid grid-cols-2 gap-4">
+            <div><label className="text-xs font-bold text-gray-500 block mb-1">Địa chỉ</label><input value={form.address||''} onChange={e=>setForm({...form,address:e.target.value})} className="w-full p-2.5 border rounded-lg outline-none"/></div>
+            <div><label className="text-xs font-bold text-gray-500 block mb-1">Số điện thoại</label><input value={form.phone||''} onChange={e=>setForm({...form,phone:e.target.value})} className="w-full p-2.5 border rounded-lg outline-none"/></div>
+          </div>
+          <div><label className="text-xs font-bold text-gray-500 block mb-1">Khổ giấy in mặc định</label><select value={form.printDefaultSize||'a4'} onChange={e=>setForm({...form, printDefaultSize: e.target.value})} className="w-full p-2.5 border rounded-lg outline-none bg-white"><option value="a4">A4</option><option value="a5">A5</option><option value="bill">Máy in Bill (K80)</option></select></div>
+          <div><label className="text-xs font-bold text-gray-500 block mb-1">Ghi chú cuối hóa đơn</label><input value={form.printFooterText||''} onChange={e=>setForm({...form,printFooterText:e.target.value})} className="w-full p-2.5 border rounded-lg outline-none"/></div>
+          <button className="w-full bg-blue-600 text-white font-bold py-3 rounded-lg mt-4">Lưu Thông Tin Cài Đặt</button>
+        </form>
+      </div>
+    </div>
+  );
+}
