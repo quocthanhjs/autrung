@@ -1592,6 +1592,469 @@ function StatCard({ icon, title, value, color, highlight }) {
 }
 function StaffManagerView({ db, showToast }) {
   const [staffList, setStaffList] = React.useState([]);
+  const [isModalOpen, setIsModalOpen] = React.useState(false);
+  const [loading, setLoading] = React.useState(false);
+  const [form, setForm] = React.useState({ username: '', email: '', password: '', role: 'staff', name: '', permissions: {} });
+
+  React.useEffect(() => {
+    import('firebase/firestore').then(({ collection, onSnapshot }) => {
+      const unsub = onSnapshot(collection(db, 'users_db'), (snap) => {
+        setStaffList(snap.docs.map(d => ({ id: d.id, ...d.data() })));
+      });
+      return () => unsub();
+    });
+  }, [db]);
+
+  const handleSaveStaff = async (e) => {
+    e.preventDefault();
+    setLoading(true);
+    try {
+      const { getApp, initializeApp } = await import('firebase/app');
+      const { getAuth, createUserWithEmailAndPassword } = await import('firebase/auth');
+      const { doc, setDoc } = await import('firebase/firestore');
+      
+      // Tạo một app phụ để đăng ký tài khoản mà không làm đăng xuất Admin hiện tại
+      const mainApp = getApp();
+      let secondaryApp;
+      try {
+        secondaryApp = initializeApp(mainApp.options, "SecondaryApp");
+      } catch (err) {
+        import('firebase/app').then(m => secondaryApp = m.getApp("SecondaryApp"));
+      }
+      const secondaryAuth = getAuth(secondaryApp);
+      
+      // Đăng ký user mới vào Firebase Auth
+      const userCredential = await createUserWithEmailAndPassword(secondaryAuth, form.email, form.password);
+      const newUid = userCredential.user.uid;
+      
+      // Lưu thông tin vào Firestore
+      await setDoc(doc(db, 'users_db', newUid), {
+        username: form.username,
+        email: form.email,
+        name: form.name,
+        role: form.role,
+        permissions: form.permissions,
+        createdAt: new Date().toISOString()
+      });
+
+      await secondaryAuth.signOut(); // Thoát app phụ
+      setIsModalOpen(false);
+      setForm({ username: '', email: '', password: '', role: 'staff', name: '', permissions: {} });
+      showToast("Đã thêm nhân viên thành công!");
+    } catch (err) {
+      console.error(err);
+      showToast("Lỗi khi thêm: Email này có thể đã tồn tại!", "error");
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleDeleteStaff = async (staffId) => {
+    if (window.confirm("Xác nhận xóa tài khoản nhân viên này khỏi hệ thống? (Nhân viên sẽ không thể đăng nhập nữa)")) {
+      try {
+        const { doc, deleteDoc } = await import('firebase/firestore');
+        await deleteDoc(doc(db, 'users_db', staffId));
+        showToast("Đã xóa nhân viên!");
+      } catch (err) {
+        showToast("Lỗi khi xóa", "error");
+      }
+    }
+  };
+
+  const handleResetPassword = async (email) => {
+    if (!email) return showToast("Nhân viên này không có email hợp lệ!", "error");
+    if (window.confirm(`Gửi link đặt lại mật khẩu về email: ${email} ?`)) {
+      try {
+        const { getAuth, sendPasswordResetEmail } = await import('firebase/auth');
+        const auth = getAuth();
+        await sendPasswordResetEmail(auth, email);
+        showToast("Đã gửi link khôi phục mật khẩu vào Email!");
+      } catch (err) {
+        showToast("Lỗi khi gửi email", "error");
+      }
+    }
+  };
+
+  return (
+    <div className="p-4 md:p-6 bg-gray-50 flex-1 overflow-auto">
+      <div className="flex justify-between items-center mb-6">
+        <h2 className="text-2xl font-bold text-gray-800">Quản trị Nhân viên</h2>
+        <button onClick={() => setIsModalOpen(true)} className="bg-blue-600 text-white px-4 py-2 rounded-lg font-bold">
+          + Thêm Nhân Viên
+        </button>
+      </div>
+
+      <div className="bg-white rounded-xl border shadow-sm overflow-auto">
+        <table className="w-full text-left text-sm">
+          <thead className="bg-gray-100 border-b">
+            <tr>
+              <th className="p-4 font-bold text-gray-600">Tên nhân viên</th>
+              <th className="p-4 font-bold text-gray-600">Tên đăng nhập / Email</th>
+              <th className="p-4 font-bold text-gray-600">Vai trò</th>
+              <th className="p-4 font-bold text-gray-600 text-right">Thao tác</th>
+            </tr>
+          </thead>
+          <tbody>
+            {staffList.map(staff => (
+              <tr key={staff.id} className="border-b hover:bg-gray-50">
+                <td className="p-4 font-bold text-gray-800">{staff.name || 'Chưa cập nhật'}</td>
+                <td className="p-4 text-blue-600">{staff.email || staff.username}</td>
+                <td className="p-4">
+                  <span className={`px-2 py-1 rounded text-xs font-bold ${staff.role === 'admin' ? 'bg-red-100 text-red-700' : 'bg-blue-100 text-blue-700'}`}>
+                    {staff.role === 'admin' ? 'Quản trị viên' : 'Nhân viên'}
+                  </span>
+                </td>
+                <td className="p-4 text-right space-x-2">
+                  <button onClick={() => handleResetPassword(staff.email)} className="text-blue-600 bg-blue-50 px-3 py-1.5 rounded-lg font-bold hover:bg-blue-100 text-xs">Khôi phục MK</button>
+                  {staff.role !== 'admin' && (
+                    <button onClick={() => handleDeleteStaff(staff.id)} className="text-red-600 bg-red-50 px-3 py-1.5 rounded-lg font-bold hover:bg-red-100 text-xs">Xóa</button>
+                  )}
+                </td>
+              </tr>
+            ))}
+            {staffList.length === 0 && <tr><td colSpan="4" className="p-4 text-center text-gray-400">Chưa có dữ liệu nhân viên</td></tr>}
+          </tbody>
+        </table>
+      </div>
+
+      {isModalOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
+          <div className="bg-white p-6 rounded-xl shadow-xl w-full max-w-md">
+            <h3 className="text-lg font-bold mb-4">Thêm Nhân viên mới</h3>
+            <form onSubmit={handleSaveStaff} className="space-y-3">
+              <input required placeholder="Tên hiển thị (VD: Nguyễn Văn A)" value={form.name} onChange={e=>setForm({...form, name: e.target.value})} className="w-full p-2.5 border rounded-lg outline-none"/>
+              <input required placeholder="Tên đăng nhập (viết liền, VD: nhanvien1)" value={form.username} onChange={e=>setForm({...form, username: e.target.value})} className="w-full p-2.5 border rounded-lg outline-none"/>
+              <input required type="email" placeholder="Email thực (để lấy lại mật khẩu)" value={form.email} onChange={e=>setForm({...form, email: e.target.value})} className="w-full p-2.5 border rounded-lg outline-none"/>
+              <input required type="password" placeholder="Mật khẩu (ít nhất 6 ký tự)" value={form.password} onChange={e=>setForm({...form, password: e.target.value})} className="w-full p-2.5 border rounded-lg outline-none"/>
+              <select value={form.role} onChange={e=>setForm({...form, role: e.target.value})} className="w-full p-2.5 border rounded-lg outline-none bg-white">
+                <option value="staff">Nhân viên bán hàng</option>
+                <option value="admin">Quản trị viên (Toàn quyền)</option>
+              </select>
+              <div className="flex gap-2 pt-4">
+                <button type="button" onClick={() => setIsModalOpen(false)} className="flex-1 bg-gray-200 text-gray-800 font-bold p-2.5 rounded-lg">Hủy</button>
+                <button type="submit" disabled={loading} className="flex-1 bg-blue-600 text-white font-bold p-2.5 rounded-lg">{loading ? 'Đang tạo...' : 'Lưu lại'}</button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+function POSView({ products, customers, db, storeId, user, storeConfig, showToast }) {
+  const [cart, setCart] = React.useState([]);
+  const [searchTerm, setSearchTerm] = React.useState('');
+  const [selectedCustomer, setSelectedCustomer] = React.useState(null);
+  const [isProcessing, setIsProcessing] = React.useState(false);
+  
+  // State phục vụ việc xem trước và In hóa đơn / Lưu PDF
+  const [viewingOrderPrint, setViewingOrderPrint] = React.useState(null);
+  const [printType, setPrintType] = React.useState(storeConfig?.printDefaultSize || 'a4');
+  const [printOptions, setPrintOptions] = React.useState({ showLogo: true, showNote: true, showWarranty: true });
+
+  const addToCart = (product) => {
+    setCart(prev => {
+      const existing = prev.find(item => item.id === product.id);
+      if (existing) return prev.map(item => item.id === product.id ? { ...item, quantity: item.quantity + 1 } : item);
+      return [...prev, { ...product, quantity: 1, cost: product.cost || 0 }];
+    });
+  };
+
+  const updateCartItem = (id, field, value) => {
+    setCart(prev => prev.map(item => item.id === id ? { ...item, [field]: Number(value) } : item));
+  };
+
+  const removeFromCart = (productId) => {
+    setCart(prev => prev.filter(item => item.id !== productId));
+  };
+
+  const totalAmount = cart.reduce((sum, item) => sum + ((item.price || 0) * (item.quantity || 1)), 0);
+  const formatCurrency = (amount) => new Intl.NumberFormat('vi-VN', { style: 'currency', currency: 'VND' }).format(amount || 0);
+
+  const handleCheckout = async (status, shouldPrint) => {
+    if (cart.length === 0) return showToast("Giỏ hàng trống", "error");
+    setIsProcessing(true);
+    try {
+      const { collection, doc, writeBatch } = await import('firebase/firestore');
+      const orderId = Math.random().toString(36).substring(2, 8).toUpperCase();
+      const orderData = {
+        id: orderId,
+        date: new Date().toISOString(),
+        items: cart,
+        total: totalAmount,
+        status: status,
+        customerId: selectedCustomer ? selectedCustomer.id : null,
+        customerName: selectedCustomer ? selectedCustomer.name : 'Khách lẻ',
+        userId: user.uid
+      };
+      
+      const batch = writeBatch(db);
+      
+      // Trừ tồn kho
+      cart.forEach(item => {
+        const prodRef = doc(db, 'stores', storeId, 'products', item.id);
+        batch.update(prodRef, { stock: (item.stock || 0) - item.quantity });
+      });
+
+      // Lưu hóa đơn
+      const orderRef = doc(collection(db, 'stores', storeId, 'orders'), orderId);
+      batch.set(orderRef, orderData);
+      
+      // Cộng nợ khách hàng nếu ghi nợ
+      if (status === 'DEBT' && selectedCustomer) {
+        const cusRef = doc(db, 'stores', storeId, 'customers', selectedCustomer.id);
+        batch.update(cusRef, { totalDebt: (selectedCustomer.totalDebt || 0) + totalAmount });
+      }
+
+      await batch.commit();
+      
+      if (shouldPrint) {
+        setViewingOrderPrint(orderData); // Bật popup chọn in/Lưu PDF
+      } else {
+        showToast("Lưu đơn hàng thành công!");
+      }
+
+      setCart([]);
+      setSelectedCustomer(null);
+    } catch (error) {
+      showToast("Lỗi thanh toán", "error");
+    } finally {
+      setIsProcessing(false);
+    }
+  };
+
+  const filteredProducts = products.filter(p => p.name && p.name.toLowerCase().includes(searchTerm.toLowerCase()));
+
+  return (
+    <div className="flex flex-col md:flex-row h-full overflow-hidden bg-gray-50">
+      {/* CỘT TÌM KIẾM SẢN PHẨM */}
+      <div className="flex-1 flex flex-col p-4 border-r overflow-hidden no-print">
+        <input 
+          type="text" 
+          placeholder="Tìm tên sản phẩm..." 
+          value={searchTerm} 
+          onChange={e => setSearchTerm(e.target.value)} 
+          className="w-full p-3 mb-4 border rounded-lg outline-none shadow-sm font-medium"
+        />
+        <div className="flex-1 overflow-auto grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4 pb-4">
+          {filteredProducts.map(p => (
+            <div key={p.id} onClick={() => addToCart(p)} className="bg-white p-4 rounded-xl border shadow-sm cursor-pointer hover:border-blue-500 hover:shadow-md transition">
+              <p className="font-bold text-gray-800 text-sm mb-2 h-10 overflow-hidden">{p.name}</p>
+              <div className="flex justify-between items-center">
+                <span className="text-blue-600 font-bold">{formatCurrency(p.price)}</span>
+                <span className="text-xs text-gray-500 bg-gray-100 px-2 py-1 rounded">Tồn: {p.stock}</span>
+              </div>
+            </div>
+          ))}
+        </div>
+      </div>
+
+      {/* CỘT GIỎ HÀNG */}
+      <div className="w-full md:w-[400px] flex flex-col bg-white border-l shadow-xl flex-shrink-0 no-print">
+        <div className="p-4 border-b bg-gray-50">
+          <h2 className="text-lg font-bold text-gray-800 mb-3">Thông tin đơn hàng</h2>
+          <select 
+            className="w-full p-2.5 border rounded-lg outline-none text-sm font-medium bg-white"
+            value={selectedCustomer ? selectedCustomer.id : ''}
+            onChange={e => setSelectedCustomer(customers.find(c => c.id === e.target.value) || null)}
+          >
+            <option value="">-- Chọn Khách lẻ --</option>
+            {customers.map(c => <option key={c.id} value={c.id}>{c.name} - {c.phone}</option>)}
+          </select>
+        </div>
+        
+        <div className="flex-1 overflow-auto p-4 space-y-3">
+          {cart.map((item, index) => (
+            <div key={index} className="flex flex-col border p-3 rounded-lg bg-gray-50 gap-2">
+              <div className="flex justify-between items-start">
+                <p className="font-bold text-sm text-gray-800">{item.name}</p>
+                <button onClick={() => removeFromCart(item.id)} className="text-red-500 font-bold px-2 py-0.5 bg-red-100 rounded text-xs hover:bg-red-200">Xóa</button>
+              </div>
+              <div className="flex gap-2 items-center">
+                <div className="flex flex-col flex-1">
+                  <label className="text-[10px] font-bold text-gray-500 uppercase">Đơn giá bán</label>
+                  <input type="number" value={item.price} onChange={(e) => updateCartItem(item.id, 'price', e.target.value)} className="w-full p-1.5 border rounded text-sm text-blue-600 font-bold outline-none" />
+                </div>
+                <div className="flex flex-col w-16">
+                  <label className="text-[10px] font-bold text-gray-500 uppercase">SL</label>
+                  <input type="number" value={item.quantity} onChange={(e) => updateCartItem(item.id, 'quantity', e.target.value)} className="w-full p-1.5 border rounded text-sm outline-none text-center font-bold" />
+                </div>
+              </div>
+              <div className="text-right">
+                <span className="text-[10px] text-gray-500 mr-2">Thành tiền:</span>
+                <span className="font-black text-blue-800 text-sm">{formatCurrency(item.price * item.quantity)}</span>
+              </div>
+            </div>
+          ))}
+          {cart.length === 0 && <div className="text-center text-gray-400 mt-10 p-6 border-2 border-dashed rounded-xl">Chưa có sản phẩm nào trong giỏ</div>}
+        </div>
+
+        <div className="p-4 border-t bg-gray-50 space-y-3">
+          <div className="flex justify-between items-center bg-white p-3 rounded-lg border">
+            <span className="text-gray-600 font-bold uppercase text-sm">Tổng thanh toán:</span>
+            <span className="text-2xl font-black text-blue-600">{formatCurrency(totalAmount)}</span>
+          </div>
+          
+          <div className="grid grid-cols-2 gap-2">
+            <button 
+              disabled={isProcessing || cart.length === 0} 
+              onClick={() => handleCheckout('DEBT', false)} 
+              className="bg-orange-100 text-orange-700 font-bold py-2.5 rounded-lg hover:bg-orange-200 text-sm"
+            >
+              Ghi Nợ (Không In)
+            </button>
+            <button 
+              disabled={isProcessing || cart.length === 0} 
+              onClick={() => handleCheckout('PAID', false)} 
+              className="bg-green-100 text-green-700 font-bold py-2.5 rounded-lg hover:bg-green-200 text-sm"
+            >
+              Tiền Mặt (Không In)
+            </button>
+          </div>
+          <button 
+            disabled={isProcessing || cart.length === 0} 
+            onClick={() => handleCheckout('PAID', true)} 
+            className="w-full bg-blue-600 text-white font-bold py-3 rounded-lg hover:bg-blue-700 shadow-md text-sm uppercase flex items-center justify-center gap-2"
+          >
+            Thanh Toán & Xuất File PDF
+          </button>
+        </div>
+      </div>
+
+      {/* POPUP TÙY CHỌN IN & LƯU PDF */}
+      {viewingOrderPrint && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm print:absolute print:inset-0 print:bg-white print:p-0 print:items-start print:justify-center">
+          <div className="bg-white rounded-xl shadow-2xl w-full max-w-2xl overflow-hidden flex flex-col max-h-[90vh] print:max-h-none print:overflow-visible print:shadow-none print:w-full print:max-w-none print:m-0">
+            <div className="bg-blue-50 border-b border-blue-100 p-4 shrink-0 no-print space-y-3">
+              <div className="flex justify-between items-center">
+                <span className="font-bold text-blue-800">Tùy chọn Xuất File / In Hóa Đơn</span>
+                <button onClick={() => setViewingOrderPrint(null)} className="text-gray-500 hover:text-gray-800 font-bold">X Đóng</button>
+              </div>
+              <div className="flex flex-wrap items-center gap-4 text-sm font-medium text-gray-700">
+                <div className="flex items-center gap-2">
+                  <span>Khổ giấy:</span>
+                  <select value={printType} onChange={e => setPrintType(e.target.value)} className="p-1 border rounded bg-white outline-none">
+                    <option value="bill">Máy in nhiệt (K80)</option>
+                    <option value="a4">Giấy A4</option>
+                    <option value="a5">Giấy A5</option>
+                  </select>
+                </div>
+                <div className="ml-auto">
+                  <button onClick={() => window.print()} className="bg-blue-600 hover:bg-blue-700 text-white px-6 py-2 rounded-lg font-bold shadow flex items-center gap-2">
+                    Mở hộp thoại Lưu PDF / In
+                  </button>
+                </div>
+              </div>
+              <p className="text-xs text-blue-600 italic">Mẹo: Khi hộp thoại mở ra, chọn máy in là "Save as PDF" (Lưu dưới dạng PDF) để xuất file.</p>
+            </div>
+
+            <div className="p-6 overflow-y-auto print:p-0 print:overflow-visible bg-white print-container text-gray-900 font-sans print:w-full print:m-0">
+              {printType === 'bill' ? (
+                <div className="max-w-[80mm] mx-auto print:max-w-none print:w-[80mm]">
+                  <div className="text-center mb-4 border-b pb-3">
+                    {printOptions.showLogo && storeConfig?.logo && (<img src={storeConfig.logo} alt="Logo" className="max-h-16 mx-auto mb-1 object-contain grayscale print:grayscale-0" />)}
+                    <h2 className="text-base font-bold uppercase">{storeConfig?.name || 'SmartPOS Pro'}</h2>
+                    <p className="text-xs text-gray-600">ĐC: {storeConfig?.address || '...'}</p>
+                    <p className="text-xs text-gray-600">SĐT: {storeConfig?.phone || '...'}</p>
+                    <h1 className="text-sm font-bold mt-2 uppercase tracking-wide">HÓA ĐƠN BÁN HÀNG</h1>
+                    <p className="text-[10px] text-gray-500">Mã: #{viewingOrderPrint.id} | Ngày: {new Intl.DateTimeFormat('vi-VN', { dateStyle: 'short', timeStyle: 'short' }).format(new Date(viewingOrderPrint.date))}</p>
+                  </div>
+                  <div className="mb-3 text-xs">
+                    <p><strong>Khách hàng:</strong> {viewingOrderPrint.customerName}</p>
+                  </div>
+                  <table className="w-full text-xs mb-4">
+                    <thead className="border-b border-gray-800">
+                      <tr><th className="py-1.5 text-left">Sản phẩm</th><th className="py-1.5 text-center">SL</th><th className="py-1.5 text-right">Thành tiền</th></tr>
+                    </thead>
+                    <tbody>
+                      {viewingOrderPrint.items.map((i, x) => (
+                        <tr key={x} className="border-b border-dashed border-gray-200">
+                          <td className="py-1.5 font-bold">{i.name}</td>
+                          <td className="py-1.5 text-center align-top">{i.quantity}</td>
+                          <td className="py-1.5 text-right align-top font-medium">{formatCurrency(i.price * i.quantity)}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                    <tfoot className="border-t border-gray-800 font-bold">
+                      <tr><td colSpan="2" className="py-2 text-right">TỔNG CỘNG:</td><td className="py-2 text-right text-sm">{formatCurrency(viewingOrderPrint.total)}</td></tr>
+                    </tfoot>
+                  </table>
+                  <div className="text-center text-[10px] text-gray-500 mt-6 pt-2 border-t border-dashed">
+                    <p>{storeConfig?.printFooterText || 'Cảm ơn quý khách và hẹn gặp lại!'}</p>
+                  </div>
+                </div>
+              ) : (
+                <div className={printType === 'a4' ? 'max-w-[210mm] mx-auto p-4 print:max-w-[210mm]' : 'max-w-[148mm] mx-auto p-2 print:max-w-[148mm]'}>
+                  <div className="text-center border-b-2 border-gray-800 pb-4 mb-4">
+                    {printOptions.showLogo && storeConfig?.logo && (<img src={storeConfig.logo} alt="Logo" className="max-h-20 mx-auto mb-2 object-contain" />)}
+                    <h2 className="text-xl font-bold uppercase">{storeConfig?.name || 'SmartPOS Pro'}</h2>
+                    <p className="text-sm text-gray-700">Địa chỉ: {storeConfig?.address || '...'}</p>
+                    <p className="text-sm text-gray-700">Điện thoại: {storeConfig?.phone || '...'}</p>
+                    
+                    <h1 className="text-2xl font-bold uppercase text-blue-800 tracking-wide mt-4">PHIẾU BÁN HÀNG</h1>
+                    <p className="text-xs text-gray-500 mt-1">Mã HĐ: #{viewingOrderPrint.id} | Ngày: {new Intl.DateTimeFormat('vi-VN', { dateStyle: 'short', timeStyle: 'short' }).format(new Date(viewingOrderPrint.date))}</p>
+                  </div>
+
+                  <div className="grid grid-cols-2 gap-4 bg-gray-50 p-3 rounded-lg border border-gray-200 text-xs mb-4">
+                    <div><span className="text-gray-500">Khách hàng:</span> <strong className="text-gray-800 text-sm">{viewingOrderPrint.customerName}</strong></div>
+                    <div><span className="text-gray-500">Trạng thái:</span> <strong className="text-blue-600">{viewingOrderPrint.status === 'PAID' ? 'Đã thanh toán' : 'Ghi nợ'}</strong></div>
+                  </div>
+
+                  <table className="w-full text-xs mb-6 border-collapse">
+                    <thead>
+                      <tr className="bg-gray-100 border-y-2 border-gray-800">
+                        <th className="py-2.5 px-2 text-left">STT</th>
+                        <th className="py-2.5 px-2 text-left">Tên sản phẩm</th>
+                        <th className="py-2.5 px-2 text-center">SL</th>
+                        <th className="py-2.5 px-2 text-right">Đơn giá</th>
+                        <th className="py-2.5 px-2 text-right">Thành tiền</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {viewingOrderPrint.items.map((i, x) => (
+                        <tr key={x} className="border-b border-gray-200">
+                          <td className="py-2.5 px-2 text-center">{x + 1}</td>
+                          <td className="py-2.5 px-2 font-medium">{i.name}</td>
+                          <td className="py-2.5 px-2 text-center font-bold">{i.quantity}</td>
+                          <td className="py-2.5 px-2 text-right">{formatCurrency(i.price)}</td>
+                          <td className="py-2.5 px-2 text-right font-bold">{formatCurrency(i.price * i.quantity)}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                    <tfoot>
+                      <tr className="border-t-2 border-gray-800 font-bold text-sm bg-gray-50">
+                        <td colSpan="4" className="py-3 px-2 text-right">TỔNG CỘNG THANH TOÁN:</td>
+                        <td className="py-3 px-2 text-right text-blue-600 text-base">{formatCurrency(viewingOrderPrint.total)}</td>
+                      </tr>
+                    </tfoot>
+                  </table>
+
+                  <div className="grid grid-cols-2 gap-8 text-center pt-8 text-xs">
+                    <div>
+                      <p className="font-bold">Khách hàng ký nhận</p>
+                      <p className="text-gray-400 italic mt-1">(Ký, ghi rõ họ tên)</p>
+                    </div>
+                    <div>
+                      <p className="font-bold">Người bán hàng</p>
+                      <p className="text-gray-400 italic mt-1">(Ký, ghi rõ họ tên)</p>
+                    </div>
+                  </div>
+                  
+                  <div className="text-center text-xs text-gray-500 mt-12 italic">
+                    <p>{storeConfig?.printFooterText || 'Cảm ơn quý khách và hẹn gặp lại!'}</p>
+                  </div>
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+function StaffManagerView({ db, showToast }) {
+  const [staffList, setStaffList] = React.useState([]);
   
   React.useEffect(() => {
     import('firebase/firestore').then(({ collection, onSnapshot }) => {
