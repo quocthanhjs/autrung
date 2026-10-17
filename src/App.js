@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { LayoutDashboard, ShoppingCart, Package, Users, Truck, Edit, Trash2, X, ShoppingBag, TrendingUp, AlertCircle, ArrowDownToLine, DollarSign, Receipt, CreditCard, LogOut, Database, UserCog, Printer, Image as ImageIcon, Save, Plus, Eye, Download, Upload } from 'lucide-react';
 import { initializeApp } from 'firebase/app';
-import { getAuth, signInWithEmailAndPassword, signOut, onAuthStateChanged, sendPasswordResetEmail } from 'firebase/auth';
+import { getAuth, signInWithEmailAndPassword, signOut, onAuthStateChanged } from 'firebase/auth';
 import { getFirestore, doc, setDoc, getDoc, getDocs, addDoc, updateDoc, deleteDoc, onSnapshot, collection, writeBatch, query, where } from 'firebase/firestore';
 
 const app = initializeApp({ apiKey: "AIzaSyClQogCLby6OYpVzRwJ9181rmg1Lho5FV8", authDomain: "smartpos-5f5cf.firebaseapp.com", projectId: "smartpos-5f5cf", storageBucket: "smartpos-5f5cf.firebasestorage.app", messagingSenderId: "458225351603", appId: "1:458225351603:web:f67d06427def5a33dca9c6" });
@@ -52,6 +52,9 @@ export default function EnhancedPOS() {
         if (docSnap.exists()) {
           setUserData(docSnap.data());
           setActiveTab(docSnap.data().role === 'admin' ? 'dashboard' : 'pos');
+        } else {
+          setUserData({ role: 'admin', name: 'Quản trị viên', perms: {} });
+          setActiveTab('dashboard');
         }
       } else {
         setUser(null);
@@ -66,17 +69,14 @@ export default function EnhancedPOS() {
       if (docSnap.exists()) setStoreConfig(prev => ({ ...prev, ...docSnap.data() }));
     });
 
-    const collections = ['products', 'orders', 'imports', 'customers', 'suppliers', 'expenses'];
+    const collections = ['products', 'orders', 'imports', 'customers', 'suppliers', 'expenses', 'staff'];
     const unsubs = collections.map(col =>
       onSnapshot(collection(db, 'stores', storeId, col), snap => {
         setData(prev => ({ ...prev, [col]: snap.docs.map(d => ({ id: d.id, ...d.data() })) }));
       })
     );
-    const unsubStaff = onSnapshot(collection(db, 'users_db'), snap => {
-      setData(prev => ({ ...prev, staff: snap.docs.map(d => ({ id: d.id, ...d.data() })) }));
-    });
 
-    return () => { unsubStore(); unsubs.forEach(fn => fn()); unsubStaff(); };
+    return () => { unsubStore(); unsubs.forEach(fn => fn()); };
   }, [user]);
 
   const showToast = (msg, type = 'success') => {
@@ -128,6 +128,14 @@ export default function EnhancedPOS() {
 
   return (
     <div className="flex h-screen bg-gray-50 font-sans text-sm print:bg-white print:block">
+      <style>{`
+        @media print {
+          body * { visibility: hidden; }
+          #rcp, #rcp * { visibility: visible; }
+          #rcp { position: absolute; left: 0; top: 0; width: 100% !important; margin: 0; padding: 15px; box-shadow: none !important; }
+          .no-print { display: none !important; }
+        }
+      `}</style>
       <aside className="w-56 bg-white border-r flex flex-col shrink-0 no-print">
         <div className="p-4 border-b font-bold text-blue-800 text-lg flex items-center gap-2 truncate">
           {storeConfig.logo ? <img src={storeConfig.logo} alt="Logo" className="max-h-8 object-contain" /> : <ShoppingBag />}
@@ -167,14 +175,14 @@ export default function EnhancedPOS() {
         {activeTab === 'suppliers' && <ContactView type="suppliers" dataList={data.suppliers} orders={data.imports} storeId={storeId} showToast={showToast} />}
         {activeTab === 'expenses' && <ExpenseView data={data.expenses} storeId={storeId} showToast={showToast} />}
         {activeTab === 'settings' && <SettingsView config={storeConfig} storeId={storeId} data={data} showToast={showToast} />}
-        {activeTab === 'staff' && <StaffView staffList={data.staff} showToast={showToast} />}
+        {activeTab === 'staff' && <StaffView staffList={data.staff} storeId={storeId} showToast={showToast} />}
       </main>
     </div>
   );
 }
 
 // ==========================================
-// 1. DASHBOARD VIEW (ĐẦY ĐỦ BIỂU ĐỒ & THIẾT BỊ BÁN CHẠY)
+// 1. DASHBOARD VIEW
 // ==========================================
 function DashboardView({ data }) {
   const [filterMonth, setFilterMonth] = useState('ALL');
@@ -198,7 +206,6 @@ function DashboardView({ data }) {
     return { revenue, cogs, expenses, netProfit: revenue - cogs - expenses, validOrders };
   }, [data, filterMonth, filterYear]);
 
-  // Thống kê thiết bị/sản phẩm bán chạy nhất
   const topProducts = useMemo(() => {
     const map = {};
     stats.validOrders.forEach(o => {
@@ -271,7 +278,6 @@ function DashboardView({ data }) {
         </div>
       </div>
 
-      {/* Biểu đồ / Top sản phẩm bán chạy */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
         <div className="bg-white p-4 border rounded-xl shadow-sm">
           <h3 className="font-bold text-blue-800 mb-3 flex items-center gap-2"><TrendingUp size={18} /> Thiết bị / Sản phẩm bán chạy nhất</h3>
@@ -539,23 +545,30 @@ function POSView({ data, storeId, user, storeConfig, showToast }) {
 }
 
 // ==========================================
-// 3. IN HÓA ĐƠN
+// 3. IN HÓA ĐƠN (IN HÌNH ẢNH POPUP TRỰC TIẾP, IN GIẤY CHUẨN)
 // ==========================================
 function OrderPrintModal({ order, storeConfig, onClose }) {
   const [opt, setOpt] = useState({ s: storeConfig?.printDefaultSize || 'a4', l: true, n: true, b: true });
   const [loading, setLoading] = useState(false);
 
-  const saveJPG = async () => {
+  const printImageDirectly = async () => {
     const el = document.getElementById('rcp');
     if (window.html2canvas && el) {
       setLoading(true);
       try {
         const cv = await window.html2canvas(el, { scale: 2, useCORS: true });
-        const ln = document.createElement('a');
-        ln.download = `HD_${order.id || 'NHAP'}.jpg`;
-        ln.href = cv.toDataURL('image/jpeg', 0.9);
-        ln.click();
-      } catch (e) { alert("Lỗi lưu ảnh!"); } finally { setLoading(false); }
+        const imgUrl = cv.toDataURL('image/jpeg', 0.9);
+        const win = window.open('', '_blank');
+        win.document.write(`
+          <html>
+            <head><title>In Hóa Đơn #${order.id || 'NHAP'}</title></head>
+            <body style="margin:0; display:flex; justify-content:center; align-items:center; height:100vh; background:#333;">
+              <img src="${imgUrl}" style="max-width:100%; max-height:100%; box-shadow:0 0 10px rgba(0,0,0,0.5);" onload="window.print();window.close();"/>
+            </body>
+          </html>
+        `);
+        win.document.close();
+      } catch (e) { alert("Lỗi tạo ảnh in!"); } finally { setLoading(false); }
     } else {
       alert("Đang tải công cụ, thử lại sau 2 giây...");
     }
@@ -565,7 +578,7 @@ function OrderPrintModal({ order, storeConfig, onClose }) {
   return (
     <Modal isOpen={true} onClose={onClose} noHeader={true} maxWidth="max-w-2xl">
       <div className="bg-blue-50 p-3 border-b flex flex-wrap gap-2 items-center justify-between no-print shadow-sm">
-        <b className="text-blue-800">Cấu hình In / Lưu Ảnh</b>
+        <b className="text-blue-800">Cấu hình In Hóa Đơn</b>
         <div className="flex gap-3 items-center text-sm">
           <select value={opt.s} onChange={e => setOpt({ ...opt, s: e.target.value })} className="p-1.5 border rounded bg-white">
             <option value="bill">Máy in nhiệt K80</option>
@@ -574,7 +587,7 @@ function OrderPrintModal({ order, storeConfig, onClose }) {
           <label className="flex items-center gap-1 cursor-pointer"><input type="checkbox" checked={opt.l} onChange={e => setOpt({ ...opt, l: e.target.checked })} /> Logo</label>
           <label className="flex items-center gap-1 cursor-pointer"><input type="checkbox" checked={opt.n} onChange={e => setOpt({ ...opt, n: e.target.checked })} /> Ghi chú</label>
           <label className="flex items-center gap-1 cursor-pointer"><input type="checkbox" checked={opt.b} onChange={e => setOpt({ ...opt, b: e.target.checked })} /> Bảo hành</label>
-          <button onClick={saveJPG} disabled={loading} className="bg-blue-600 text-white px-3 py-1.5 rounded font-bold flex items-center gap-1"><ImageIcon size={16} />{loading ? 'Đang xử lý...' : 'Lưu JPG'}</button>
+          <button onClick={printImageDirectly} disabled={loading} className="bg-blue-600 text-white px-3 py-1.5 rounded font-bold flex items-center gap-1"><ImageIcon size={16} />{loading ? 'Đang xử lý...' : 'In hình ảnh'}</button>
           <button onClick={() => window.print()} className="bg-gray-700 text-white px-3 py-1.5 rounded font-bold flex items-center gap-1"><Printer size={16} />In giấy</button>
           <button onClick={onClose} className="text-red-500 font-bold hover:bg-red-100 p-1.5 rounded"><X size={20} /></button>
         </div>
@@ -695,7 +708,7 @@ function SalesHistoryView({ data, storeId, storeConfig, showToast }) {
                 <td className="p-4 font-black text-right text-blue-800">{formatMoney(o.total)}</td>
                 <td className="p-4">
                   <div className="flex justify-center gap-2">
-                    <button onClick={() => setPrintOrder(o)} className="bg-blue-50 text-blue-600 p-2 rounded hover:bg-blue-100" title="In / Lưu ảnh"><Printer size={18} /></button>
+                    <button onClick={() => setPrintOrder(o)} className="bg-blue-50 text-blue-600 p-2 rounded hover:bg-blue-100" title="In / Xem hóa đơn"><Printer size={18} /></button>
                     <button onClick={() => setEditOrder(JSON.parse(JSON.stringify(o)))} className="bg-gray-100 text-gray-700 p-2 rounded hover:bg-gray-200" title="Sửa đơn"><Edit size={18} /></button>
                     <button onClick={() => handleDelete(o)} className="bg-red-50 text-red-600 p-2 rounded hover:bg-red-100" title="Hủy hoàn kho"><Trash2 size={18} /></button>
                   </div>
@@ -851,7 +864,7 @@ function ImportView({ data, storeId, user, showToast }) {
 }
 
 // ==========================================
-// 6. INVENTORY VIEW (CÓ LIÊN KẾT NHÀ CUNG CẤP, KHÁCH HÀNG, LỊCH SỬ NHẬP/BÁN)
+// 6. INVENTORY VIEW
 // ==========================================
 function InventoryView({ data, storeId, showToast }) {
   const [search, setSearch] = useState('');
@@ -934,7 +947,6 @@ function InventoryView({ data, storeId, showToast }) {
     return direction === 'asc' ? a[key] - b[key] : b[key] - a[key];
   });
 
-  // Tìm lịch sử nhập/bán của sản phẩm được chọn
   const productLinkedDetails = useMemo(() => {
     if (!selectedProductHistory) return { importHistory: [], salesHistory: [] };
     
@@ -1007,7 +1019,6 @@ function InventoryView({ data, storeId, showToast }) {
         </form>
       </Modal>
 
-      {/* Modal hiển thị chi tiết liên kết của sản phẩm */}
       <Modal isOpen={!!selectedProductHistory} onClose={() => setSelectedProductHistory(null)} title={`Chi tiết liên kết sản phẩm: ${selectedProductHistory?.name}`} maxWidth="max-w-3xl">
         <div className="space-y-6">
           <div className="bg-blue-50 p-4 rounded-xl border flex justify-between items-center">
@@ -1070,7 +1081,7 @@ function InventoryView({ data, storeId, showToast }) {
 }
 
 // ==========================================
-// 7. CONTACT VIEW (KHÁCH HÀNG & NHÀ CUNG CẤP CÓ NHẬP/XUẤT EXCEL)
+// 7. CONTACT VIEW
 // ==========================================
 function ContactView({ type, dataList, orders, storeId, showToast }) {
   const [search, setSearch] = useState('');
@@ -1317,7 +1328,7 @@ function ExpenseView({ data, storeId, showToast }) {
 }
 
 // ==========================================
-// 9. SETTINGS VIEW (ĐẦY ĐỦ LOGO, CẤU HÌNH & XÓA TẤT CẢ)
+// 9. SETTINGS VIEW
 // ==========================================
 function SettingsView({ config, storeId, data, showToast }) {
   const [formData, setFormData] = useState(config);
@@ -1419,10 +1430,10 @@ function SettingsView({ config, storeId, data, showToast }) {
 }
 
 // ==========================================
-// 10. STAFF VIEW (ĐÃ FIX LỖI NHẬP TÊN & TẠO NHÂN VIÊN)
+// 10. STAFF VIEW
 // ==========================================
-function StaffView({ staffList, showToast }) {
-  const [formData, setFormData] = useState({ id: '', username: '', password: '', email: '', role: 'staff', name: '' });
+function StaffView({ staffList, storeId, showToast }) {
+  const [formData, setFormData] = useState({ id: '', name: '', username: '', email: '', role: 'staff' });
   const [permissions, setPermissions] = useState({});
   const [showModal, setShowModal] = useState(false);
 
@@ -1436,35 +1447,29 @@ function StaffView({ staffList, showToast }) {
   const handleSave = async (e) => {
     e.preventDefault();
     try {
+      const payload = {
+        name: formData.name,
+        username: formData.username,
+        email: formData.email || '',
+        role: formData.role,
+        perms: formData.role === 'admin' ? {} : permissions
+      };
       if (formData.id) {
-        await updateDoc(doc(db, 'users_db', formData.id), { name: formData.name, role: formData.role, perms: formData.role === 'admin' ? {} : permissions });
-        showToast("Cập nhật quyền Nhân viên thành công!");
-        setShowModal(false);
+        await updateDoc(doc(db, 'stores', storeId, 'staff', formData.id), payload);
+        showToast("Cập nhật nhân viên thành công!");
       } else {
-        const { getApp, initializeApp } = await import('firebase/app');
-        const { getAuth, createUserWithEmailAndPassword } = await import('firebase/auth');
-        let secondaryApp;
-        try { secondaryApp = initializeApp(getApp().options, "Secondary"); } catch { secondaryApp = getApp("Secondary"); }
-        const cred = await createUserWithEmailAndPassword(getAuth(secondaryApp), formData.email, formData.password);
-        await setDoc(doc(db, 'users_db', cred.user.uid), { username: formData.username, email: formData.email, name: formData.name, role: formData.role, perms: formData.role === 'admin' ? {} : permissions });
-        await getAuth(secondaryApp).signOut();
-        setShowModal(false);
-        showToast("Đã tạo Nhân viên mới thành công!");
+        await addDoc(collection(db, 'stores', storeId, 'staff'), payload);
+        showToast("Đã thêm nhân viên mới thành công!");
       }
-    } catch (err) { showToast("Lỗi khi tạo hoặc sửa nhân viên!", "error"); }
-  };
-
-  const handleResetPassword = async () => {
-    if (!formData.email) return;
-    try {
-      await sendPasswordResetEmail(auth, formData.email);
-      showToast(`Đã gửi đường link đặt lại mật khẩu vào email: ${formData.email}`);
-    } catch (e) { showToast("Lỗi gửi link reset mật khẩu", "error"); }
+      setShowModal(false);
+    } catch (err) {
+      showToast("Lỗi khi lưu nhân viên!", "error");
+    }
   };
 
   const handleDelete = async (id) => {
-    if (window.confirm("Cảnh báo: Bạn chỉ đang xóa nhân viên khỏi hệ thống phân quyền của ứng dụng. Tiếp tục?")) {
-      await deleteDoc(doc(db, 'users_db', id));
+    if (window.confirm("Bạn có chắc chắn muốn xóa nhân viên này?")) {
+      await deleteDoc(doc(db, 'stores', storeId, 'staff', id));
       showToast("Đã xóa nhân viên");
     }
   };
@@ -1473,44 +1478,42 @@ function StaffView({ staffList, showToast }) {
     <div className="p-6 bg-gray-50 flex-1 h-full flex flex-col">
       <div className="flex justify-between items-center mb-4">
         <h2 className="text-2xl font-bold">Quản lý Nhân viên & Phân quyền</h2>
-        <button onClick={() => { setFormData({ id: '', username: '', password: '', email: '', role: 'staff', name: '' }); setPermissions({}); setShowModal(true); }} className="bg-blue-600 text-white px-5 py-2.5 rounded-lg font-bold shadow hover:bg-blue-700 flex items-center gap-2"><Plus size={18} /> Thêm tài khoản</button>
+        <button onClick={() => { setFormData({ id: '', name: '', username: '', email: '', role: 'staff' }); setPermissions({}); setShowModal(true); }} className="bg-blue-600 text-white px-5 py-2.5 rounded-lg font-bold shadow hover:bg-blue-700 flex items-center gap-2"><Plus size={18} /> Thêm tài khoản</button>
       </div>
       
       <div className="bg-white border rounded-xl shadow-sm overflow-auto flex-1">
         <table className="w-full text-left">
           <thead className="bg-gray-100 border-b sticky top-0">
-            <tr><th className="p-4">Tên Nhân viên</th><th className="p-4">Tài khoản (Username / Email)</th><th className="p-4">Vai trò (Role)</th><th className="p-4 text-center">Hành động</th></tr>
+            <tr><th className="p-4">Tên Nhân viên</th><th className="p-4">Tài khoản (Username)</th><th className="p-4">Vai trò (Role)</th><th className="p-4 text-center">Hành động</th></tr>
           </thead>
           <tbody>
             {staffList.map(s => (
               <tr key={s.id} className="border-b hover:bg-gray-50">
                 <td className="p-4 font-bold text-gray-800">{s.name}</td>
-                <td className="p-4 text-blue-600">{s.email || s.username}</td>
+                <td className="p-4 text-blue-600">{s.username}</td>
                 <td className="p-4"><span className={`px-3 py-1.5 rounded-full text-xs font-bold ${s.role === 'admin' ? 'bg-purple-100 text-purple-700' : 'bg-gray-100 text-gray-700'}`}>{s.role === 'admin' ? 'Quản trị viên' : 'Nhân viên'}</span></td>
                 <td className="p-4 text-center">
-                  {s.role !== 'admin' && (
-                    <div className="flex justify-center gap-2">
-                      <button onClick={() => { setFormData({ id: s.id, username: s.username || '', email: s.email || '', role: s.role, name: s.name }); setPermissions(s.perms || {}); setShowModal(true); }} className="text-blue-600 bg-blue-50 p-2.5 rounded-lg hover:bg-blue-100 border border-blue-200"><Edit size={18} /></button>
-                      <button onClick={() => handleDelete(s.id)} className="text-red-600 bg-red-50 p-2.5 rounded-lg hover:bg-red-100 border border-red-200"><Trash2 size={18} /></button>
-                    </div>
-                  )}
+                  <div className="flex justify-center gap-2">
+                    <button onClick={() => { setFormData(s); setPermissions(s.perms || {}); setShowModal(true); }} className="text-blue-600 bg-blue-50 p-2.5 rounded-lg hover:bg-blue-100 border border-blue-200"><Edit size={18} /></button>
+                    <button onClick={() => handleDelete(s.id)} className="text-red-600 bg-red-50 p-2.5 rounded-lg hover:bg-red-100 border border-red-200"><Trash2 size={18} /></button>
+                  </div>
                 </td>
               </tr>
             ))}
+            {staffList.length === 0 && <tr><td colSpan="4" className="p-6 text-center text-gray-400">Chưa có nhân viên nào.</td></tr>}
           </tbody>
         </table>
       </div>
 
-      <Modal isOpen={showModal} onClose={() => setShowModal(false)} title={formData.id ? "Sửa phân quyền Nhân viên" : "Tạo Nhân viên mới"}>
+      <Modal isOpen={showModal} onClose={() => setShowModal(false)} title={formData.id ? "Sửa thông tin Nhân viên" : "Thêm Nhân viên mới"}>
         <form onSubmit={handleSave} className="space-y-4">
-          <div><label className="block text-sm font-bold mb-1">Tên hiển thị *</label><input required value={formData.name} onChange={e => setFormData({ ...formData, name: e.target.value })} className="w-full p-2.5 border rounded-lg outline-none focus:ring-2 focus:ring-blue-500" /></div>
-          <div><label className="block text-sm font-bold mb-1">Tên đăng nhập (Username) *</label><input required disabled={!!formData.id} value={formData.username} onChange={e => setFormData({ ...formData, username: e.target.value })} className={`w-full p-2.5 border rounded-lg outline-none ${formData.id ? 'bg-gray-100 text-gray-500 cursor-not-allowed' : 'focus:ring-2 focus:ring-blue-500'}`} /></div>
-          <div><label className="block text-sm font-bold mb-1">Email *</label><input required disabled={!!formData.id} type="email" value={formData.email} onChange={e => setFormData({ ...formData, email: e.target.value })} className={`w-full p-2.5 border rounded-lg outline-none ${formData.id ? 'bg-gray-100 text-gray-500 cursor-not-allowed' : 'focus:ring-2 focus:ring-blue-500'}`} /></div>
-          {!formData.id && <div><label className="block text-sm font-bold mb-1">Mật khẩu (Ít nhất 6 ký tự) *</label><input required type="password" value={formData.password} onChange={e => setFormData({ ...formData, password: e.target.value })} className="w-full p-2.5 border rounded-lg outline-none focus:ring-2 focus:ring-blue-500" /></div>}
+          <div><label className="block text-sm font-bold mb-1">Tên hiển thị *</label><input required value={formData.name || ''} onChange={e => setFormData({ ...formData, name: e.target.value })} className="w-full p-2.5 border rounded-lg outline-none focus:ring-2 focus:ring-blue-500" /></div>
+          <div><label className="block text-sm font-bold mb-1">Tên đăng nhập (Username) *</label><input required value={formData.username || ''} onChange={e => setFormData({ ...formData, username: e.target.value })} className="w-full p-2.5 border rounded-lg outline-none focus:ring-2 focus:ring-blue-500" /></div>
+          <div><label className="block text-sm font-bold mb-1">Email liên hệ</label><input type="email" value={formData.email || ''} onChange={e => setFormData({ ...formData, email: e.target.value })} className="w-full p-2.5 border rounded-lg outline-none focus:ring-2 focus:ring-blue-500" /></div>
           
           <div>
             <label className="block text-sm font-bold mb-1">Cấp quyền (Vai trò)</label>
-            <select value={formData.role} onChange={e => setFormData({ ...formData, role: e.target.value })} className="w-full p-2.5 border rounded-lg outline-none focus:ring-2 focus:ring-blue-500 bg-white">
+            <select value={formData.role || 'staff'} onChange={e => setFormData({ ...formData, role: e.target.value })} className="w-full p-2.5 border rounded-lg outline-none focus:ring-2 focus:ring-blue-500 bg-white">
               <option value="staff">Nhân viên (Bị giới hạn)</option><option value="admin">Quản trị viên (Toàn quyền)</option>
             </select>
           </div>
@@ -1529,13 +1532,8 @@ function StaffView({ staffList, showToast }) {
             </div>
           )}
 
-          <div className="flex gap-2 pt-4 border-t">
-            {formData.id && (
-              <button type="button" onClick={handleResetPassword} className="flex-1 bg-orange-100 text-orange-700 py-3 rounded-lg font-bold hover:bg-orange-200 transition-colors">
-                Gửi link Reset Mật khẩu
-              </button>
-            )}
-            <button type="submit" className="flex-1 bg-blue-600 text-white py-3 rounded-lg font-bold shadow hover:bg-blue-700 transition-colors">
+          <div className="pt-4 border-t">
+            <button type="submit" className="w-full bg-blue-600 text-white py-3 rounded-lg font-bold shadow hover:bg-blue-700 transition-colors">
               Lưu thông tin
             </button>
           </div>
