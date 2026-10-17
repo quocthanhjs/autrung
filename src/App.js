@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useMemo } from 'react';
-import { LayoutDashboard, ShoppingCart, Package, Users, Truck, Edit, Trash2, Check, X, ShoppingBag, TrendingUp, AlertCircle, ArrowDownToLine, DollarSign, Receipt, CreditCard, LogOut, ShieldAlert, Database, UserCog, Printer, Image as ImageIcon, Save } from 'lucide-react';
+import { LayoutDashboard, ShoppingCart, Package, Users, Truck, Edit, Trash2, Check, X, ShoppingBag, TrendingUp, AlertCircle, ArrowDownToLine, DollarSign, Receipt, CreditCard, LogOut, Database, UserCog, Printer, Image as ImageIcon, Save } from 'lucide-react';
 import { initializeApp } from 'firebase/app';
 import { getAuth, signInWithEmailAndPassword, signOut, onAuthStateChanged, sendPasswordResetEmail } from 'firebase/auth';
 import { getFirestore, doc, setDoc, getDoc, getDocs, addDoc, updateDoc, deleteDoc, onSnapshot, collection, writeBatch, query, where } from 'firebase/firestore';
@@ -10,11 +10,10 @@ const app = initializeApp({
   messagingSenderId: "458225351603", appId: "1:458225351603:web:f67d06427def5a33dca9c6"
 });
 const auth = getAuth(app); const db = getFirestore(app);
-
 const formatCurrency = (amt) => new Intl.NumberFormat('vi-VN', { style: 'currency', currency: 'VND' }).format(amt || 0);
 const formatDate = (iso) => new Intl.DateTimeFormat('vi-VN', { dateStyle: 'short', timeStyle: 'short' }).format(new Date(iso));
 
-const Modal = ({ isOpen, onClose, title, children, mw = "max-w-md", noHeader = false }) => {
+const Modal = ({ isOpen, onClose, title, children, mw="max-w-md", noHeader=false }) => {
   if (!isOpen) return null;
   return (
     <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-black/60 print:p-0 print:bg-white print:absolute print:inset-0">
@@ -26,36 +25,34 @@ const Modal = ({ isOpen, onClose, title, children, mw = "max-w-md", noHeader = f
   );
 };
 
-// --- XUẤT ẢNH JPG MODAL ---
+// --- XUẤT ẢNH JPG & IN HÓA ĐƠN ---
 function OrderPrintModal({ order, storeConfig, onClose }) {
   const [opt, setOpt] = useState({ size: storeConfig?.printDefaultSize || 'a4', logo: true, note: true, bh: true });
   const [loading, setLoading] = useState(false);
-
   const saveJPG = async () => {
     const el = document.getElementById('receipt-content');
     if (window.html2canvas && el) {
       setLoading(true);
       try {
         const canvas = await window.html2canvas(el, { scale: 2, useCORS: true, backgroundColor: '#fff' });
-        const link = document.createElement('a');
-        link.download = `HD_${order.id || 'NHAP'}.jpg`;
+        const link = document.createElement('a'); link.download = `HD_${order.id || 'NHAP'}.jpg`;
         link.href = canvas.toDataURL('image/jpeg', 0.9); link.click();
       } catch (e) { alert("Lỗi lưu ảnh!"); } finally { setLoading(false); }
     } else alert("Đang tải công cụ ảnh, đợi 2 giây...");
   };
-
   if (!order) return null;
   return (
     <Modal isOpen={true} onClose={onClose} noHeader={true} mw="max-w-2xl">
       <div className="bg-blue-50 p-3 border-b flex flex-wrap gap-3 items-center justify-between no-print shrink-0">
-        <b className="text-blue-800">Tùy chọn Lưu Ảnh HD</b>
+        <b className="text-blue-800">Tùy chọn Lưu Ảnh/In</b>
         <div className="flex gap-3 items-center text-sm">
           <select value={opt.size} onChange={e=>setOpt({...opt, size: e.target.value})} className="p-1 border"><option value="bill">In nhiệt K80</option><option value="a4">Giấy A4</option></select>
           <label><input type="checkbox" checked={opt.logo} onChange={e=>setOpt({...opt, logo: e.target.checked})}/> Logo</label>
           <label><input type="checkbox" checked={opt.note} onChange={e=>setOpt({...opt, note: e.target.checked})}/> Ghi chú</label>
           <label><input type="checkbox" checked={opt.bh} onChange={e=>setOpt({...opt, bh: e.target.checked})}/> B.Hành</label>
-          <button onClick={saveJPG} disabled={loading} className="bg-blue-600 text-white px-3 py-1.5 rounded flex items-center gap-1 font-bold"><ImageIcon size={16}/> {loading ? 'Đang lưu...' : 'Lưu File JPG'}</button>
-          <button onClick={onClose} className="text-red-500 font-bold ml-2">Đóng</button>
+          <button onClick={saveJPG} disabled={loading} className="bg-blue-600 text-white px-3 py-1.5 rounded flex items-center gap-1 font-bold"><ImageIcon size={16}/> {loading ? 'Đang xuất...' : 'Lưu JPG'}</button>
+          <button onClick={() => window.print()} className="bg-gray-600 text-white px-3 py-1.5 rounded flex items-center gap-1 font-bold"><Printer size={16}/> In giấy</button>
+          <button onClick={onClose} className="text-red-500 font-bold ml-2">X</button>
         </div>
       </div>
       <div className="p-4 bg-gray-100 flex justify-center overflow-auto print:p-0 print:bg-white print:overflow-visible">
@@ -89,6 +86,15 @@ function OrderPrintModal({ order, storeConfig, onClose }) {
         </div>
       </div>
     </Modal>
+  );
+}
+
+function StatCard({ icon, title, value, color, highlight }) {
+  return (
+    <div className={`p-4 rounded-xl border shadow-sm flex flex-col justify-between bg-white ${highlight ? 'ring-2 ring-green-500' : ''}`}>
+      <div className="flex items-center gap-3 mb-2"><div className={`p-2 rounded-lg ${color}`}>{icon}</div><h3 className="text-xs font-bold text-gray-500 uppercase">{title}</h3></div>
+      <p className="text-xl font-black text-gray-800">{value}</p>
+    </div>
   );
 }
 
@@ -146,26 +152,28 @@ export default function EnhancedPOS() {
   }
 
   const tabs = [
-    { id: 'dashboard', i: LayoutDashboard, l: 'Báo cáo & Nhắc nợ', admin: false }, { id: 'pos', i: ShoppingCart, l: 'Bán hàng (POS)', admin: false },
-    { id: 'sales_history', i: Receipt, l: 'QL Bán Hàng', admin: false }, { id: 'imports', i: ArrowDownToLine, l: 'Nhập hàng', admin: false },
-    { id: 'products', i: Package, l: 'Kho hàng', admin: false }, { id: 'customers', i: Users, l: 'Khách hàng', admin: false },
-    { id: 'suppliers', i: Truck, l: 'Nhà cung cấp', admin: false }, { id: 'expenses', i: CreditCard, l: 'Chi phí', admin: false },
+    { id: 'dashboard', i: LayoutDashboard, l: 'Báo cáo', pId: 'tong_quan_xem' }, { id: 'pos', i: ShoppingCart, l: 'Bán hàng', pId: 'ALWAYS' },
+    { id: 'sales_history', i: Receipt, l: 'QL Bán Hàng', pId: 'ban_hang' }, { id: 'imports', i: ArrowDownToLine, l: 'Nhập hàng', pId: 'mua_nhap_hang' },
+    { id: 'products', i: Package, l: 'Kho hàng', pId: 'hh_danh_sach' }, { id: 'customers', i: Users, l: 'Khách hàng', pId: 'kh_danh_sach' },
+    { id: 'suppliers', i: Truck, l: 'Nhà cung cấp', pId: 'mua_ncc' }, { id: 'expenses', i: CreditCard, l: 'Chi phí', pId: 'quy_so_quy' },
     { id: 'settings', i: Database, l: 'Cài đặt', admin: true }, { id: 'staff', i: UserCog, l: 'Nhân viên', admin: true },
   ];
+  
+  const visibleTabs = tabs.filter(t => userData.role === 'admin' || t.pId === 'ALWAYS' || (t.pId && userData.perms?.[t.pId]));
 
   return (
     <div className="min-h-screen bg-gray-50 flex flex-col md:flex-row font-sans text-sm print:bg-white print:block">
       <aside className="w-full md:w-56 bg-white border-r flex flex-col shadow-sm shrink-0 no-print">
         <div className="p-4 border-b font-bold text-lg text-blue-800 flex items-center gap-2"><ShoppingBag/>{storeConfig.name}</div>
         <nav className="flex-1 p-2 flex flex-row md:flex-col overflow-x-auto gap-1">
-          {tabs.filter(t => userData.role === 'admin' || !t.admin).map(t => (
+          {visibleTabs.map(t => (
             <button key={t.id} onClick={()=>setActiveTab(t.id)} className={`flex items-center gap-2 p-3 rounded-lg whitespace-nowrap ${activeTab===t.id?'bg-blue-50 text-blue-700 font-bold':'text-gray-600 hover:bg-gray-50'}`}><t.i size={18}/>{t.l}</button>
           ))}
         </nav>
-        <div className="p-3 border-t flex justify-between items-center"><div className="truncate"><b className="block">{userData.name}</b><span className="text-xs text-gray-500">{userData.role}</span></div><button onClick={()=>signOut(auth)} className="text-red-500"><LogOut size={18}/></button></div>
+        <div className="p-3 border-t flex justify-between items-center"><div className="truncate"><b className="block">{userData.name}</b><span className="text-xs text-gray-500">{userData.role==='admin'?'Quản trị':'Nhân viên'}</span></div><button onClick={()=>signOut(auth)} className="text-red-500"><LogOut size={18}/></button></div>
       </aside>
       <main className="flex-1 overflow-hidden h-screen flex flex-col relative print:h-auto print:block">
-        {toast && <div className={`absolute top-4 right-4 z-[200] p-4 rounded text-white font-bold ${toast.type==='success'?'bg-green-600':'bg-red-600'}`}>{toast.msg}</div>}
+        {toast && <div className={`absolute top-4 right-4 z-[200] p-4 rounded text-white font-bold shadow-lg ${toast.type==='success'?'bg-green-600':'bg-red-600'}`}>{toast.msg}</div>}
         {activeTab === 'dashboard' && <DashboardView d={data} />}
         {activeTab === 'pos' && <POSView d={data} db={db} stId={storeId} u={user} cfg={storeConfig} t={showToast} />}
         {activeTab === 'sales_history' && <SalesHistoryView d={data} db={db} stId={storeId} cfg={storeConfig} t={showToast} />}
@@ -194,17 +202,17 @@ function DashboardView({ d }) {
   const sDebt = d.suppliers.filter(s => s.totalDebt > 0).sort((a,b)=>b.totalDebt-a.totalDebt);
 
   return (
-    <div className="p-4 overflow-auto bg-gray-50 flex-1 space-y-6">
-      <div className="flex justify-between"><h2 className="text-xl font-bold">Báo Cáo & Nhắc Nợ</h2><div className="flex gap-2"><select value={fm} onChange={e=>setFm(e.target.value)} className="p-1 border rounded"><option value="ALL">Cả năm</option>{[...Array(12)].map((_,i)=><option key={i} value={i+1}>Tháng {i+1}</option>)}</select><input type="number" value={fy} onChange={e=>setFy(e.target.value)} className="p-1 border rounded w-20"/></div></div>
-      <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+    <div className="p-4 overflow-auto bg-gray-50 flex-1 space-y-4">
+      <div className="flex justify-between"><h2 className="text-xl font-bold">Báo Cáo</h2><div className="flex gap-2"><select value={fm} onChange={e=>setFm(e.target.value)} className="p-1 border rounded"><option value="ALL">Cả năm</option>{[...Array(12)].map((_,i)=><option key={i} value={i+1}>Tháng {i+1}</option>)}</select><input type="number" value={fy} onChange={e=>setFy(e.target.value)} className="p-1 border rounded w-20"/></div></div>
+      <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
         <StatCard icon={<TrendingUp/>} title="Doanh Thu" value={formatCurrency(stats.tr)} color="bg-blue-100 text-blue-600"/>
         <StatCard icon={<Package/>} title="Giá Vốn" value={formatCurrency(stats.tc)} color="bg-gray-200"/>
         <StatCard icon={<CreditCard/>} title="Chi Phí" value={formatCurrency(stats.te)} color="bg-orange-100 text-orange-600"/>
         <StatCard icon={<DollarSign/>} title="Lãi Ròng" value={formatCurrency(stats.net)} color="bg-green-100 text-green-600" highlight={true}/>
       </div>
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-        <div className="bg-white p-5 border rounded-xl shadow-sm">
-          <h3 className="font-bold mb-4">Biểu đồ Doanh thu/Chi phí</h3>
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
+        <div className="bg-white p-4 border rounded-xl shadow-sm">
+          <h3 className="font-bold mb-4">Tỷ trọng</h3>
           <div className="space-y-4">
             <div><div className="flex justify-between text-xs mb-1"><b className="text-blue-600">Doanh thu</b><span>{formatCurrency(stats.tr)}</span></div><div className="w-full bg-gray-200 h-2 rounded"><div className="bg-blue-500 h-2 rounded" style={{width:`${(stats.tr/(Math.max(stats.tr,stats.tc,stats.te)||1))*100}%`}}></div></div></div>
             <div><div className="flex justify-between text-xs mb-1"><b className="text-gray-600">Giá vốn</b><span>{formatCurrency(stats.tc)}</span></div><div className="w-full bg-gray-200 h-2 rounded"><div className="bg-gray-500 h-2 rounded" style={{width:`${(stats.tc/(Math.max(stats.tr,stats.tc,stats.te)||1))*100}%`}}></div></div></div>
@@ -212,8 +220,8 @@ function DashboardView({ d }) {
           </div>
         </div>
         <div className="lg:col-span-2 grid grid-cols-2 gap-4">
-          <div className="bg-white p-5 border rounded-xl"><h3 className="font-bold text-red-600 mb-3 flex gap-1"><AlertCircle size={18}/> Khách nợ</h3><div className="max-h-48 overflow-auto">{cDebt.map(c=><div key={c.id} className="flex justify-between py-1 border-b text-sm"><span>{c.name}</span><b className="text-red-600">{formatCurrency(c.totalDebt)}</b></div>)}</div></div>
-          <div className="bg-white p-5 border rounded-xl"><h3 className="font-bold text-orange-600 mb-3 flex gap-1"><AlertCircle size={18}/> Nợ NCC</h3><div className="max-h-48 overflow-auto">{sDebt.map(s=><div key={s.id} className="flex justify-between py-1 border-b text-sm"><span>{s.name}</span><b className="text-orange-600">{formatCurrency(s.totalDebt)}</b></div>)}</div></div>
+          <div className="bg-white p-4 border rounded-xl shadow-sm"><h3 className="font-bold text-red-600 mb-2 flex items-center gap-1"><AlertCircle size={16}/> Khách nợ</h3><div className="max-h-40 overflow-auto">{cDebt.map(c=><div key={c.id} className="flex justify-between py-1 border-b text-xs"><span>{c.name}</span><b className="text-red-600">{formatCurrency(c.totalDebt)}</b></div>)}</div></div>
+          <div className="bg-white p-4 border rounded-xl shadow-sm"><h3 className="font-bold text-orange-600 mb-2 flex items-center gap-1"><AlertCircle size={16}/> Nợ NCC</h3><div className="max-h-40 overflow-auto">{sDebt.map(s=><div key={s.id} className="flex justify-between py-1 border-b text-xs"><span>{s.name}</span><b className="text-orange-600">{formatCurrency(s.totalDebt)}</b></div>)}</div></div>
         </div>
       </div>
     </div>
@@ -237,19 +245,19 @@ function POSView({ d, db, stId, u, cfg, t }) {
       cart.forEach(i => batch.update(doc(db, 'stores', stId, 'products', i.id), { stock: (i.stock||0)-i.quantity }));
       batch.set(doc(collection(db, 'stores', stId, 'orders'), oId), oData);
       if(status==='DEBT'&&selCus) batch.update(doc(db, 'stores', stId, 'customers', selCus.id), { totalDebt: (selCus.totalDebt||0)+tot });
-      await batch.commit(); t("Đã thanh toán thành công!"); setCart([]); setSelCus(null);
+      await batch.commit(); t("Đã thanh toán!"); setCart([]); setSelCus(null);
     } catch(e) { t("Lỗi thanh toán!", "error"); } finally { setIsProc(false); }
   };
 
   return (
     <div className="flex h-full bg-gray-50">
-      <div className="flex-1 flex flex-col p-4 border-r">
-        <input placeholder="Tìm sản phẩm..." value={search} onChange={e=>setSearch(e.target.value)} className="w-full p-3 mb-3 border rounded shadow-sm"/>
-        <div className="flex-1 overflow-auto grid grid-cols-2 lg:grid-cols-4 gap-3">
+      <div className="flex-1 flex flex-col p-3 border-r">
+        <input placeholder="Tìm sản phẩm..." value={search} onChange={e=>setSearch(e.target.value)} className="w-full p-2.5 mb-3 border rounded shadow-sm"/>
+        <div className="flex-1 overflow-auto grid grid-cols-2 lg:grid-cols-3 gap-3">
           {d.products.filter(p=>p.name?.toLowerCase().includes(search.toLowerCase())).map(p=>(
             <div key={p.id} onClick={()=>addCart(p)} className="bg-white p-3 border rounded-lg cursor-pointer hover:border-blue-500 flex flex-col justify-between shadow-sm">
-              <p className="font-bold text-sm mb-2 h-10 overflow-hidden">{p.name}</p>
-              <div className="flex justify-between border-t pt-2"><b className="text-blue-600">{formatCurrency(p.price)}</b><span className="text-xs bg-gray-100 px-1 rounded">Tồn:{p.stock}</span></div>
+              <p className="font-bold text-sm mb-2 max-h-10 overflow-hidden">{p.name}</p>
+              <div className="flex justify-between border-t pt-2"><b className="text-blue-600">{formatCurrency(p.price)}</b><span className="text-[10px] bg-gray-100 px-1 rounded">Tồn:{p.stock}</span></div>
             </div>
           ))}
         </div>
@@ -261,13 +269,13 @@ function POSView({ d, db, stId, u, cfg, t }) {
             <div key={i.id} className="bg-white p-2 border rounded shadow-sm">
               <div className="flex justify-between mb-1"><b className="text-sm">{i.name}</b><button onClick={()=>setCart(pr=>pr.filter(x=>x.id!==i.id))} className="text-red-500 font-bold bg-red-50 px-2 rounded text-xs">Xóa</button></div>
               <div className="flex gap-2 mb-1">
-                <div className="flex-1"><label className="text-[10px] text-gray-500">Giá bán</label><input type="number" value={i.price} onChange={e=>updateCart(i.id, 'price', e.target.value)} className="w-full p-1 border rounded text-blue-600 font-bold"/></div>
-                <div className="w-16"><label className="text-[10px] text-gray-500">SL</label><input type="number" value={i.quantity} onChange={e=>updateCart(i.id, 'quantity', e.target.value)} className="w-full p-1 border rounded text-center font-bold"/></div>
+                <div className="flex-1"><label className="text-[10px] text-gray-500">Giá bán</label><input type="number" value={i.price} onChange={e=>updateCart(i.id, 'price', e.target.value)} className="w-full p-1.5 border rounded text-blue-600 font-bold text-sm"/></div>
+                <div className="w-16"><label className="text-[10px] text-gray-500">SL</label><input type="number" value={i.quantity} onChange={e=>updateCart(i.id, 'quantity', e.target.value)} className="w-full p-1.5 border rounded text-center font-bold text-sm"/></div>
               </div>
               <div className="flex gap-1 mb-1">
                 <div className="flex-1"><label className="text-[10px] text-gray-500">Ghi chú(Màu/IMEI)</label><input value={i.note} onChange={e=>updateCart(i.id, 'note', e.target.value)} className="w-full p-1 border rounded text-xs"/></div>
                 <div className="w-12"><label className="text-[10px] text-gray-500">B.Hành</label><input type="number" value={i.warrantyValue} onChange={e=>updateCart(i.id, 'warrantyValue', e.target.value)} className="w-full p-1 border rounded text-xs text-center"/></div>
-                <div className="w-[68px]"><label className="text-[10px] text-gray-500">Đ.Vị</label><select value={i.warrantyUnit} onChange={e=>updateCart(i.id, 'warrantyUnit', e.target.value)} className="w-full p-1 border rounded text-xs"><option value="ngày">Ngày</option><option value="tuần">Tuần</option><option value="tháng">Tháng</option><option value="năm">Năm</option></select></div>
+                <div className="w-16"><label className="text-[10px] text-gray-500">Đ.Vị</label><select value={i.warrantyUnit} onChange={e=>updateCart(i.id, 'warrantyUnit', e.target.value)} className="w-full p-1 border rounded text-xs"><option value="ngày">Ngày</option><option value="tuần">Tuần</option><option value="tháng">Tháng</option><option value="năm">Năm</option></select></div>
               </div>
               <div className="text-right text-xs"><span className="text-gray-500">Thành tiền: </span><b className="text-blue-800 text-sm">{formatCurrency(i.price*i.quantity)}</b></div>
             </div>
@@ -275,8 +283,8 @@ function POSView({ d, db, stId, u, cfg, t }) {
           {cart.length===0 && <div className="text-center text-gray-400 mt-10">Giỏ hàng trống</div>}
         </div>
         <div className="p-3 bg-white border-t space-y-2">
-          <div className="flex justify-between items-center p-2 bg-gray-50 border rounded"><b className="text-gray-600 uppercase">Tổng tiền:</b><b className="text-xl text-blue-600">{formatCurrency(tot)}</b></div>
-          <button disabled={cart.length===0} onClick={()=>setPrintOrd({id:'NHAP', date:new Date().toISOString(), items:cart, total:tot, customerName:selCus?selCus.name:'Khách lẻ'})} className="w-full bg-blue-100 text-blue-700 py-2 font-bold rounded border flex justify-center items-center gap-1"><ImageIcon size={18}/> XEM VÀ LƯU ẢNH JPG</button>
+          <div className="flex justify-between items-center p-2 bg-gray-50 border rounded"><b className="text-gray-600">Tổng tiền:</b><b className="text-xl text-blue-600">{formatCurrency(tot)}</b></div>
+          <button disabled={cart.length===0} onClick={()=>setPrintOrd({id:'NHAP', date:new Date().toISOString(), items:cart, total:tot, customerName:selCus?selCus.name:'Khách lẻ'})} className="w-full bg-blue-100 text-blue-700 py-2 font-bold rounded border flex justify-center items-center gap-1"><ImageIcon size={18}/> Xem & In Hóa đơn</button>
           <div className="flex gap-2">
             <button disabled={isProc||cart.length===0} onClick={()=>checkout('DEBT')} className="flex-1 bg-orange-100 text-orange-700 font-bold py-3 rounded">GHI NỢ</button>
             <button disabled={isProc||cart.length===0} onClick={()=>checkout('PAID')} className="flex-1 bg-green-600 text-white font-bold py-3 rounded shadow">LƯU ĐƠN</button>
@@ -288,7 +296,7 @@ function POSView({ d, db, stId, u, cfg, t }) {
   );
 }
 
-// 3. SALES HISTORY (CÓ NÚT SỬA ĐƠN & IN)
+// 3. SALES HISTORY (SỬA ĐƠN & IN)
 function SalesHistoryView({ d, db, stId, cfg, t }) {
   const [search, setSearch] = useState(''); const [printOrd, setPrintOrd] = useState(null);
   const [editOrd, setEditOrd] = useState(null);
@@ -305,12 +313,12 @@ function SalesHistoryView({ d, db, stId, cfg, t }) {
     if(!editOrd) return;
     const newTot = editOrd.items.reduce((s, i)=>s+(i.price*i.quantity), 0);
     await updateDoc(doc(db, 'stores', stId, 'orders', editOrd.id), { items: editOrd.items, total: newTot });
-    setEditOrd(null); t("Đã cập nhật đơn hàng!");
+    setEditOrd(null); t("Đã cập nhật!");
   };
 
   return (
     <div className="flex-1 p-4 bg-gray-50 flex flex-col h-full overflow-hidden">
-      <div className="flex justify-between mb-4"><h2 className="text-2xl font-bold">Quản lý Bán Hàng</h2><input placeholder="Tìm mã / khách hàng..." value={search} onChange={e=>setSearch(e.target.value)} className="p-2 border rounded w-64 shadow-sm"/></div>
+      <div className="flex justify-between mb-4"><h2 className="text-xl font-bold">Lịch sử Bán Hàng</h2><input placeholder="Tìm mã / khách..." value={search} onChange={e=>setSearch(e.target.value)} className="p-2 border rounded w-64 shadow-sm"/></div>
       <div className="flex-1 bg-white border rounded shadow-sm overflow-auto">
         <table className="w-full text-left"><thead className="bg-gray-100 sticky top-0"><tr><th className="p-3">Mã/Ngày</th><th className="p-3">Khách hàng</th><th className="p-3 w-1/3">Chi tiết (GC/BH)</th><th className="p-3">Tổng</th><th className="p-3 text-right">Thao tác</th></tr></thead><tbody>
           {ords.map(o=>(
@@ -320,7 +328,7 @@ function SalesHistoryView({ d, db, stId, cfg, t }) {
               <td className="p-3 font-bold">{formatCurrency(o.total)}</td>
               <td className="p-3 text-right">
                 <div className="flex justify-end gap-1">
-                  <button onClick={()=>setPrintOrd(o)} className="bg-blue-50 text-blue-600 p-2 rounded"><ImageIcon size={16}/></button>
+                  <button onClick={()=>setPrintOrd(o)} className="bg-blue-50 text-blue-600 p-2 rounded"><Printer size={16}/></button>
                   <button onClick={()=>setEditOrd(JSON.parse(JSON.stringify(o)))} className="bg-gray-100 text-gray-700 p-2 rounded"><Edit size={16}/></button>
                   <button onClick={()=>handleDel(o)} className="bg-red-50 text-red-600 p-2 rounded"><Trash2 size={16}/></button>
                 </div>
@@ -329,10 +337,7 @@ function SalesHistoryView({ d, db, stId, cfg, t }) {
           ))}
         </tbody></table>
       </div>
-
       <OrderPrintModal order={printOrd} storeConfig={cfg} onClose={()=>setPrintOrd(null)} />
-      
-      {/* MODAL SỬA ĐƠN HÀNG TRỰC TIẾP */}
       {editOrd && (
         <Modal isOpen={true} onClose={()=>setEditOrd(null)} title={`Sửa đơn #${editOrd.id}`} mw="max-w-xl">
           <div className="space-y-3">
@@ -340,7 +345,7 @@ function SalesHistoryView({ d, db, stId, cfg, t }) {
               <div key={i.id} className="border p-3 rounded bg-gray-50">
                 <p className="font-bold mb-2">{i.name}</p>
                 <div className="flex gap-2 mb-2">
-                  <div className="flex-1"><label className="text-xs text-gray-500">Giá bán mới</label><input type="number" value={i.price} onChange={e=>setEditOrd({...editOrd, items: editOrd.items.map(x=>x.id===i.id?{...x, price:Number(e.target.value)}:x)})} className="w-full p-2 border rounded"/></div>
+                  <div className="flex-1"><label className="text-xs text-gray-500">Giá mới</label><input type="number" value={i.price} onChange={e=>setEditOrd({...editOrd, items: editOrd.items.map(x=>x.id===i.id?{...x, price:Number(e.target.value)}:x)})} className="w-full p-2 border rounded"/></div>
                   <div className="w-24"><label className="text-xs text-gray-500">Số lượng</label><input type="number" value={i.quantity} onChange={e=>setEditOrd({...editOrd, items: editOrd.items.map(x=>x.id===i.id?{...x, quantity:Number(e.target.value)}:x)})} className="w-full p-2 border rounded text-center"/></div>
                 </div>
                 <div className="flex gap-2">
@@ -352,7 +357,6 @@ function SalesHistoryView({ d, db, stId, cfg, t }) {
             ))}
             <div className="text-right font-bold text-lg text-blue-600 py-2 border-t">Tổng mới: {formatCurrency(editOrd.items.reduce((s,i)=>s+(i.price*i.quantity),0))}</div>
             <button onClick={handleSaveEdit} className="w-full bg-blue-600 text-white font-bold py-3 rounded-lg flex justify-center gap-2 items-center"><Save size={18}/> Lưu Thay Đổi</button>
-            <p className="text-[10px] text-red-500 italic mt-2">*Lưu ý: Chức năng sửa đơn chỉ đổi Giá/SL trong đơn, muốn chỉnh Tồn kho anh phải qua tab Kho hàng sửa thủ công nhé.</p>
           </div>
         </Modal>
       )}
@@ -360,7 +364,7 @@ function SalesHistoryView({ d, db, stId, cfg, t }) {
   );
 }
 
-// 4. CÁC COMPONENT QUẢN LÝ DỮ LIỆU CÒN LẠI (GIỮ NGUYÊN HOẠT ĐỘNG, CHỈ NÉN LẠI ĐỂ TIẾT KIỆM KÝ TỰ)
+// 4. CÁC COMPONENT KHÁC
 function ImportView({ d, db, stId, u, t }) {
   const [c, setC] = useState([]); const [s, setS] = useState(''); const [sup, setSup] = useState(null);
   const upC = (id, f, v) => setC(pr=>pr.map(i=>i.id===id?{...i,[f]:Number(v)}:i));
@@ -385,7 +389,7 @@ function InventoryView({ d, db, stId, t }) {
   const save = async(e) => { e.preventDefault(); const p = {name:f.name, category:f.category||'', price:Number(f.price), cost:Number(f.cost||0), stock:Number(f.stock)}; if(f.id) await updateDoc(doc(db,'stores',stId,'products',f.id), p); else await addDoc(collection(db,'stores',stId,'products'), p); setMo(false); t("Đã lưu"); };
   const del = async(id) => { if(window.confirm("Xóa?")) { await deleteDoc(doc(db,'stores',stId,'products',id)); t("Đã xóa"); } };
   return (
-    <div className="p-4 bg-gray-50 flex-1 h-full flex flex-col"><div className="flex justify-between mb-4"><h2 className="text-xl font-bold">Kho Hàng</h2><div className="flex gap-2"><input placeholder="Tìm..." value={s} onChange={e=>setS(e.target.value)} className="p-2 border rounded"/><button onClick={()=>{setF({});setMo(true);}} className="bg-blue-600 text-white px-4 rounded font-bold">+ Thêm</button></div></div><div className="bg-white border rounded overflow-auto flex-1"><table className="w-full text-left text-sm"><thead className="bg-gray-100 border-b"><tr><th className="p-3">Tên</th><th className="p-3">Giá Vốn</th><th className="p-3">Giá Bán</th><th className="p-3">Tồn</th><th className="p-3 text-right">Hành động</th></tr></thead><tbody>{d.products.filter(x=>x.name?.toLowerCase().includes(s.toLowerCase())).map(p=><tr key={p.id} className="border-b"><td className="p-3 font-bold">{p.name}</td><td className="p-3">{formatCurrency(p.cost)}</td><td className="p-3 font-bold text-blue-600">{formatCurrency(p.price)}</td><td className="p-3">{p.stock}</td><td className="p-3 text-right"><button onClick={()=>{setF(p);setMo(true);}} className="text-blue-600 mr-3">Sửa</button><button onClick={()=>del(p.id)} className="text-red-600">Xóa</button></td></tr>)}</tbody></table></div><Modal isOpen={mo} onClose={()=>setMo(false)} title="Hàng hóa"><form onSubmit={save} className="space-y-3"><input required placeholder="Tên" value={f.name||''} onChange={e=>setF({...f,name:e.target.value})} className="w-full p-2 border rounded"/><input required type="number" placeholder="Giá vốn" value={f.cost||''} onChange={e=>setF({...f,cost:e.target.value})} className="w-full p-2 border rounded"/><input required type="number" placeholder="Giá bán" value={f.price||''} onChange={e=>setF({...f,price:e.target.value})} className="w-full p-2 border rounded"/><input required type="number" placeholder="Tồn kho" value={f.stock||''} onChange={e=>setF({...f,stock:e.target.value})} className="w-full p-2 border rounded"/><button className="w-full bg-blue-600 text-white py-2 rounded font-bold">Lưu</button></form></Modal></div>
+    <div className="p-4 bg-gray-50 flex-1 h-full flex flex-col"><div className="flex justify-between mb-4"><h2 className="text-xl font-bold">Kho Hàng</h2><div className="flex gap-2"><input placeholder="Tìm..." value={s} onChange={e=>setS(e.target.value)} className="p-2 border rounded"/><button onClick={()=>{setF({});setMo(true);}} className="bg-blue-600 text-white px-4 rounded font-bold">+ Thêm</button></div></div><div className="bg-white border rounded overflow-auto flex-1"><table className="w-full text-left text-sm"><thead className="bg-gray-100 border-b"><tr><th className="p-3">Tên</th><th className="p-3">Giá Vốn</th><th className="p-3">Giá Bán</th><th className="p-3">Tồn</th><th className="p-3 text-right">Hành động</th></tr></thead><tbody>{d.products.filter(x=>x.name?.toLowerCase().includes(s.toLowerCase())).map(p=><tr key={p.id} className="border-b"><td className="p-3 font-bold">{p.name}</td><td className="p-3">{formatCurrency(p.cost)}</td><td className="p-3 font-bold text-blue-600">{formatCurrency(p.price)}</td><td className="p-3">{p.stock}</td><td className="p-3 text-right"><button onClick={()=>{setF(p);setMo(true);}} className="text-blue-600 mr-3">Sửa</button><button onClick={()=>del(p.id)} className="text-red-600">Xóa</button></td></tr>)}</tbody></table></div><Modal isOpen={mo} onClose={()=>setMo(false)} title="Hàng hóa"><form onSubmit={save} className="space-y-3"><input required placeholder="Tên" value={f.name||''} onChange={e=>setF({...f,name:e.target.value})} className="w-full p-2 border rounded"/><input placeholder="Nhóm hàng" value={f.category||''} onChange={e=>setF({...f,category:e.target.value})} className="w-full p-2 border rounded"/><input required type="number" placeholder="Giá vốn" value={f.cost||''} onChange={e=>setF({...f,cost:e.target.value})} className="w-full p-2 border rounded"/><input required type="number" placeholder="Giá bán" value={f.price||''} onChange={e=>setF({...f,price:e.target.value})} className="w-full p-2 border rounded"/><input required type="number" placeholder="Tồn kho" value={f.stock||''} onChange={e=>setF({...f,stock:e.target.value})} className="w-full p-2 border rounded"/><button className="w-full bg-blue-600 text-white py-2 rounded font-bold">Lưu</button></form></Modal></div>
   );
 }
 
@@ -411,22 +415,33 @@ function SettingsView({ cfg, db, stId, t }) {
   const [f, setF] = useState(cfg);
   const save = async(e) => { e.preventDefault(); await setDoc(doc(db,'stores',stId), f, {merge:true}); t("Đã lưu cài đặt"); };
   return (
-    <div className="p-4 bg-gray-50 flex-1 overflow-auto"><h2 className="text-xl font-bold mb-4">Cài đặt</h2><form onSubmit={save} className="bg-white p-6 rounded border max-w-lg space-y-4"><div><input placeholder="Tên CH" value={f.name||''} onChange={e=>setF({...f,name:e.target.value})} className="w-full p-2 border rounded mb-2"/><input placeholder="ĐC" value={f.address||''} onChange={e=>setF({...f,address:e.target.value})} className="w-full p-2 border rounded mb-2"/><input placeholder="SĐT" value={f.phone||''} onChange={e=>setF({...f,phone:e.target.value})} className="w-full p-2 border rounded mb-2"/><input placeholder="Logo URL (để trống nếu ko có)" value={f.logo||''} onChange={e=>setF({...f,logo:e.target.value})} className="w-full p-2 border rounded mb-2"/><select value={f.printDefaultSize||'a4'} onChange={e=>setF({...f,printDefaultSize:e.target.value})} className="w-full p-2 border rounded mb-2"><option value="a4">Giấy A4</option><option value="bill">Máy Bill (K80)</option></select><input placeholder="Lời cảm ơn in cuối HD" value={f.printFooterText||''} onChange={e=>setF({...f,printFooterText:e.target.value})} className="w-full p-2 border rounded"/></div><button className="bg-blue-600 text-white w-full py-2 rounded font-bold">Lưu Cấu Hình</button></form></div>
+    <div className="p-4 bg-gray-50 flex-1 overflow-auto"><h2 className="text-xl font-bold mb-4">Cài đặt</h2><form onSubmit={save} className="bg-white p-6 rounded border max-w-lg space-y-4"><div><input placeholder="Tên CH" value={f.name||''} onChange={e=>setF({...f,name:e.target.value})} className="w-full p-2 border rounded mb-2"/><input placeholder="ĐC" value={f.address||''} onChange={e=>setF({...f,address:e.target.value})} className="w-full p-2 border rounded mb-2"/><input placeholder="SĐT" value={f.phone||''} onChange={e=>setF({...f,phone:e.target.value})} className="w-full p-2 border rounded mb-2"/><input placeholder="Logo URL" value={f.logo||''} onChange={e=>setF({...f,logo:e.target.value})} className="w-full p-2 border rounded mb-2"/><select value={f.printDefaultSize||'a4'} onChange={e=>setF({...f,printDefaultSize:e.target.value})} className="w-full p-2 border rounded mb-2"><option value="a4">Giấy A4</option><option value="bill">Máy Bill K80</option></select><input placeholder="Lời cảm ơn" value={f.printFooterText||''} onChange={e=>setF({...f,printFooterText:e.target.value})} className="w-full p-2 border rounded"/></div><button className="bg-blue-600 text-white w-full py-2 rounded font-bold">Lưu Cấu Hình</button></form></div>
   );
 }
 
+// 5. NHÂN VIÊN & PHÂN QUYỀN (ĐÃ KHÔI PHỤC)
 function StaffManagerView({ d, db, auth, t }) {
-  const [f, setF] = useState({u:'',p:'',e:'',r:'staff',n:''}); const [mo, setMo] = useState(false);
+  const [f, setF] = useState({u:'',p:'',e:'',r:'staff',n:''});
+  const [perms, setPerms] = useState({tong_quan_xem:false, ban_hang:true, mua_nhap_hang:false, hh_danh_sach:false, kh_danh_sach:false, mua_ncc:false, quy_so_quy:false});
+  const [mo, setMo] = useState(false);
+  
+  const permList = [
+    {id:'tong_quan_xem', l:'Báo cáo'}, {id:'ban_hang', l:'QL Bán Hàng'},
+    {id:'mua_nhap_hang', l:'Nhập hàng'}, {id:'hh_danh_sach', l:'Kho hàng'},
+    {id:'kh_danh_sach', l:'Khách hàng'}, {id:'mua_ncc', l:'Nhà cung cấp'},
+    {id:'quy_so_quy', l:'Chi phí'}
+  ];
+
   const save = async(e) => {
     e.preventDefault(); try {
       const { getApp, initializeApp } = await import('firebase/app'); const { getAuth, createUserWithEmailAndPassword } = await import('firebase/auth');
       let sApp; try { sApp = initializeApp(getApp().options, "SA"); } catch { sApp = getApp("SA"); }
       const cr = await createUserWithEmailAndPassword(getAuth(sApp), f.e, f.p);
-      await setDoc(doc(db,'users_db',cr.user.uid), {username:f.u, email:f.e, name:f.n, role:f.r});
+      await setDoc(doc(db,'users_db',cr.user.uid), {username:f.u, email:f.e, name:f.n, role:f.r, permissions: f.r==='admin'?{}:perms});
       await getAuth(sApp).signOut(); setMo(false); t("Đã thêm NV");
     } catch(err) { t("Lỗi tạo NV", "error"); }
   };
   return (
-    <div className="p-4 bg-gray-50 flex-1"><div className="flex justify-between mb-4"><h2 className="text-xl font-bold">Nhân viên</h2><button onClick={()=>setMo(true)} className="bg-blue-600 text-white px-4 rounded font-bold">+ Thêm</button></div><div className="bg-white border rounded overflow-auto"><table className="w-full text-left text-sm"><thead className="bg-gray-100 border-b"><tr><th className="p-3">Tên</th><th className="p-3">User/Email</th><th className="p-3">Quyền</th><th className="p-3 text-right">Xóa</th></tr></thead><tbody>{d.map(s=><tr key={s.id} className="border-b"><td className="p-3 font-bold">{s.name}</td><td className="p-3 text-blue-600">{s.email||s.username}</td><td className="p-3">{s.role}</td><td className="p-3 text-right">{s.role!=='admin'&&<button onClick={()=>deleteDoc(doc(db,'users_db',s.id))} className="text-red-600"><Trash2 size={16}/></button>}</td></tr>)}</tbody></table></div><Modal isOpen={mo} onClose={()=>setMo(false)} title="Thêm NV"><form onSubmit={save} className="space-y-3"><input required placeholder="Tên" onChange={e=>setF({...f,n:e.target.value})} className="w-full p-2 border rounded"/><input required placeholder="User" onChange={e=>setF({...f,u:e.target.value})} className="w-full p-2 border rounded"/><input required type="email" placeholder="Email" onChange={e=>setF({...f,e:e.target.value})} className="w-full p-2 border rounded"/><input required type="password" placeholder="Pass" onChange={e=>setF({...f,p:e.target.value})} className="w-full p-2 border rounded"/><select onChange={e=>setF({...f,r:e.target.value})} className="w-full p-2 border rounded"><option value="staff">Nhân viên</option><option value="admin">Quản trị</option></select><button className="w-full bg-blue-600 text-white py-2 rounded font-bold">Tạo</button></form></Modal></div>
+    <div className="p-4 bg-gray-50 flex-1"><div className="flex justify-between mb-4"><h2 className="text-xl font-bold">Nhân viên</h2><button onClick={()=>setMo(true)} className="bg-blue-600 text-white px-4 rounded font-bold">+ Thêm</button></div><div className="bg-white border rounded overflow-auto"><table className="w-full text-left text-sm"><thead className="bg-gray-100 border-b"><tr><th className="p-3">Tên</th><th className="p-3">User/Email</th><th className="p-3">Quyền</th><th className="p-3 text-right">Xóa</th></tr></thead><tbody>{d.map(s=><tr key={s.id} className="border-b"><td className="p-3 font-bold">{s.name}</td><td className="p-3 text-blue-600">{s.email||s.username}</td><td className="p-3">{s.role}</td><td className="p-3 text-right">{s.role!=='admin'&&<button onClick={()=>deleteDoc(doc(db,'users_db',s.id))} className="text-red-600"><Trash2 size={16}/></button>}</td></tr>)}</tbody></table></div><Modal isOpen={mo} onClose={()=>setMo(false)} title="Thêm NV"><form onSubmit={save} className="space-y-3"><input required placeholder="Tên" onChange={e=>setF({...f,n:e.target.value})} className="w-full p-2 border rounded"/><input required placeholder="User" onChange={e=>setF({...f,u:e.target.value})} className="w-full p-2 border rounded"/><input required type="email" placeholder="Email" onChange={e=>setF({...f,e:e.target.value})} className="w-full p-2 border rounded"/><input required type="password" placeholder="Pass" onChange={e=>setF({...f,p:e.target.value})} className="w-full p-2 border rounded"/><select onChange={e=>setF({...f,r:e.target.value})} className="w-full p-2 border rounded"><option value="staff">Nhân viên</option><option value="admin">Quản trị</option></select>{f.r === 'staff' && (<div className="border p-3 rounded bg-gray-50"><p className="font-bold text-xs mb-2 text-blue-800">Cấp quyền Tab cho Nhân viên này:</p><div className="grid grid-cols-2 gap-2 text-xs">{permList.map(p=><label key={p.id} className="flex items-center gap-1 cursor-pointer"><input type="checkbox" checked={perms[p.id]} onChange={e=>setPerms({...perms, [p.id]: e.target.checked})}/> {p.l}</label>)}</div></div>)}<button className="w-full bg-blue-600 text-white py-2 rounded font-bold">Tạo Nhân viên</button></form></Modal></div>
   );
 }
