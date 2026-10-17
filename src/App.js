@@ -224,24 +224,11 @@ export default function EnhancedPOS() {
 
   const printStyle = `
     @media print {
-      .hide-on-print { display: none !important; }
-      .modal-overlay { 
-        position: absolute !important; 
-        background: transparent !important; 
-        padding: 0 !important;
-      }
-      .modal-content {
-        box-shadow: none !important;
-        border: none !important;
-        width: 100% !important;
-        max-width: 100% !important;
-        max-height: none !important;
-        overflow: visible !important;
-      }
-      .print-area-wrapper {
-        overflow: visible !important;
-        padding: 0 !important;
-      }
+      body > #root > div > .min-h-screen { display: none !important; }
+      .fixed { position: absolute !important; inset: 0 !important; background: transparent !important; }
+      .overflow-hidden { overflow: visible !important; }
+      .max-h-[90vh] { max-height: none !important; }
+      .no-print { display: none !important; }
       .print-container { 
         position: absolute; 
         left: 0; 
@@ -249,17 +236,15 @@ export default function EnhancedPOS() {
         width: 100%; 
         background: white !important; 
         color: black !important;
-        padding: 0 !important;
-        margin: 0 !important;
+        padding: 0 10px;
       }
-      .no-print { display: none !important; }
     }
   `;
 
   return (
     <>
       <style>{printStyle}</style>
-      <div className="min-h-screen bg-gray-50 flex flex-col md:flex-row font-sans text-sm md:text-base hide-on-print">
+      <div className="min-h-screen bg-gray-50 flex flex-col md:flex-row font-sans text-sm md:text-base print:hidden">
         <aside className="w-full md:w-64 bg-white border-r border-gray-200 flex flex-col shadow-sm z-10 shrink-0">
           <div className="p-5 border-b border-gray-100 flex items-center gap-3">
             {storeConfig.logo ? <img src={storeConfig.logo} alt="Logo" className="w-10 h-10 object-contain rounded bg-white p-1 shadow-sm" /> : <div className="bg-blue-600 text-white p-2 rounded-lg"><ShoppingBag size={24} /></div>}
@@ -655,7 +640,8 @@ function SalesHistoryView({ orders, products, storeConfig, db, storeId, showToas
       await updateDoc(doc(db, 'stores', storeId, 'orders', editingOrder.id), {
         customerName: editingOrder.customerName,
         note: editingOrder.note,
-        status: editingOrder.status
+        status: editingOrder.status,
+        items: editingOrder.items
       });
       setEditingOrder(null);
       showToast("Cập nhật hóa đơn thành công!");
@@ -789,24 +775,69 @@ function SalesHistoryView({ orders, products, storeConfig, db, storeId, showToas
         </table>
       </div>
 
-      <Modal isOpen={!!editingOrder} onClose={() => setEditingOrder(null)} title="Chỉnh sửa Hóa đơn">
+      <Modal isOpen={!!editingOrder} onClose={() => setEditingOrder(null)} title="Chỉnh sửa Hóa đơn" maxWidth="max-w-2xl">
         {editingOrder && (
           <form onSubmit={handleSaveEditOrder} className="space-y-4">
-            <div>
-              <label className="block text-xs font-bold text-gray-500 mb-1">Tên khách hàng</label>
-              <input required value={editingOrder.customerName || ''} onChange={e=>setEditingOrder({...editingOrder, customerName: e.target.value})} className="w-full p-2.5 border rounded-lg outline-none text-sm font-medium"/>
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+              <div>
+                <label className="block text-xs font-bold text-gray-500 mb-1">Tên khách hàng</label>
+                <input required value={editingOrder.customerName || ''} onChange={e=>setEditingOrder({...editingOrder, customerName: e.target.value})} className="w-full p-2.5 border rounded-lg outline-none text-sm font-medium"/>
+              </div>
+              <div>
+                <label className="block text-xs font-bold text-gray-500 mb-1">Trạng thái thanh toán</label>
+                <select value={editingOrder.status} onChange={e=>setEditingOrder({...editingOrder, status: e.target.value})} className="w-full p-2.5 border rounded-lg outline-none text-sm font-medium bg-white">
+                  <option value="PAID">Đã thanh toán (Tiền mặt)</option>
+                  <option value="DEBT">Ghi nợ</option>
+                </select>
+              </div>
             </div>
+            
             <div>
-              <label className="block text-xs font-bold text-gray-500 mb-1">Trạng thái thanh toán</label>
-              <select value={editingOrder.status} onChange={e=>setEditingOrder({...editingOrder, status: e.target.value})} className="w-full p-2.5 border rounded-lg outline-none text-sm font-medium bg-white">
-                <option value="PAID">Đã thanh toán (Tiền mặt)</option>
-                <option value="DEBT">Ghi nợ</option>
-              </select>
+              <label className="block text-xs font-bold text-gray-500 mb-1">Ghi chú đơn hàng (Toàn bộ Bill)</label>
+              <textarea value={editingOrder.note || ''} onChange={e=>setEditingOrder({...editingOrder, note: e.target.value})} className="w-full p-2.5 border rounded-lg outline-none text-sm resize-none h-16 bg-white"></textarea>
             </div>
+
             <div>
-              <label className="block text-xs font-bold text-gray-500 mb-1">Ghi chú đơn hàng</label>
-              <textarea value={editingOrder.note || ''} onChange={e=>setEditingOrder({...editingOrder, note: e.target.value})} className="w-full p-2.5 border rounded-lg outline-none text-sm resize-none h-20 bg-white"></textarea>
+              <label className="block text-xs font-bold text-gray-800 mb-2 border-b pb-1">Bảo hành & Ghi chú từng sản phẩm</label>
+              <div className="space-y-2 max-h-60 overflow-y-auto pr-1">
+                {editingOrder.items?.map((item, index) => (
+                  <div key={index} className="bg-gray-50 p-3 rounded-lg border flex flex-col md:flex-row gap-3">
+                    <div className="flex-1">
+                      <p className="font-bold text-sm text-blue-700">{item.name}</p>
+                      <p className="text-xs text-gray-500">SL: {item.quantity} | Giá: {formatCurrency(item.price)}</p>
+                    </div>
+                    <div className="flex gap-2">
+                      <div>
+                        <label className="text-[10px] text-gray-500 block mb-0.5 font-bold">Bảo hành</label>
+                        <div className="flex gap-1">
+                          <input type="number" placeholder="Số" value={item.warrantyValue || ''} onChange={(e) => {
+                            const newItems = [...editingOrder.items];
+                            newItems[index] = {...item, warrantyValue: e.target.value};
+                            setEditingOrder({...editingOrder, items: newItems});
+                          }} className="w-12 p-1.5 border rounded text-xs outline-none text-center"/>
+                          <select value={item.warrantyUnit || 'tháng'} onChange={(e) => {
+                            const newItems = [...editingOrder.items];
+                            newItems[index] = {...item, warrantyUnit: e.target.value};
+                            setEditingOrder({...editingOrder, items: newItems});
+                          }} className="p-1.5 border rounded text-xs bg-white outline-none w-20">
+                            <option value="ngày">Ngày</option><option value="tuần">Tuần</option><option value="tháng">Tháng</option><option value="năm">Năm</option>
+                          </select>
+                        </div>
+                      </div>
+                      <div className="flex-1">
+                        <label className="text-[10px] text-gray-500 block mb-0.5 font-bold">Ghi chú (IMEI/Mã)</label>
+                        <input type="text" placeholder="VD: Serial..." value={item.note || ''} onChange={(e) => {
+                          const newItems = [...editingOrder.items];
+                          newItems[index] = {...item, note: e.target.value};
+                          setEditingOrder({...editingOrder, items: newItems});
+                        }} className="w-full p-1.5 border rounded text-xs outline-none"/>
+                      </div>
+                    </div>
+                  </div>
+                ))}
+              </div>
             </div>
+
             <button type="submit" className="w-full bg-blue-600 text-white font-bold p-3 rounded-lg text-sm">Lưu Thay Đổi</button>
           </form>
         )}
