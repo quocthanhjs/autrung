@@ -63,15 +63,15 @@ const getDeviceInfo = () => {
 const Modal = ({ isOpen, onClose, title, children, maxWidth = "max-w-md", hideHeaderInPrint = false }) => {
   if (!isOpen) return null;
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm modal-overlay print:absolute print:inset-0 print:bg-white print:p-0 print:items-start print:justify-center">
-      <div className={`bg-white rounded-xl shadow-2xl w-full ${maxWidth} overflow-hidden flex flex-col max-h-[90vh] modal-content print:max-h-none print:overflow-visible print:shadow-none print:w-full print:max-w-none print:m-0`}>
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm modal-overlay">
+      <div className={`bg-white rounded-xl shadow-2xl w-full ${maxWidth} overflow-hidden flex flex-col max-h-[90vh] modal-content`}>
         {!hideHeaderInPrint && (
           <div className="flex justify-between items-center p-4 border-b shrink-0 no-print">
             <h3 className="text-lg font-semibold text-gray-800">{title}</h3>
-            <button onClick={onClose} className="text-gray-400 hover:text-gray-600"><X size={20} /></button>
+            <button onClick={onClose} className="text-gray-400 hover:text-gray-600 no-print"><X size={20} /></button>
           </div>
         )}
-        <div className="p-4 overflow-y-auto print-area-wrapper print:p-0 print:overflow-visible">{children}</div>
+        <div className="p-4 overflow-y-auto">{children}</div>
       </div>
     </div>
   );
@@ -242,33 +242,40 @@ export default function EnhancedPOS() {
     return userData.perms[t.permId];
   });
 
+  // GIẢI PHÁP IN ẤN MẠNH NHẤT - ẨN MỌI THỨ NGOẠI TRỪ CONTAINER IN
   const printStyle = `
     @media print {
-      @page { margin: 5mm; }
-      html, body { 
-        background: white !important; 
-        height: auto !important; 
-        overflow: visible !important;
-        margin: 0 !important;
-        padding: 0 !important;
-      }
-      .no-print { display: none !important; }
-      ::-webkit-scrollbar { display: none !important; }
-      
-      #root, main, .min-h-screen {
-        display: block !important;
+      html, body, #root, main, .min-h-screen {
         height: auto !important;
+        min-height: auto !important;
         overflow: visible !important;
         position: static !important;
+        background: white !important;
       }
+      body * { visibility: hidden !important; }
+      .print-container, .print-container * { visibility: visible !important; }
+      .print-container {
+        position: absolute !important; 
+        left: 0 !important; 
+        top: 0 !important;
+        width: 100% !important; 
+        margin: 0 !important; 
+        padding: 0 !important;
+      }
+      .modal-overlay, .modal-content {
+        position: static !important; background: transparent !important;
+        box-shadow: none !important; border: none !important; overflow: visible !important;
+      }
+      .no-print { display: none !important; }
+      @page { margin: 5mm; }
     }
   `;
 
   return (
     <>
       <style>{printStyle}</style>
-      <div className="min-h-screen bg-gray-50 flex flex-col md:flex-row font-sans text-sm md:text-base print:block print:bg-white print:h-auto print:overflow-visible">
-        <aside className="w-full md:w-64 bg-white border-r border-gray-200 flex flex-col shadow-sm z-10 shrink-0 no-print print:hidden">
+      <div className="min-h-screen bg-gray-50 flex flex-col md:flex-row font-sans text-sm md:text-base">
+        <aside className="w-full md:w-64 bg-white border-r border-gray-200 flex flex-col shadow-sm z-10 shrink-0 no-print">
           <div className="p-5 border-b border-gray-100 flex items-center gap-3">
             {storeConfig.logo ? <img src={storeConfig.logo} alt="Logo" className="w-10 h-10 object-contain rounded bg-white p-1 shadow-sm" /> : <div className="bg-blue-600 text-white p-2 rounded-lg"><ShoppingBag size={24} /></div>}
             <div className="min-w-0"><h1 className="text-lg font-bold tracking-tight text-gray-800 truncate uppercase">{storeConfig.name || 'SmartPOS'}</h1></div>
@@ -288,7 +295,7 @@ export default function EnhancedPOS() {
           </div>
         </aside>
 
-        <main className="flex-1 overflow-hidden flex flex-col h-[calc(100vh-80px)] md:h-screen relative no-print print:block print:overflow-visible print:h-auto print:absolute print:inset-0 print:w-full">
+        <main className="flex-1 overflow-hidden flex flex-col h-[calc(100vh-80px)] md:h-screen relative">
           {toast && <div className={"absolute top-4 right-4 z-50 px-6 py-3 rounded-lg shadow-lg flex items-center gap-2 text-white no-print " + (toast.type === 'success' ? 'bg-green-600' : 'bg-red-600')}>{toast.type === 'success' ? <Check size={20} /> : <AlertCircle size={20} />}<span className="font-medium">{toast.msg}</span></div>}
           
           {activeTab === 'dashboard' && <DashboardView orders={orders} imports={imports} expenses={expenses} customers={customers} suppliers={suppliers} showToast={showToast} />}
@@ -678,7 +685,7 @@ function SalesHistoryView({ orders, products, storeConfig, db, storeId, showToas
   };
 
   return (
-    <div className="flex-1 flex flex-col p-4 md:p-6 bg-gray-50 overflow-hidden h-full print:p-0 print:h-auto print:overflow-visible print:bg-white print:block">
+    <div className="flex-1 flex flex-col p-4 md:p-6 bg-gray-50 overflow-hidden h-full">
       <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center mb-4 gap-3 no-print">
         <div>
           <h2 className="text-2xl font-bold text-gray-800 flex items-center gap-2"><Receipt className="text-blue-600"/> Quản lý Bán Hàng</h2>
@@ -913,11 +920,11 @@ function SalesHistoryView({ orders, products, storeConfig, db, storeId, showToas
               </div>
             </div>
 
-            <div className="p-6 bg-white print-container text-gray-900 font-sans print:w-full print:p-0 print:m-0">
+            <div className="p-6 bg-white print-container text-gray-900 font-sans">
               {printType === 'bill' ? (
-                <div className="max-w-[80mm] mx-auto print:max-w-none print:w-[80mm]">
+                <div>
                   <div className="text-center mb-4 border-b pb-3">
-                    {printOptions.showLogo && storeConfig?.logo && (<img src={storeConfig.logo} alt="Logo" className="max-h-16 mx-auto mb-1 object-contain grayscale print:grayscale-0" />)}
+                    {printOptions.showLogo && storeConfig?.logo && (<img src={storeConfig.logo} alt="Logo" className="max-h-16 mx-auto mb-1 object-contain grayscale" />)}
                     <h2 className="text-base font-bold uppercase">{storeConfig?.name || 'SmartPOS Pro'}</h2>
                     <p className="text-xs text-gray-600">ĐC: {storeConfig?.address || '...'}</p>
                     <p className="text-xs text-gray-600">SĐT: {storeConfig?.phone || '...'}</p>
@@ -958,7 +965,7 @@ function SalesHistoryView({ orders, products, storeConfig, db, storeId, showToas
                   </div>
                 </div>
               ) : (
-                <div className={printType === 'a4' ? 'max-w-[210mm] mx-auto p-4 print:max-w-[210mm]' : 'max-w-[148mm] mx-auto p-2 print:max-w-[148mm]'}>
+                <div className={printType === 'a4' ? 'max-w-[210mm] mx-auto p-4' : 'max-w-[148mm] mx-auto p-2'}>
                   <div className="text-center border-b-2 border-gray-800 pb-4 mb-4">
                     {printOptions.showLogo && storeConfig?.logo && (<img src={storeConfig.logo} alt="Logo" className="max-h-20 mx-auto mb-2 object-contain" />)}
                     <h2 className="text-xl font-bold uppercase">{storeConfig?.name || 'SmartPOS Pro'}</h2>
@@ -1117,7 +1124,7 @@ function POSView({ products, customers, db, storeId, user, storeConfig, showToas
   };
 
   return (
-    <div className="flex-1 flex flex-col lg:flex-row bg-gray-50 h-full overflow-hidden print:block print:bg-white print:p-0 print:overflow-visible print:h-auto">
+    <div className="flex-1 flex flex-col lg:flex-row bg-gray-50 h-full overflow-hidden">
       <div className="flex-1 p-4 md:p-6 overflow-y-auto flex flex-col no-print">
         <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center mb-4 gap-3">
           <h2 className="text-xl font-bold text-gray-800">Sản phẩm bán hàng</h2>
@@ -1214,11 +1221,11 @@ function POSView({ products, customers, db, storeId, user, storeConfig, showToas
               </div>
             </div>
 
-            <div className="p-6 bg-white print-container text-gray-900 font-sans print:w-full print:m-0 print:p-0">
+            <div className="p-6 bg-white print-container text-gray-900 font-sans">
               {printType === 'bill' ? (
-                <div className="max-w-[80mm] mx-auto print:max-w-none print:w-[80mm]">
+                <div>
                   <div className="text-center mb-4 border-b pb-3">
-                    {printOptions.showLogo && storeConfig?.logo && (<img src={storeConfig.logo} alt="Logo" className="max-h-12 mx-auto mb-1 object-contain grayscale print:grayscale-0" />)}
+                    {printOptions.showLogo && storeConfig?.logo && (<img src={storeConfig.logo} alt="Logo" className="max-h-12 mx-auto mb-1 object-contain grayscale" />)}
                     <h2 className="text-base font-bold uppercase">{storeConfig?.name || 'SmartPOS Pro'}</h2>
                     <p className="text-xs text-gray-600">ĐC: {storeConfig?.address || '...'}</p>
                     <p className="text-xs text-gray-600">SĐT: {storeConfig?.phone || '...'}</p>
@@ -1259,7 +1266,7 @@ function POSView({ products, customers, db, storeId, user, storeConfig, showToas
                   </div>
                 </div>
               ) : (
-                <div className={printType === 'a4' ? 'max-w-[210mm] mx-auto p-4 print:max-w-[210mm]' : 'max-w-[148mm] mx-auto p-2 print:max-w-[148mm]'}>
+                <div className={printType === 'a4' ? 'max-w-[210mm] mx-auto p-4' : 'max-w-[148mm] mx-auto p-2'}>
                   <div className="text-center border-b-2 border-gray-800 pb-4 mb-4">
                     {printOptions.showLogo && storeConfig?.logo && (<img src={storeConfig.logo} alt="Logo" className="max-h-20 mx-auto mb-2 object-contain" />)}
                     <h2 className="text-xl font-bold uppercase">{storeConfig?.name || 'SmartPOS Pro'}</h2>
@@ -1360,7 +1367,7 @@ function ImportView({ products, suppliers, db, storeId, user, showToast }) {
 
   return (
     <div className="flex-1 flex flex-col lg:flex-row overflow-hidden bg-gray-50 h-full">
-      <div className="flex-1 p-4 md:p-6 overflow-y-auto flex flex-col">
+      <div className="flex-1 p-4 md:p-6 overflow-y-auto flex flex-col no-print">
         <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center mb-4 gap-3">
           <h2 className="text-xl font-bold text-gray-800">Hàng cần nhập</h2>
           <div className="relative w-full sm:w-64"><Search size={16} className="absolute left-3 top-3 text-gray-400"/><input placeholder="Tìm kiếm sản phẩm nhập..." value={searchTerm} onChange={e=>setSearchTerm(e.target.value)} className="w-full pl-9 pr-3 py-2 border rounded-lg bg-white outline-none text-sm"/></div>
@@ -1372,7 +1379,7 @@ function ImportView({ products, suppliers, db, storeId, user, showToast }) {
         </div>
       </div>
       
-      <div className="w-full lg:w-[420px] bg-white border-l shadow-lg shrink-0 z-20 flex flex-col h-[65vh] lg:h-auto">
+      <div className="w-full lg:w-[420px] bg-white border-l shadow-lg shrink-0 z-20 flex flex-col h-[65vh] lg:h-auto no-print">
         <div className="p-4 border-b bg-gray-50"><h2 className="font-bold flex items-center gap-2"><ArrowDownToLine size={20} className="text-gray-600"/> Phiếu Nhập Kho</h2></div>
         <div className="flex-1 overflow-y-auto p-4 space-y-3">
           {cart.map(item => (
@@ -1395,255 +1402,12 @@ function ImportView({ products, suppliers, db, storeId, user, showToast }) {
   );
 }
 
-function StatCard({ icon, title, value, color, highlight }) {
-  return (
-    <div className={`p-4 rounded-xl shadow-sm border flex flex-col justify-center ${color} ${highlight ? 'border-green-400 bg-green-50' : 'border-transparent'}`}>
-      <div className="flex items-center gap-2 mb-1 opacity-80">
-        {icon}
-        <h3 className="text-xs font-bold uppercase">{title}</h3>
-      </div>
-      <p className="text-xl font-bold">{value}</p>
-    </div>
-  );
-}
-
-function StaffManagerView({ db, showToast }) {
-  const [users, setUsers] = useState([]);
-  const [editingPerms, setEditingPerms] = useState(null);
-  const [showAddModal, setShowAddModal] = useState(false);
-  const [newUser, setNewUser] = useState({ username: '', name: '', password: '', role: 'staff' });
-  const [showEditModal, setShowEditModal] = useState(null);
-  const [editForm, setEditForm] = useState({ name: '', role: 'staff' });
-  const [showPassModal, setShowPassModal] = useState(null);
-  const [newPassword, setNewPassword] = useState('');
-  const [isProcessing, setIsProcessing] = useState(false);
+function InventoryView({ products, orders, imports, db, storeId, showToast }) {
+  const [isModalOpen, setIsModalOpen] = useState(false); 
+  const [form, setForm] = useState({ category: '' });
+  const [selectedIds, setSelectedIds] = useState([]);
+  const [searchTerm, setSearchTerm] = useState('');
   
-  useEffect(() => {
-    const unsub = onSnapshot(collection(db, 'users_db'), (snap) => {
-      setUsers(snap.docs.map(d => ({ id: d.id, ...d.data() })));
-    });
-    return () => unsub();
-  }, [db]);
+  const [sortConfig, setSortConfig] = useState({ field: null, direction: 'none' });
 
-  const handleAddUser = async (e) => {
-    e.preventDefault();
-    setIsProcessing(true);
-    try {
-      const email = newUser.username.toLowerCase().trim() + '@smartpos.local';
-      
-      const q = query(collection(db, 'users_db'), where('username', '==', newUser.username));
-      const snap = await getDocs(q);
-      if (!snap.empty) { 
-        showToast("Tên đăng nhập đã tồn tại!", "error"); 
-        setIsProcessing(false); 
-        return; 
-      }
-
-      let secondaryApp;
-      try { secondaryApp = getApp("Secondary"); } 
-      catch (err) { secondaryApp = initializeApp(firebaseConfig, "Secondary"); }
-      const secondaryAuth = getAuth(secondaryApp);
-      
-      const userCred = await createUserWithEmailAndPassword(secondaryAuth, email, newUser.password);
-      await signOut(secondaryAuth);
-
-      await setDoc(doc(db, 'users_db', userCred.user.uid), {
-        username: newUser.username,
-        email: email,
-        name: newUser.name,
-        role: newUser.role,
-        permissions: {},
-        createdAt: new Date().toISOString()
-      });
-
-      setShowAddModal(false);
-      setNewUser({ username: '', name: '', password: '', role: 'staff' });
-      showToast("Đã thêm nhân viên mới thành công!");
-    } catch (err) {
-      showToast("Lỗi thêm NV: " + err.message, "error");
-    }
-    setIsProcessing(false);
-  };
-
-  const handleEditUser = async (e) => {
-    e.preventDefault();
-    setIsProcessing(true);
-    try {
-      await updateDoc(doc(db, 'users_db', showEditModal.id), {
-        name: editForm.name,
-        role: editForm.role
-      });
-      setShowEditModal(null);
-      showToast("Đã cập nhật thông tin thành công!");
-    } catch(err) {
-      showToast("Lỗi cập nhật: " + err.message, "error");
-    }
-    setIsProcessing(false);
-  };
-
-  const handleChangePassword = async (e) => {
-    e.preventDefault();
-    setIsProcessing(true);
-    try {
-      await updateDoc(doc(db, 'users_db', showPassModal.id), {
-        forcePasswordReset: newPassword
-      });
-      showToast("Yêu cầu đổi mật khẩu đã được lưu lại!");
-      setShowPassModal(null);
-      setNewPassword('');
-    } catch(err) {
-      showToast("Lỗi: " + err.message, "error");
-    }
-    setIsProcessing(false);
-  };
-
-  const handleDeleteUser = async (u) => {
-    if (u.role === 'admin' && users.filter(x => x.role === 'admin').length <= 1) {
-      return showToast("Không thể xóa Admin duy nhất!", "error");
-    }
-    if (window.confirm(`Bạn có chắc chắn muốn xóa nhân viên: ${u.name || u.username}?`)) {
-      try {
-        await deleteDoc(doc(db, 'users_db', u.id));
-        showToast("Đã xóa nhân viên!");
-      } catch (err) {
-        showToast("Lỗi khi xóa", "error");
-      }
-    }
-  };
-
-  const handleSavePerms = async (e) => {
-    e.preventDefault();
-    try {
-      await updateDoc(doc(db, 'users_db', editingPerms.id), {
-        permissions: editingPerms.permissions || {},
-        role: editingPerms.role
-      });
-      setEditingPerms(null);
-      showToast("Đã lưu bảng phân quyền!");
-    } catch (err) {
-      showToast("Lỗi cập nhật phân quyền", "error");
-    }
-  };
-
-  const togglePerm = (permId) => {
-    setEditingPerms(prev => ({
-      ...prev,
-      permissions: {
-        ...prev.permissions,
-        [permId]: !prev.permissions?.[permId]
-      }
-    }));
-  };
-
-  return (
-    <div className="flex-1 p-4 md:p-6 bg-gray-50 overflow-auto h-full">
-      <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center mb-6 gap-3">
-        <h2 className="text-2xl font-bold text-gray-800 flex items-center gap-2"><UserCog className="text-blue-600"/> Quản trị Nhân viên</h2>
-        <button onClick={() => setShowAddModal(true)} className="bg-blue-600 text-white px-4 py-2 rounded-lg font-bold flex gap-2 shrink-0"><Plus size={18}/> Thêm Nhân Viên</button>
-      </div>
-      
-      <div className="bg-white rounded-xl shadow-sm border overflow-hidden">
-        <table className="w-full text-left text-sm">
-          <thead className="bg-gray-100 border-b">
-            <tr>
-              <th className="p-4 font-bold text-gray-700">Tên đăng nhập</th>
-              <th className="p-4 font-bold text-gray-700">Tên hiển thị</th>
-              <th className="p-4 font-bold text-gray-700">Vai trò</th>
-              <th className="p-4 font-bold text-gray-700 text-right">Thao tác</th>
-            </tr>
-          </thead>
-          <tbody>
-            {users.map(u => (
-              <tr key={u.id} className="border-b hover:bg-gray-50">
-                <td className="p-4 font-bold text-blue-600">{u.username || u.email}</td>
-                <td className="p-4 font-medium text-gray-800">{u.name}</td>
-                <td className="p-4">
-                  <span className={"px-2 py-1 rounded text-xs font-bold " + (u.role === 'admin' ? 'bg-purple-100 text-purple-700' : 'bg-blue-100 text-blue-700')}>
-                    {u.role === 'admin' ? 'Quản trị viên' : 'Nhân viên'}
-                  </span>
-                </td>
-                <td className="p-4 text-right flex justify-end gap-1">
-                  {u.role !== 'admin' && (
-                    <button onClick={() => setEditingPerms(u)} title="Phân quyền" className="text-purple-600 bg-purple-50 p-2 rounded-lg hover:bg-purple-100"><ShieldAlert size={16}/></button>
-                  )}
-                  <button onClick={() => { setShowEditModal(u); setEditForm({name: u.name, role: u.role}); }} title="Sửa thông tin" className="text-blue-600 bg-blue-50 p-2 rounded-lg hover:bg-blue-100"><Edit size={16}/></button>
-                  <button onClick={() => setShowPassModal(u)} title="Đổi mật khẩu" className="text-orange-600 bg-orange-50 p-2 rounded-lg hover:bg-orange-100"><KeyRound size={16}/></button>
-                  <button onClick={() => handleDeleteUser(u)} title="Xóa nhân viên" className="text-red-600 bg-red-50 p-2 rounded-lg hover:bg-red-100"><Trash2 size={16}/></button>
-                </td>
-              </tr>
-            ))}
-            {users.length === 0 && <tr><td colSpan="4" className="p-6 text-center text-gray-400">Chưa có dữ liệu nhân viên</td></tr>}
-          </tbody>
-        </table>
-      </div>
-
-      <Modal isOpen={showAddModal} onClose={() => setShowAddModal(false)} title="Thêm Nhân Viên Mới">
-        <form onSubmit={handleAddUser} className="space-y-4">
-          <div><label className="text-xs font-bold text-gray-500 block mb-1">Tên đăng nhập *</label><input required placeholder="VD: nhanvien01" value={newUser.username} onChange={e=>setNewUser({...newUser, username: e.target.value.replace(/\s+/g, '')})} className="w-full p-2.5 border rounded-lg outline-none"/></div>
-          <div><label className="text-xs font-bold text-gray-500 block mb-1">Tên hiển thị *</label><input required placeholder="VD: Nguyễn Văn A" value={newUser.name} onChange={e=>setNewUser({...newUser, name: e.target.value})} className="w-full p-2.5 border rounded-lg outline-none"/></div>
-          <div><label className="text-xs font-bold text-gray-500 block mb-1">Mật khẩu * (Tối thiểu 6 ký tự)</label><input required type="password" placeholder="******" value={newUser.password} onChange={e=>setNewUser({...newUser, password: e.target.value})} minLength={6} className="w-full p-2.5 border rounded-lg outline-none"/></div>
-          <div><label className="text-xs font-bold text-gray-500 block mb-1">Vai trò</label>
-            <select value={newUser.role} onChange={e=>setNewUser({...newUser, role: e.target.value})} className="w-full p-2.5 border rounded-lg outline-none bg-white">
-              <option value="staff">Nhân viên (Cần phân quyền sau)</option>
-              <option value="admin">Quản trị viên (Toàn quyền)</option>
-            </select>
-          </div>
-          <button disabled={isProcessing} className="w-full bg-blue-600 text-white font-bold p-3 rounded-lg mt-2">{isProcessing ? 'Đang tạo...' : 'Lưu Nhân Viên'}</button>
-        </form>
-      </Modal>
-
-      <Modal isOpen={!!showEditModal} onClose={() => setShowEditModal(null)} title="Sửa Thông Tin">
-        {showEditModal && (
-          <form onSubmit={handleEditUser} className="space-y-4">
-            <div><label className="text-xs font-bold text-gray-500 block mb-1">Tên hiển thị</label><input required value={editForm.name} onChange={e=>setEditForm({...editForm, name: e.target.value})} className="w-full p-2.5 border rounded-lg outline-none"/></div>
-            <div><label className="text-xs font-bold text-gray-500 block mb-1">Vai trò</label>
-              <select value={editForm.role} onChange={e=>setEditForm({...editForm, role: e.target.value})} className="w-full p-2.5 border rounded-lg outline-none bg-white">
-                <option value="staff">Nhân viên (Cần phân quyền sau)</option>
-                <option value="admin">Quản trị viên (Toàn quyền)</option>
-              </select>
-            </div>
-            <button disabled={isProcessing} className="w-full bg-blue-600 text-white font-bold p-3 rounded-lg mt-2">{isProcessing ? 'Đang cập nhật...' : 'Cập nhật'}</button>
-          </form>
-        )}
-      </Modal>
-
-      <Modal isOpen={!!showPassModal} onClose={() => setShowPassModal(null)} title={`Đổi Mật Khẩu: ${showPassModal?.name || ''}`}>
-        {showPassModal && (
-          <form onSubmit={handleChangePassword} className="space-y-4">
-            <div className="bg-orange-50 p-3 rounded-lg border border-orange-100 text-orange-800 text-xs">Vì lý do bảo mật của hệ thống, yêu cầu này sẽ được lưu và có thể cần Admin tự đăng nhập tài khoản của nhân viên để đặt lại mật khẩu thủ công nếu cấu hình không tự động đồng bộ.</div>
-            <div><label className="text-xs font-bold text-gray-500 block mb-1">Mật khẩu mới (Tối thiểu 6 ký tự)</label><input required type="text" placeholder="Nhập mật khẩu mới..." value={newPassword} onChange={e=>setNewPassword(e.target.value)} minLength={6} className="w-full p-2.5 border rounded-lg outline-none font-bold text-blue-600"/></div>
-            <button disabled={isProcessing} className="w-full bg-orange-600 hover:bg-orange-700 text-white font-bold p-3 rounded-lg mt-2">{isProcessing ? 'Đang xử lý...' : 'Xác nhận Đổi'}</button>
-          </form>
-        )}
-      </Modal>
-
-      <Modal isOpen={!!editingPerms} onClose={() => setEditingPerms(null)} title={`Phân quyền: ${editingPerms?.name || ''}`} maxWidth="max-w-2xl">
-        {editingPerms && (
-          <div className="flex flex-col h-full max-h-[80vh]">
-            <div className="flex-1 overflow-y-auto mb-4 border-t pt-4">
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                {PERMISSION_TREE.map((mod, idx) => (
-                  <div key={idx} className="bg-gray-50 p-4 rounded-lg border">
-                    <h4 className="font-bold text-sm text-blue-700 mb-3">{mod.module}</h4>
-                    <div className="space-y-3">
-                      {mod.perms.map(p => (
-                        <label key={p.id} className="flex items-center gap-2 cursor-pointer">
-                          <input type="checkbox" checked={editingPerms.permissions?.[p.id] || false} onChange={() => togglePerm(p.id)} className="w-4 h-4 text-blue-600 rounded cursor-pointer" />
-                          <span className="text-sm font-medium text-gray-700">{p.label}</span>
-                        </label>
-                      ))}
-                    </div>
-                  </div>
-                ))}
-              </div>
-            </div>
-            <div className="flex justify-end gap-3 pt-2">
-              <button onClick={() => setEditingPerms(null)} className="px-5 py-2.5 text-gray-600 font-bold bg-white border rounded-lg hover:bg-gray-100">Hủy bỏ</button>
-              <button onClick={handleSavePerms} className="px-5 py-2.5 bg-blue-600 text-white font-bold rounded-lg hover:bg-blue-700 shadow-sm">Lưu Phân Quyền</button>
-            </div>
-          </div>
-        )}
-      </Modal>
-    </div>
-  );
-}
+  const [detailProduct, setDetailProduct] = useState(null);
