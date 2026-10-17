@@ -63,6 +63,9 @@ const getDeviceInfo = () => {
 const Modal = ({ isOpen, onClose, title, children, maxWidth = "max-w-md", hideHeaderInPrint = false }) => {
  if (!isOpen) return null;
  let containerClass = "bg-white rounded-xl shadow-2xl w-full " + maxWidth + " overflow-hidden flex flex-col max-h-[90vh]";
+ const Modal = ({ isOpen, onClose, title, children, maxWidth = "max-w-md", hideHeaderInPrint = false }) => {
+ if (!isOpen) return null;
+ let containerClass = "bg-white rounded-xl shadow-2xl w-full " + maxWidth + " overflow-hidden flex flex-col max-h-[90vh]";
  return (
  <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm">
  <div className={containerClass}>
@@ -74,8 +77,10 @@ const Modal = ({ isOpen, onClose, title, children, maxWidth = "max-w-md", hideHe
  )}
  <div className="p-4 overflow-y-auto">{children}</div>
  </div>
+ </div>
  );
 };
+
 
 function LoginView({ onLoginSuccess }) {
  const [loginInput, setLoginInput] = useState('');
