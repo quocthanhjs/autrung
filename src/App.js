@@ -910,21 +910,45 @@ function SalesHistoryView({ orders, products, customers, storeConfig, db, storeI
 
           <div className="flex flex-col border rounded-xl p-3 bg-white">
             <h4 className="font-bold text-sm text-gray-700 mb-2">Giỏ hàng hiện tại</h4>
-            <div className="flex-1 max-h-56 overflow-y-auto space-y-2 mb-3">
+            <div className="flex-1 max-h-60 overflow-y-auto space-y-2 mb-3">
               {newCart.map(item => (
-                <div key={item.id} className="p-2 border rounded-lg bg-gray-50 text-xs space-y-1">
+                <div key={item.id} className="p-2 border rounded-lg bg-gray-50 text-xs space-y-1.5">
                   <div className="flex justify-between font-bold text-gray-800">
                     <span>{item.name}</span>
-                    <button onClick={() => setNewCart(c => c.filter(i => i.id !== item.id))} className="text-red-500"><X size={14}/></button>
+                    <button type="button" onClick={() => setNewCart(c => c.filter(i => i.id !== item.id))} className="text-red-500"><X size={14}/></button>
                   </div>
                   <div className="flex justify-between items-center gap-2">
-                    <input type="number" value={item.price} onChange={e=> { const val = Number(e.target.value); setNewCart(c => c.map(i => i.id === item.id ? {...i, price: val} : i)); }} className="w-24 p-1 border rounded font-bold text-blue-600 text-center bg-white"/>
-                    <div className="flex items-center gap-1">
-                      <button onClick={() => setNewCart(c => c.map(i => i.id === item.id ? {...i, quantity: Math.max(1, i.quantity - 1)} : i))} className="px-2 border rounded bg-white">-</button>
-                      <span className="font-bold">{item.quantity}</span>
-                      <button onClick={() => setNewCart(c => c.map(i => i.id === item.id ? {...i, quantity: i.quantity + 1} : i))} className="px-2 border rounded bg-white">+</button>
+                    <div>
+                      <label className="text-[10px] text-gray-400 font-bold uppercase">Giá bán</label>
+                      <input type="number" value={item.price} onChange={e=> { const val = Number(e.target.value); setNewCart(c => c.map(i => i.id === item.id ? {...i, price: val} : i)); }} className="w-24 p-1.5 border rounded font-bold text-blue-600 text-center bg-white"/>
+                    </div>
+                    <div className="flex items-center gap-1 mt-3">
+                      <button type="button" onClick={() => setNewCart(c => c.map(i => i.id === item.id ? {...i, quantity: Math.max(1, i.quantity - 1)} : i))} className="px-2.5 py-1 border rounded bg-white font-bold shadow-sm">-</button>
+                      <span className="font-bold w-6 text-center">{item.quantity}</span>
+                      <button type="button" onClick={() => setNewCart(c => c.map(i => i.id === item.id ? {...i, quantity: i.quantity + 1} : i))} className="px-2.5 py-1 border rounded bg-white font-bold shadow-sm">+</button>
                     </div>
                   </div>
+                  
+                  {/* PHẦN NHẬP BẢO HÀNH & GHI CHÚ */}
+                  <div className="grid grid-cols-2 gap-2 pt-1.5 border-t border-gray-200 mt-1">
+                    <div>
+                      <label className="text-[10px] text-gray-500 font-bold block mb-0.5">Bảo hành</label>
+                      <div className="flex gap-1">
+                        <input type="number" placeholder="Số" value={item.warrantyValue || ''} onChange={e => setNewCart(c => c.map(i => i.id === item.id ? {...i, warrantyValue: e.target.value} : i))} className="w-12 p-1.5 border rounded text-xs outline-none text-center font-bold bg-white"/>
+                        <select value={item.warrantyUnit || 'tháng'} onChange={e => setNewCart(c => c.map(i => i.id === item.id ? {...i, warrantyUnit: e.target.value} : i))} className="p-1 border rounded text-xs bg-white outline-none flex-1">
+                          <option value="ngày">Ngày</option>
+                          <option value="tuần">Tuần</option>
+                          <option value="tháng">Tháng</option>
+                          <option value="năm">Năm</option>
+                        </select>
+                      </div>
+                    </div>
+                    <div>
+                      <label className="text-[10px] text-gray-500 font-bold block mb-0.5">Ghi chú (IMEI, Serial...)</label>
+                      <input type="text" placeholder="Nhập IMEI, Serial..." value={item.note || ''} onChange={e => setNewCart(c => c.map(i => i.id === item.id ? {...i, note: e.target.value} : i))} className="w-full p-1.5 border rounded text-xs outline-none bg-white"/>
+                    </div>
+                  </div>
+
                 </div>
               ))}
               {newCart.length === 0 && <div className="text-center text-gray-400 py-10 text-xs">Chưa có sản phẩm trong giỏ</div>}
@@ -935,7 +959,7 @@ function SalesHistoryView({ orders, products, customers, storeConfig, db, storeI
                 <option value="">-- Khách lẻ (Tiền mặt) --</option>
                 {customers.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
               </select>
-              <textarea placeholder="Ghi chú đơn hàng..." value={newOrderNote} onChange={e=>setNewOrderNote(e.target.value)} className="w-full p-2 border rounded-lg text-xs outline-none h-12 resize-none"></textarea>
+              <textarea placeholder="Ghi chú đơn hàng chung..." value={newOrderNote} onChange={e=>setNewOrderNote(e.target.value)} className="w-full p-2 border rounded-lg text-xs outline-none h-12 resize-none"></textarea>
               <div className="flex gap-2">
                 <button type="button" onClick={() => setNewIsDebt(false)} className={"flex-1 py-1.5 rounded-lg border font-bold text-xs " + (!newIsDebt ? 'bg-blue-600 text-white' : 'bg-white')}>Tiền mặt</button>
                 <button type="button" onClick={() => setNewIsDebt(true)} className={"flex-1 py-1.5 rounded-lg border font-bold text-xs " + (newIsDebt ? 'bg-orange-500 text-white' : 'bg-white')}>Ghi nợ</button>
