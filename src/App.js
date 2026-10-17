@@ -1577,3 +1577,16 @@ function ExpenseView({ expenses, db, storeId, showToast }) {
     </div>
   );
 }
+function StatCard({ icon, title, value, color, highlight }) {
+  return (
+    <div className={`p-5 rounded-2xl border shadow-sm flex flex-col justify-between h-full bg-white ${highlight ? 'ring-2 ring-green-500' : 'border-gray-200'}`}>
+      <div className="flex items-center gap-3 mb-4">
+        <div className={`p-3 rounded-xl flex items-center justify-center ${color}`}>
+          {icon}
+        </div>
+        <h3 className="text-sm font-bold text-gray-500 uppercase tracking-wider">{title}</h3>
+      </div>
+      <p className="text-2xl font-black text-gray-800">{value}</p>
+    </div>
+  );
+}
