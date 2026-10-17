@@ -243,7 +243,6 @@ export default function EnhancedPOS() {
     return userData.perms[t.permId];
   });
 
-  // FIX LỖI IN TRANG TRẮNG CỰC KỲ MẠNH MẼ - KHÔNG CHO THẰNG NÀO CẮT CHIỀU CAO
   const printStyle = `
     @media print {
       body * {
@@ -905,7 +904,6 @@ function SalesHistoryView({ orders, products, storeConfig, db, storeId, showToas
             <div className="p-6 bg-white print-container text-gray-900 font-sans">
               {printType === 'bill' ? (
                 <div>
-                  {/* BẢN VÁ: CĂN GIỮA TOÀN BỘ HEADER CỦA BILL NHỎ */}
                   <div className="text-center mb-4 border-b pb-3">
                     {storeConfig?.logo && (<img src={storeConfig.logo} alt="Logo" className="max-h-16 mx-auto mb-1 object-contain grayscale print:grayscale-0" />)}
                     <h2 className="text-base font-bold uppercase">{storeConfig?.name || 'SmartPOS Pro'}</h2>
@@ -949,7 +947,6 @@ function SalesHistoryView({ orders, products, storeConfig, db, storeId, showToas
                 </div>
               ) : (
                 <div className={printType === 'a4' ? 'max-w-[210mm] mx-auto p-4' : 'max-w-[148mm] mx-auto p-2'}>
-                  {/* BẢN VÁ: CĂN GIỮA TOÀN BỘ HEADER CỦA A4/A5 */}
                   <div className="text-center border-b-2 border-gray-800 pb-4 mb-4">
                     {storeConfig?.logo && (<img src={storeConfig.logo} alt="Logo" className="max-h-20 mx-auto mb-2 object-contain" />)}
                     <h2 className="text-xl font-bold uppercase">{storeConfig?.name || 'SmartPOS Pro'}</h2>
@@ -1725,7 +1722,6 @@ function ExpenseView({ expenses, db, storeId, showToast }) {
   );
 }
 
-
 function POSView({ products, customers, db, storeId, user, storeConfig, showToast }) {
   const [cart, setCart] = useState([]);
   const [customerId, setCustomerId] = useState('');
@@ -2079,6 +2075,30 @@ function ImportView({ products, suppliers, db, storeId, user, showToast }) {
           <button onClick={handleImport} disabled={!supplierId || cart.length === 0} className="w-full bg-gray-800 disabled:bg-gray-300 text-white py-3 rounded-xl font-bold mt-2 shadow-sm">Hoàn tất Nhập Hàng</button>
         </div>
       </div>
+    </div>
+  );
+}
+
+function StatCard({ icon, title, value, color, highlight }) {
+  return (
+    <div className={`p-4 rounded-xl shadow-sm border flex flex-col justify-center ${color} ${highlight ? 'border-green-400 bg-green-50' : 'border-transparent'}`}>
+      <div className="flex items-center gap-2 mb-1 opacity-80">
+        {icon}
+        <h3 className="text-xs font-bold uppercase">{title}</h3>
+      </div>
+      <p className="text-xl font-bold">{value}</p>
+    </div>
+  );
+}
+
+function StaffManagerView({ db, showToast }) {
+  return (
+    <div className="flex-1 p-6 bg-gray-50 flex flex-col items-center justify-center h-full">
+      <div className="bg-blue-100 text-blue-600 p-4 rounded-full mb-4">
+        <UserCog size={40} />
+      </div>
+      <h2 className="text-2xl font-bold text-gray-800">Quản trị Nhân viên</h2>
+      <p className="text-gray-500 mt-2">Chức năng phân quyền nhân viên đang được cập nhật...</p>
     </div>
   );
 }
