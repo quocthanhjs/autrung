@@ -8,11 +8,8 @@ DollarSign, CheckCircle2, Printer, FileText, CreditCard,
  UserCog, KeyRound, MonitorSmartphone, Mail, Download, Upload, ArrowUpDown, Search, Eye, Bell, Award, BarChart3, Receipt, ChevronDown, ChevronUp, Image
 } from 'lucide-react';
 
-import { initializeApp, getApps, deleteApp } from 'firebase/app';
-import { 
-getAuth, signInWithEmailAndPassword, signOut, 
-onAuthStateChanged, sendPasswordResetEmail, createUserWithEmailAndPassword, updatePassword 
-} from 'firebase/auth';
+import { initializeApp } from 'firebase/app';
+import { getAuth, signInWithEmailAndPassword, signOut, onAuthStateChanged, sendPasswordResetEmail } from 'firebase/auth';
 import { 
 getFirestore, doc, setDoc, getDoc, getDocs, addDoc, updateDoc, 
 deleteDoc, onSnapshot, collection, writeBatch, query, orderBy, where 
@@ -83,41 +80,70 @@ function LoginView({ onLoginSuccess }) {
  const [password, setPassword] = useState('');
  const [error, setError] = useState('');
  const [loading, setLoading] = useState(false);
- const [isForgot, setIsForgot] = useState(false);
- const [resetMsg, setResetMsg] = useState('');
 
  const handleLogin = async (e) => {
  e.preventDefault(); setError(''); setLoading(true);
  try {
- let loginEmail = loginInput.trim();
- if (!loginEmail.includes('@')) {
- const q = query(collection(db, 'users_db'), where('username', '==', loginEmail));
- const querySnapshot = await getDocs(q);
- if (!querySnapshot.empty) { loginEmail = querySnapshot.docs[0].data().email; } 
-else { throw new Error("Không tìm thấy Tên đăng nhập này!"); }
+ let cleanInput = loginInput.trim().toLowerCase();
+ 
+ // Kiểm tra nếu là Admin (mặc định qua Firebase Auth hoặc tài khoản admin)
+ if (cleanInput === 'admin' || cleanInput.includes('@')) {
+ let loginEmail = cleanInput;
+ if (cleanInput === 'admin') {
+ loginEmail = "admin@smartpos.com"; // Hoặc email admin chính của anh
  }
+ // Nếu đăng nhập bằng Firebase Auth cho Admin
  const userCredential = await signInWithEmailAndPassword(auth, loginEmail, password);
  const user = userCredential.user;
- let ip = "Không xác định";
- try { const res = await fetch('https://api.ipify.org?format=json'); const data = await res.json(); ip = data.ip; } catch (err) {}
  const userDocRef = doc(db, 'users_db', user.uid);
  const userDoc = await getDoc(userDocRef);
- let role = 'admin', name = loginInput, perms = {};
- if (userDoc.exists()) { role = userDoc.data().role; name = userDoc.data().name; perms = userDoc.data().permissions || {}; } 
-else { await setDoc(userDocRef, { username: 'admin', email: loginEmail, role: 'admin', name: 'Admin', createdAt: new Date().toISOString() }); }
- await addDoc(collection(db, 'login_logs'), { uid: user.uid, username: userDoc.exists() ? userDoc.data().username : 'admin', name: name, role: role, loginTime: new Date().toISOString(), ip: ip, device: getDeviceInfo() });
- onLoginSuccess(user, role, name, perms);
- } catch (err) {
- if (err.message === "Không tìm thấy Tên đăng nhập này!") setError(err.message);
- else setError("Tài khoản hoặc mật khẩu không đúng!");
- } finally { setLoading(false); }
- };
+ let role = 'admin', name = 'Admin', perms = {};
+ if (userDoc.exists()) { 
+ role = userDoc.data().role; 
+ name = userDoc.data().name; 
+ perms = userDoc.data().permissions || {}; 
+ } else {
+ await setDoc(userDocRef, { username: 'admin', email: loginEmail, role: 'admin', name: 'Admin', createdAt: new Date().toISOString() });
+ }
+ onLoginSuccess({ uid: user.uid, role, name, perms });
+ return;
+ }
 
- const handleReset = async (e) => {
- e.preventDefault(); setError(''); setResetMsg(''); setLoading(true);
- try { await sendPasswordResetEmail(auth, loginInput); setResetMsg("Link khôi phục đã gửi vào Email!"); } 
-catch (err) { setError("Vui lòng nhập Email thật đã đăng ký để khôi phục."); } 
-finally { setLoading(false); }
+ // Kiểm tra Nhân viên đăng nhập qua Firestore trực tiếp
+ const q = query(collection(db, 'users_db'), where('username', '==', cleanInput));
+ const querySnapshot = await getDocs(q);
+ 
+ if (querySnapshot.empty) {
+ throw new Error("Không tìm thấy Tên đăng nhập này!");
+ }
+
+ const staffDoc = querySnapshot.docs[0];
+ const staffData = staffDoc.data();
+
+ if (staffData.password !== password) {
+ throw new Error("Mật khẩu không đúng!");
+ }
+
+ let ip = "Không xác định";
+ try { const res = await fetch('https://api.ipify.org?format=json'); const data = await res.json(); ip = data.ip; } catch (err) {}
+
+ await addDoc(collection(db, 'login_logs'), { 
+ uid: staffDoc.id, 
+ username: staffData.username, 
+ name: staffData.name, 
+ role: staffData.role, 
+ loginTime: new Date().toISOString(), 
+ ip: ip, 
+ device: getDeviceInfo() 
+ });
+
+ onLoginSuccess({ uid: staffDoc.id, role: staffData.role, name: staffData.name, perms: staffData.permissions || {} });
+
+ } catch (err) {
+ setError(err.message || "Tài khoản hoặc mật khẩu không đúng!");
+ } finally { 
+ setLoading(false); 
+ }
  };
 
  return (
@@ -126,24 +152,14 @@ finally { setLoading(false); }
  <div className="text-center mb-8">
  <div className="bg-blue-100 text-blue-600 w-16 h-16 rounded-full flex items-center justify-center mx-auto mb-4"><Lock size={32} /></div>
  <h1 className="text-2xl font-bold text-gray-800">SmartPOS Pro</h1>
- <p className="text-gray-500 text-sm mt-2">{isForgot ? 'Khôi phục mật khẩu' : 'Đăng nhập hệ thống'}</p>
+ <p className="text-gray-500 text-sm mt-2">Đăng nhập hệ thống quản lý</p>
  </div>
  {error && <div className="bg-red-50 text-red-600 p-3 rounded-lg flex items-center gap-2 mb-4 text-sm"><ShieldAlert size={16} /> {error}</div>}
- {resetMsg && <div className="bg-green-50 text-green-700 p-3 rounded-lg flex items-center gap-2 mb-4 text-sm"><CheckCircle2 size={16} /> {resetMsg}</div>}
- {!isForgot ? (
  <form onSubmit={handleLogin} className="space-y-4">
- <div><label className="block text-sm font-medium text-gray-700 mb-1">Tên đăng nhập (hoặc Email)</label><input type="text" value={loginInput} onChange={(e) => setLoginInput(e.target.value)} className="w-full p-3 border rounded-lg outline-none" required placeholder="Ví dụ: nhanvien1" /></div>
+ <div><label className="block text-sm font-medium text-gray-700 mb-1">Tên đăng nhập (Username hoặc Email)</label><input type="text" value={loginInput} onChange={(e) => setLoginInput(e.target.value)} className="w-full p-3 border rounded-lg outline-none" required placeholder="Ví dụ: nhanvien1 hoặc admin" /></div>
  <div><label className="block text-sm font-medium text-gray-700 mb-1">Mật khẩu</label><input type="password" value={password} onChange={(e) => setPassword(e.target.value)} className="w-full p-3 border rounded-lg outline-none" required /></div>
- <div className="flex justify-end"><button type="button" onClick={() => setIsForgot(true)} className="text-sm text-blue-600 hover:underline">Quên mật khẩu?</button></div>
  <button type="submit" disabled={loading} className="w-full bg-blue-600 text-white font-bold py-3 rounded-lg">{loading ? 'Đang xử lý...' : 'Đăng nhập'}</button>
  </form>
- ) : (
- <form onSubmit={handleReset} className="space-y-4">
- <input type="email" value={loginInput} onChange={(e) => setLoginInput(e.target.value)} className="w-full p-3 border rounded-lg outline-none" required placeholder="Nhập Email thật..." />
- <button type="submit" disabled={loading} className="w-full bg-blue-600 text-white font-bold py-3 rounded-lg">Gửi xác nhận</button>
- <div className="text-center mt-4"><button type="button" onClick={() => setIsForgot(false)} className="text-sm text-gray-500 hover:underline">Quay lại</button></div>
- </form>
- )}
  </div>
  </div>
  );
@@ -170,19 +186,17 @@ export default function EnhancedPOS() {
  document.body.appendChild(s);
  }
 
+ // Kiểm tra phiên đăng nhập Firebase Auth (cho Admin cũ nếu có) hoặc lưu session cục bộ
  const unsubscribe = onAuthStateChanged(auth, async (currentUser) => {
  if (currentUser) {
- setUser(currentUser);
  const userDoc = await getDoc(doc(db, 'users_db', currentUser.uid));
  if (userDoc.exists()) {
  const data = userDoc.data();
+ setUser(currentUser);
  setUserData({ role: data.role, name: data.name || data.username, perms: data.permissions || {} });
  setActiveTab(data.role === 'admin' ? 'dashboard' : 'pos');
  }
- } else { 
-setUser(null); 
-setUserData({ role: null, name: '', perms: {} }); 
-}
+ }
  setLoading(false);
  });
  return () => unsubscribe();
@@ -206,7 +220,7 @@ setUserData({ role: null, name: '', perms: {} });
  const showToast = (msg, type = 'success') => { setToast({ msg, type }); setTimeout(() => setToast(null), 3000); };
 
  if (loading) return <div className="min-h-screen flex items-center justify-center bg-gray-50"><div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600"></div></div>;
- if (!user) return <LoginView onLoginSuccess={(u, r, n, p) => { setUser(u); setUserData({ role: r, name: n, perms: p }); setActiveTab(r === 'admin' ? 'dashboard' : 'pos'); }} />;
+ if (!user) return <LoginView onLoginSuccess={(userInfo) => { setUser(userInfo); setUserData({ role: userInfo.role, name: userInfo.name, perms: userInfo.perms }); setActiveTab(userInfo.role === 'admin' ? 'dashboard' : 'pos'); }} />;
 
  const allTabs = [
  { id: 'dashboard', icon: LayoutDashboard, label: 'Báo cáo & Nhắc nợ', permId: 'tong_quan_xem' },
@@ -245,7 +259,7 @@ setUserData({ role: null, name: '', perms: {} });
  <div className="p-4 border-t border-gray-100 bg-gray-50">
  <div className="flex items-center justify-between">
  <div className="flex flex-col min-w-0"><p className="text-sm font-bold text-gray-800 truncate">{userData.name}</p><p className="text-xs text-gray-500 uppercase">{userData.role === 'admin' ? 'Quản trị viên' : 'Nhân viên'}</p></div>
- <button onClick={() => signOut(auth)} className="text-gray-500 hover:text-red-600 p-2 rounded-lg hover:bg-red-50"><LogOut size={18} /></button>
+ <button onClick={() => { signOut(auth); setUser(null); }} className="text-gray-500 hover:text-red-600 p-2 rounded-lg hover:bg-red-50"><LogOut size={18} /></button>
  </div>
  </div>
  </aside>
@@ -1143,7 +1157,7 @@ function StaffManagerView({ db, showToast }) {
  const [staff, setStaff] = useState([]); 
 const [logs, setLogs] = useState([]);
  const [isModalOpen, setIsModalOpen] = useState(false);
- const [form, setForm] = useState({ id: '', name: '', username: '', email: '', password: '', role: 'seller', perms: {} });
+ const [form, setForm] = useState({ id: '', name: '', username: '', password: '', role: 'seller', perms: {} });
  const [loading, setLoading] = useState(false);
 
  useEffect(() => {
@@ -1157,40 +1171,38 @@ const [logs, setLogs] = useState([]);
  e.preventDefault(); setLoading(true);
  try {
  if (form.id) { 
- await updateDoc(doc(db, 'users_db', form.id), { role: form.role, permissions: form.perms }); 
- showToast("Đã cập nhật quyền nhân viên thành công!");
+ await updateDoc(doc(db, 'users_db', form.id), { 
+ role: form.role, 
+ permissions: form.perms,
+ ...(form.password ? { password: form.password } : {})
+ }); 
+ showToast("Đã cập nhật thông tin nhân viên thành công!");
  setIsModalOpen(false); 
  } else {
- // Tạo user bằng app phụ để tránh ghi đè phiên Admin hiện tại
- const secondaryAppName = "SecondaryApp_" + Date.now();
- const secondaryApp = initializeApp(firebaseConfig, secondaryAppName);
- const secondaryAuth = getAuth(secondaryApp);
+ // Tạo tài khoản nhân viên lưu trực tiếp vào collection users_db (bỏ qua Firebase Auth để tránh lỗi)
+ const cleanUsername = form.username.toLowerCase().trim();
+ 
+ // Kiểm tra xem username đã tồn tại chưa
+ const q = query(collection(db, 'users_db'), where('username', '==', cleanUsername));
+ const checkExist = await getDocs(q);
+ if (!checkExist.empty) {
+ throw new Error("Tên đăng nhập (username) này đã tồn tại!");
+ }
 
- try {
- const res = await createUserWithEmailAndPassword(secondaryAuth, form.email.trim(), form.password);
- const newUid = res.user.uid;
- await signOut(secondaryAuth);
- await deleteApp(secondaryApp);
-
- await setDoc(doc(db, 'users_db', newUid), { 
- username: form.username.toLowerCase().trim(), 
- email: form.email.trim(), 
+ await addDoc(collection(db, 'users_db'), { 
+ username: cleanUsername,
+ password: form.password, 
  name: form.name.trim(), 
  role: form.role, 
- permissions: form.perms || {} 
+ permissions: form.perms || {},
+ createdAt: new Date().toISOString()
  });
+ 
  showToast("Tạo tài khoản nhân viên mới thành công!");
  setIsModalOpen(false);
- } catch (subErr) {
- try { await deleteApp(secondaryApp); } catch(e) {}
- throw subErr;
- }
  }
  } catch (err) { 
- let errMsg = err.message;
- if (errMsg.includes('email-already-in-use')) errMsg = "Email này đã được đăng ký cho tài khoản khác!";
- else if (errMsg.includes('weak-password')) errMsg = "Mật khẩu quá yếu (cần ít nhất 6 ký tự)!";
- showToast("Lỗi: " + errMsg, "error"); 
+ showToast("Lỗi: " + (err.message || "Không thể lưu nhân viên"), "error"); 
  } finally { 
  setLoading(false); 
  }
@@ -1207,8 +1219,8 @@ const [logs, setLogs] = useState([]);
  }
  };
 
- const openAddModal = () => { setForm({ id: '', name: '', username: '', email: '', password: '', role: 'seller', perms: {} }); setIsModalOpen(true); };
- const openEditModal = (s) => { setForm({ id: s.id, name: s.name, username: s.username, email: s.email, role: s.role, perms: s.permissions || {} }); setIsModalOpen(true); };
+ const openAddModal = () => { setForm({ id: '', name: '', username: '', password: '', role: 'seller', perms: {} }); setIsModalOpen(true); };
+ const openEditModal = (s) => { setForm({ id: s.id, name: s.name, username: s.username, password: s.password || '', role: s.role, perms: s.permissions || {} }); setIsModalOpen(true); };
  const modalTitle = form.id ? "Sửa quyền: " + form.name : "Thêm Nhân Viên Mới";
 
  return (
@@ -1251,19 +1263,11 @@ return (
  </div>
  <Modal isOpen={isModalOpen} onClose={() => setIsModalOpen(false)} title={modalTitle} maxWidth="max-w-2xl">
  <form onSubmit={handleSave} className="space-y-4">
- {!form.id ? (
- <div className="grid grid-cols-2 gap-4 bg-blue-50 p-4 rounded-xl border border-blue-100 mb-4">
+ <div className="grid grid-cols-1 md:grid-cols-2 gap-4 bg-blue-50 p-4 rounded-xl border border-blue-100 mb-4">
  <div className="col-span-2"><input required placeholder="Tên nhân viên *" value={form.name} onChange={e=>setForm({...form, name:e.target.value})} className="w-full p-2.5 border rounded outline-none text-sm bg-white"/></div>
- <div><input required placeholder="Username đăng nhập *" value={form.username} onChange={e=>setForm({...form, username:e.target.value})} className="w-full p-2.5 border rounded outline-none text-sm bg-white"/></div>
- <div><input required type="password" placeholder="Mật khẩu (ít nhất 6 ký tự) *" value={form.password} onChange={e=>setForm({...form, password:e.target.value})} className="w-full p-2.5 border rounded outline-none text-sm bg-white"/></div>
- <div className="col-span-2"><input required type="email" placeholder="Email đăng nhập/khôi phục *" value={form.email} onChange={e=>setForm({...form, email:e.target.value})} className="w-full p-2.5 border rounded outline-none text-sm bg-white"/></div>
+ <div><input required placeholder="Username đăng nhập *" value={form.username} onChange={e=>setForm({...form, username:e.target.value})} disabled={!!form.id} className="w-full p-2.5 border rounded outline-none text-sm bg-white disabled:bg-gray-100"/></div>
+ <div><input required type="text" placeholder="Mật khẩu *" value={form.password} onChange={e=>setForm({...form, password:e.target.value})} className="w-full p-2.5 border rounded outline-none text-sm bg-white"/></div>
  </div>
- ) : (
- <div className="bg-blue-50 p-4 rounded-xl border border-blue-100 space-y-2 mb-4">
- <p className="text-xs text-gray-700"><strong>Đang sửa quyền cho nhân viên:</strong> {form.name} ({form.email})</p>
- <p className="text-[11px] text-gray-500">Bạn có thể thay đổi vai trò hoặc check lại các quyền chức năng bên dưới.</p>
- </div>
- )}
  <div>
  <label className="block text-xs font-bold text-gray-500 mb-1">Vai trò tài khoản</label>
  <select value={form.role} onChange={e=>setForm({...form, role: e.target.value})} className="w-full p-2.5 border rounded font-bold outline-none text-sm bg-white">
