@@ -32,7 +32,7 @@ export default function EnhancedPOS() {
   const [user, setUser] = useState(null);
   const [userData, setUserData] = useState({ role: null, name: '', perms: {} });
   const [activeTab, setActiveTab] = useState('pos');
-  const [storeConfig, setStoreConfig] = useState({});
+  const [storeConfig, setStoreConfig] = useState({ name: 'SmartPOS', address: '', phone: '', logo: '' });
   const [data, setData] = useState({ products: [], orders: [], imports: [], customers: [], suppliers: [], expenses: [], staff: [] });
   const [loading, setLoading] = useState(true);
   const [toastMessage, setToastMessage] = useState(null);
@@ -63,7 +63,7 @@ export default function EnhancedPOS() {
   useEffect(() => {
     if (!user) return;
     const unsubStore = onSnapshot(doc(db, 'stores', storeId), (docSnap) => {
-      if (docSnap.exists()) setStoreConfig(docSnap.data());
+      if (docSnap.exists()) setStoreConfig(prev => ({ ...prev, ...docSnap.data() }));
     });
 
     const collections = ['products', 'orders', 'imports', 'customers', 'suppliers', 'expenses'];
@@ -100,8 +100,9 @@ export default function EnhancedPOS() {
     };
     return (
       <div className="h-screen bg-gray-100 flex items-center justify-center">
-        <form onSubmit={handleLogin} className="bg-white p-8 rounded-xl shadow-xl w-96 space-y-4">
-          <h1 className="text-xl font-bold text-center">ĐĂNG NHẬP HỆ THỐNG</h1>
+        <form onSubmit={handleLogin} className="bg-white p-8 rounded-xl shadow-xl w-96 space-y-4 text-center">
+          {storeConfig.logo && <img src={storeConfig.logo} alt="Logo" className="max-h-16 mx-auto object-contain mb-2" />}
+          <h1 className="text-xl font-bold text-blue-800">{storeConfig.name || 'SmartPOS'}</h1>
           <input required name="username" placeholder="Tên đăng nhập hoặc Email" className="w-full p-3 border rounded outline-none focus:ring-2 focus:ring-blue-500" />
           <input required name="password" type="password" placeholder="Mật khẩu" className="w-full p-3 border rounded outline-none focus:ring-2 focus:ring-blue-500" />
           <button className="w-full bg-blue-600 text-white font-bold py-3 rounded hover:bg-blue-700">Đăng nhập</button>
@@ -128,8 +129,9 @@ export default function EnhancedPOS() {
   return (
     <div className="flex h-screen bg-gray-50 font-sans text-sm print:bg-white print:block">
       <aside className="w-56 bg-white border-r flex flex-col shrink-0 no-print">
-        <div className="p-4 border-b font-bold text-blue-800 text-lg flex items-center gap-2">
-          <ShoppingBag /> {storeConfig.name || 'SmartPOS'}
+        <div className="p-4 border-b font-bold text-blue-800 text-lg flex items-center gap-2 truncate">
+          {storeConfig.logo ? <img src={storeConfig.logo} alt="Logo" className="max-h-8 object-contain" /> : <ShoppingBag />}
+          <span className="truncate">{storeConfig.name || 'SmartPOS'}</span>
         </div>
         <nav className="flex-1 p-3 overflow-y-auto space-y-2">
           {visibleTabs.map(t => (
@@ -143,7 +145,7 @@ export default function EnhancedPOS() {
             <b className="block">{userData.name}</b>
             <span className="text-xs text-gray-500">{userData.role === 'admin' ? 'Quản trị viên' : 'Nhân viên'}</span>
           </div>
-          <button onClick={() => signOut(auth)} className="text-red-500 hover:bg-red-100 p-2 rounded-full">
+          <button onClick={() => signOut(auth)} className="text-red-500 hover:bg-red-100 p-2 rounded-full" title="Đăng xuất">
             <LogOut size={18} />
           </button>
         </div>
@@ -172,13 +174,11 @@ export default function EnhancedPOS() {
 }
 
 // ==========================================
-// 1. DASHBOARD VIEW (Đã cập nhật BỘ LỌC NỢ LÂU)
+// 1. DASHBOARD VIEW
 // ==========================================
 function DashboardView({ data }) {
   const [filterMonth, setFilterMonth] = useState('ALL');
   const [filterYear, setFilterYear] = useState(new Date().getFullYear().toString());
-  
-  // Nợ nhiều nhất, Nợ ít nhất, Nợ cũ nhất (lâu), Nợ mới nhất
   const [sortCustomerDebt, setSortCustomerDebt] = useState('amt_desc');
   const [sortSupplierDebt, setSortSupplierDebt] = useState('amt_desc');
 
@@ -206,8 +206,8 @@ function DashboardView({ data }) {
     }).sort((a, b) => {
       if (sortCustomerDebt === 'amt_desc') return b.totalDebt - a.totalDebt;
       if (sortCustomerDebt === 'amt_asc') return a.totalDebt - b.totalDebt;
-      if (sortCustomerDebt === 'time_asc') return a.oldestDebtTime - b.oldestDebtTime; // Cũ nhất (lâu)
-      if (sortCustomerDebt === 'time_desc') return b.oldestDebtTime - a.oldestDebtTime; // Mới nhất
+      if (sortCustomerDebt === 'time_asc') return a.oldestDebtTime - b.oldestDebtTime;
+      if (sortCustomerDebt === 'time_desc') return b.oldestDebtTime - a.oldestDebtTime;
       return 0;
     });
   }, [data.customers, data.orders, sortCustomerDebt]);
@@ -220,8 +220,8 @@ function DashboardView({ data }) {
     }).sort((a, b) => {
       if (sortSupplierDebt === 'amt_desc') return b.totalDebt - a.totalDebt;
       if (sortSupplierDebt === 'amt_asc') return a.totalDebt - b.totalDebt;
-      if (sortSupplierDebt === 'time_asc') return a.oldestDebtTime - b.oldestDebtTime; // Cũ nhất
-      if (sortSupplierDebt === 'time_desc') return b.oldestDebtTime - a.oldestDebtTime; // Mới nhất
+      if (sortSupplierDebt === 'time_asc') return a.oldestDebtTime - b.oldestDebtTime;
+      if (sortSupplierDebt === 'time_desc') return b.oldestDebtTime - a.oldestDebtTime;
       return 0;
     });
   }, [data.suppliers, data.imports, sortSupplierDebt]);
@@ -306,7 +306,7 @@ function DashboardView({ data }) {
 }
 
 // ==========================================
-// 2. POS VIEW (Đã khôi phục Nút + Thêm khách)
+// 2. POS VIEW (Thêm khách trực tiếp)
 // ==========================================
 function POSView({ data, storeId, user, storeConfig, showToast }) {
   const [cart, setCart] = useState([]);
@@ -314,8 +314,6 @@ function POSView({ data, storeId, user, storeConfig, showToast }) {
   const [selectedCustomer, setSelectedCustomer] = useState(null);
   const [printOrder, setPrintOrder] = useState(null);
   const [isProcessing, setIsProcessing] = useState(false);
-  
-  // Trạng thái modal Thêm Khách
   const [showAddCustomer, setShowAddCustomer] = useState(false);
   const [newCustomerForm, setNewCustomerForm] = useState({ name: '', phone: '' });
 
@@ -413,7 +411,6 @@ function POSView({ data, storeId, user, storeConfig, showToast }) {
             <option value="">-- Khách lẻ --</option>
             {data.customers.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
           </select>
-          {/* Nút thêm khách hàng mới */}
           <button onClick={() => setShowAddCustomer(true)} className="bg-blue-600 text-white px-4 py-2.5 rounded-lg hover:bg-blue-700 flex items-center justify-center font-bold shadow" title="Thêm khách hàng mới">
             <Plus size={20} />
           </button>
@@ -476,10 +473,8 @@ function POSView({ data, storeId, user, storeConfig, showToast }) {
         </div>
       </div>
 
-      {/* Gọi Modal in Hóa đơn chung */}
       <OrderPrintModal order={printOrder} storeConfig={storeConfig} onClose={() => setPrintOrder(null)} />
 
-      {/* Modal Thêm Khách Hàng */}
       <Modal isOpen={showAddCustomer} onClose={() => setShowAddCustomer(false)} title="Thêm Khách Hàng Mới">
         <form onSubmit={saveNewCustomer} className="space-y-4">
           <div>
@@ -497,7 +492,9 @@ function POSView({ data, storeId, user, storeConfig, showToast }) {
   );
 }
 
-// Gọi Component In hóa đơn ra dùng chung
+// ==========================================
+// 3. IN HÓA ĐƠN (Ghi chú và Bảo hành tách thành 2 cột dọc)
+// ==========================================
 function OrderPrintModal({ order, storeConfig, onClose }) {
   const [opt, setOpt] = useState({ s: storeConfig?.printDefaultSize || 'a4', l: true, n: true, b: true });
   const [loading, setLoading] = useState(false);
@@ -551,6 +548,8 @@ function OrderPrintModal({ order, storeConfig, onClose }) {
             <thead className="border-b-2 border-black">
               <tr>
                 <th className="py-2 text-left">Sản phẩm</th>
+                {opt.n && <th className="py-2 text-left">Ghi chú</th>}
+                {opt.b && <th className="py-2 text-left">Bảo hành</th>}
                 <th className="py-2 text-center w-12">SL</th>
                 <th className="py-2 text-right w-24">Thành tiền</th>
               </tr>
@@ -558,11 +557,9 @@ function OrderPrintModal({ order, storeConfig, onClose }) {
             <tbody>
               {order.items.map((i, idx) => (
                 <tr key={idx} className="border-b border-gray-300 border-dashed">
-                  <td className="py-2">
-                    <b className="block">{i.name}</b>
-                    {opt.n && i.note && <div className="text-[11px] italic text-gray-600 mt-0.5">GC: {i.note}</div>}
-                    {opt.b && i.warrantyValue && <div className="text-[11px] text-gray-600 mt-0.5">BH: {i.warrantyValue} {i.warrantyUnit}</div>}
-                  </td>
+                  <td className="py-2 font-bold">{i.name}</td>
+                  {opt.n && <td className="py-2 italic text-gray-700">{i.note || '-'}</td>}
+                  {opt.b && <td className="py-2 text-gray-700">{i.warrantyValue ? `${i.warrantyValue} ${i.warrantyUnit}` : '-'}</td>}
                   <td className="py-2 text-center">{i.quantity}</td>
                   <td className="py-2 text-right font-bold">{formatMoney(i.price * i.quantity)}</td>
                 </tr>
@@ -570,8 +567,8 @@ function OrderPrintModal({ order, storeConfig, onClose }) {
             </tbody>
             <tfoot className="border-t-2 border-black">
               <tr>
-                <td colSpan="2" className="py-3 text-right font-bold">TỔNG CỘNG:</td>
-                <td className="py-3 text-right font-bold text-lg text-blue-800">{formatMoney(order.total)}</td>
+                <td colSpan={1 + (opt.n ? 1 : 0) + (opt.b ? 1 : 0)} className="py-3 text-right font-bold">TỔNG CỘNG:</td>
+                <td colSpan="2" className="py-3 text-right font-bold text-lg text-blue-800">{formatMoney(order.total)}</td>
               </tr>
             </tfoot>
           </table>
@@ -583,7 +580,7 @@ function OrderPrintModal({ order, storeConfig, onClose }) {
 }
 
 // ==========================================
-// 3. SALES HISTORY VIEW
+// 4. SALES HISTORY VIEW
 // ==========================================
 function SalesHistoryView({ data, storeId, storeConfig, showToast }) {
   const [search, setSearch] = useState('');
@@ -712,7 +709,7 @@ function SalesHistoryView({ data, storeId, storeConfig, showToast }) {
 }
 
 // ==========================================
-// 4. IMPORT VIEW
+// 5. IMPORT VIEW
 // ==========================================
 function ImportView({ data, storeId, user, showToast }) {
   const [cart, setCart] = useState([]);
@@ -808,7 +805,7 @@ function ImportView({ data, storeId, user, showToast }) {
 }
 
 // ==========================================
-// 5. INVENTORY VIEW (Sắp xếp Cao - Thấp)
+// 6. INVENTORY VIEW
 // ==========================================
 function InventoryView({ data, storeId, showToast }) {
   const [search, setSearch] = useState('');
@@ -906,7 +903,7 @@ function InventoryView({ data, storeId, showToast }) {
 }
 
 // ==========================================
-// 6. CONTACT VIEW (CÓ LỊCH SỬ GIAO DỊCH VÀ LỌC THỜI GIAN)
+// 7. CONTACT VIEW (Khách hàng & NCC + Lịch sử chi tiết)
 // ==========================================
 function ContactView({ type, dataList, orders, storeId, showToast }) {
   const [search, setSearch] = useState('');
@@ -914,7 +911,6 @@ function ContactView({ type, dataList, orders, storeId, showToast }) {
   const [formData, setFormData] = useState({});
   const [sortOrder, setSortOrder] = useState('debt_desc');
 
-  // Trạng thái Lịch sử
   const [historyContact, setHistoryContact] = useState(null);
   const [dateFrom, setDateFrom] = useState('');
   const [dateTo, setDateTo] = useState('');
@@ -943,19 +939,14 @@ function ContactView({ type, dataList, orders, storeId, showToast }) {
     return direction === 'asc' ? a.totalDebt - b.totalDebt : b.totalDebt - a.totalDebt;
   });
 
-  // Xử lý Lịch sử giao dịch của đối tượng đang xem
   const historyTransactions = useMemo(() => {
     if (!historyContact) return [];
     let list = orders.filter(x => isCustomer ? x.customerId === historyContact.id : x.supplierId === historyContact.id);
-    
-    // Lọc theo khoảng thời gian nếu có chọn
     if (dateFrom) list = list.filter(x => x.date >= dateFrom);
     if (dateTo) list = list.filter(x => x.date <= dateTo + 'T23:59:59');
-
     return list.sort((a, b) => new Date(b.date) - new Date(a.date));
   }, [historyContact, dateFrom, dateTo, orders, isCustomer]);
 
-  // Tính tổng nợ phát sinh trong danh sách giao dịch đang hiển thị
   const generatedDebt = historyTransactions.filter(x => x.status === 'DEBT').reduce((sum, x) => sum + x.total, 0);
 
   return (
@@ -1001,7 +992,6 @@ function ContactView({ type, dataList, orders, storeId, showToast }) {
         </table>
       </div>
 
-      {/* Modal Thêm / Sửa Liên hệ */}
       <Modal isOpen={showModal} onClose={() => setShowModal(false)} title={isCustomer ? "Khách hàng" : "Nhà cung cấp"}>
         <form onSubmit={handleSave} className="space-y-4">
           <div><label className="block text-sm font-bold mb-1">Tên *</label><input required value={formData.name || ''} onChange={e => setFormData({ ...formData, name: e.target.value })} className="w-full p-2.5 border rounded-lg outline-none focus:ring-2 focus:ring-blue-500" /></div>
@@ -1011,7 +1001,6 @@ function ContactView({ type, dataList, orders, storeId, showToast }) {
         </form>
       </Modal>
 
-      {/* Modal LỊCH SỬ GIAO DỊCH */}
       <Modal isOpen={!!historyContact} onClose={() => { setHistoryContact(null); setDateFrom(''); setDateTo(''); }} title={`Lịch sử giao dịch: ${historyContact?.name}`} maxWidth="max-w-4xl">
         <div className="bg-gray-50 p-4 rounded-xl border mb-4 flex gap-4 items-end shadow-sm">
           <div><label className="block text-xs font-bold text-gray-500 mb-1">Từ ngày</label><input type="date" value={dateFrom} onChange={e => setDateFrom(e.target.value)} className="p-2 border rounded outline-none" /></div>
@@ -1061,7 +1050,7 @@ function ContactView({ type, dataList, orders, storeId, showToast }) {
 }
 
 // ==========================================
-// 7. EXPENSES VIEW (Sắp xếp theo ngày/tiền)
+// 8. EXPENSES VIEW
 // ==========================================
 function ExpenseView({ data, storeId, showToast }) {
   const [form, setForm] = useState({ amount: '', note: '' });
@@ -1134,7 +1123,7 @@ function ExpenseView({ data, storeId, showToast }) {
 }
 
 // ==========================================
-// 8. SETTINGS VIEW
+// 9. SETTINGS VIEW
 // ==========================================
 function SettingsView({ config, storeId, showToast }) {
   const [formData, setFormData] = useState(config);
@@ -1165,7 +1154,7 @@ function SettingsView({ config, storeId, showToast }) {
 }
 
 // ==========================================
-// 9. STAFF VIEW (Giữ nguyên Sửa/Phân quyền/Reset Pass)
+// 10. STAFF VIEW
 // ==========================================
 function StaffView({ staffList, showToast }) {
   const [formData, setFormData] = useState({ id: '', username: '', password: '', email: '', role: 'staff', name: '' });
@@ -1209,7 +1198,7 @@ function StaffView({ staffList, showToast }) {
   };
 
   const handleDelete = async (id) => {
-    if (window.confirm("Cảnh báo: Bạn chỉ đang xóa nhân viên khỏi hệ thống phân quyền của ứng dụng (không xóa khỏi Firebase Auth). Tiếp tục?")) {
+    if (window.confirm("Cảnh báo: Bạn chỉ đang xóa nhân viên khỏi hệ thống phân quyền của ứng dụng. Tiếp tục?")) {
       await deleteDoc(doc(db, 'users_db', id));
       showToast("Đã xóa nhân viên");
     }
