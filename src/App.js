@@ -162,7 +162,7 @@ export default function EnhancedPOS() {
         {activeTab === 'pos' && <POSView data={data} storeId={storeId} user={user} storeConfig={storeConfig} showToast={showToast} />}
         {activeTab === 'sales_history' && <SalesHistoryView data={data} storeId={storeId} storeConfig={storeConfig} showToast={showToast} />}
         {activeTab === 'imports' && <ImportView data={data} storeId={storeId} user={user} showToast={showToast} />}
-        {activeTab === 'products' && <InventoryView data={data.products} storeId={storeId} showToast={showToast} />}
+        {activeTab === 'products' && <InventoryView data={data} storeId={storeId} showToast={showToast} />}
         {activeTab === 'customers' && <ContactView type="customers" dataList={data.customers} orders={data.orders} storeId={storeId} showToast={showToast} />}
         {activeTab === 'suppliers' && <ContactView type="suppliers" dataList={data.suppliers} orders={data.imports} storeId={storeId} showToast={showToast} />}
         {activeTab === 'expenses' && <ExpenseView data={data.expenses} storeId={storeId} showToast={showToast} />}
@@ -174,7 +174,7 @@ export default function EnhancedPOS() {
 }
 
 // ==========================================
-// 1. DASHBOARD VIEW
+// 1. DASHBOARD VIEW (ĐẦY ĐỦ BIỂU ĐỒ & THIẾT BỊ BÁN CHẠY)
 // ==========================================
 function DashboardView({ data }) {
   const [filterMonth, setFilterMonth] = useState('ALL');
@@ -195,8 +195,21 @@ function DashboardView({ data }) {
     const revenue = validOrders.reduce((sum, o) => sum + o.total, 0);
     const cogs = validOrders.reduce((sum, o) => sum + (o.totalCost || 0), 0);
     const expenses = validExpenses.reduce((sum, e) => sum + Number(e.amount), 0);
-    return { revenue, cogs, expenses, netProfit: revenue - cogs - expenses };
+    return { revenue, cogs, expenses, netProfit: revenue - cogs - expenses, validOrders };
   }, [data, filterMonth, filterYear]);
+
+  // Thống kê thiết bị/sản phẩm bán chạy nhất
+  const topProducts = useMemo(() => {
+    const map = {};
+    stats.validOrders.forEach(o => {
+      (o.items || []).forEach(i => {
+        if (!map[i.name]) map[i.name] = { name: i.name, qty: 0, revenue: 0 };
+        map[i.name].qty += Number(i.quantity || 0);
+        map[i.name].revenue += Number(i.price || 0) * Number(i.quantity || 0);
+      });
+    });
+    return Object.values(map).sort((a, b) => b.qty - a.qty).slice(0, 5);
+  }, [stats.validOrders]);
 
   const customerDebts = useMemo(() => {
     return data.customers.filter(c => c.totalDebt > 0).map(c => {
@@ -258,15 +271,50 @@ function DashboardView({ data }) {
         </div>
       </div>
 
+      {/* Biểu đồ / Top sản phẩm bán chạy */}
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+        <div className="bg-white p-4 border rounded-xl shadow-sm">
+          <h3 className="font-bold text-blue-800 mb-3 flex items-center gap-2"><TrendingUp size={18} /> Thiết bị / Sản phẩm bán chạy nhất</h3>
+          <div className="space-y-3">
+            {topProducts.map((p, idx) => (
+              <div key={idx} className="flex justify-between items-center border-b pb-2">
+                <div>
+                  <b className="text-gray-800">{p.name}</b>
+                  <span className="text-xs text-gray-500 block">Đã bán: {p.qty} sản phẩm</span>
+                </div>
+                <b className="text-blue-600">{formatMoney(p.revenue)}</b>
+              </div>
+            ))}
+            {topProducts.length === 0 && <p className="text-center text-gray-400 py-4">Chưa có dữ liệu bán hàng trong kỳ</p>}
+          </div>
+        </div>
+
+        <div className="bg-white p-4 border rounded-xl shadow-sm flex flex-col justify-between">
+          <h3 className="font-bold text-gray-800 mb-3 flex items-center gap-2"><LayoutDashboard size={18} /> Hiệu suất kinh doanh</h3>
+          <div className="space-y-4 text-sm">
+            <div className="flex justify-between border-b pb-2">
+              <span className="text-gray-600">Tổng số đơn hàng:</span>
+              <b className="text-blue-600">{stats.validOrders.length} đơn</b>
+            </div>
+            <div className="flex justify-between border-b pb-2">
+              <span className="text-gray-600">Tỷ suất lợi nhuận gộp:</span>
+              <b className="text-green-600">{stats.revenue > 0 ? (((stats.revenue - stats.cogs) / stats.revenue) * 100).toFixed(1) : 0}%</b>
+            </div>
+            <div className="flex justify-between border-b pb-2">
+              <span className="text-gray-600">Tổng tiền nợ khách hàng:</span>
+              <b className="text-red-600">{formatMoney(data.customers.reduce((s, c) => s + (c.totalDebt || 0), 0))}</b>
+            </div>
+          </div>
+        </div>
+      </div>
+
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
         <div className="bg-white p-4 border rounded-xl shadow-sm flex flex-col max-h-80">
           <div className="flex justify-between mb-4 items-center border-b pb-2">
             <h3 className="font-bold text-red-600 flex items-center gap-2"><AlertCircle size={18} /> Khách đang nợ</h3>
             <select value={sortCustomerDebt} onChange={e => setSortCustomerDebt(e.target.value)} className="text-sm p-1.5 border rounded bg-gray-50 outline-none">
-              <option value="amt_desc">Nợ nhiều nhất</option>
-              <option value="amt_asc">Nợ ít nhất</option>
-              <option value="time_asc">Nợ lâu nhất (Cũ nhất)</option>
-              <option value="time_desc">Nợ mới nhất</option>
+              <option value="amt_desc">Nợ nhiều nhất</option><option value="amt_asc">Nợ ít nhất</option>
+              <option value="time_asc">Nợ lâu nhất</option><option value="time_desc">Nợ mới nhất</option>
             </select>
           </div>
           <div className="flex-1 overflow-auto space-y-2 pr-2">
@@ -284,10 +332,8 @@ function DashboardView({ data }) {
           <div className="flex justify-between mb-4 items-center border-b pb-2">
             <h3 className="font-bold text-orange-600 flex items-center gap-2"><AlertCircle size={18} /> Đang nợ NCC</h3>
             <select value={sortSupplierDebt} onChange={e => setSortSupplierDebt(e.target.value)} className="text-sm p-1.5 border rounded bg-gray-50 outline-none">
-              <option value="amt_desc">Nợ nhiều nhất</option>
-              <option value="amt_asc">Nợ ít nhất</option>
-              <option value="time_asc">Nợ lâu nhất (Cũ nhất)</option>
-              <option value="time_desc">Nợ mới nhất</option>
+              <option value="amt_desc">Nợ nhiều nhất</option><option value="amt_asc">Nợ ít nhất</option>
+              <option value="time_asc">Nợ lâu nhất</option><option value="time_desc">Nợ mới nhất</option>
             </select>
           </div>
           <div className="flex-1 overflow-auto space-y-2 pr-2">
@@ -805,13 +851,14 @@ function ImportView({ data, storeId, user, showToast }) {
 }
 
 // ==========================================
-// 6. INVENTORY VIEW
+// 6. INVENTORY VIEW (CÓ LIÊN KẾT NHÀ CUNG CẤP, KHÁCH HÀNG, LỊCH SỬ NHẬP/BÁN)
 // ==========================================
 function InventoryView({ data, storeId, showToast }) {
   const [search, setSearch] = useState('');
   const [showModal, setShowModal] = useState(false);
   const [formData, setFormData] = useState({});
   const [sortOrder, setSortOrder] = useState('name_asc');
+  const [selectedProductHistory, setSelectedProductHistory] = useState(null);
 
   const handleSave = async (e) => {
     e.preventDefault();
@@ -831,7 +878,7 @@ function InventoryView({ data, storeId, showToast }) {
 
   const exportExcel = () => {
     let csvContent = "\uFEFF" + "Tên hàng hóa,Nhóm hàng,Giá vốn,Giá bán,Tồn kho\n";
-    data.forEach(p => {
+    data.products.forEach(p => {
       csvContent += `"${p.name || ''}","${p.category || ''}",${p.cost || 0},${p.price || 0},${p.stock || 0}\n`;
     });
     const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
@@ -881,11 +928,28 @@ function InventoryView({ data, storeId, showToast }) {
     e.target.value = '';
   };
 
-  const sortedData = [...data].filter(x => x.name?.toLowerCase().includes(search.toLowerCase())).sort((a, b) => {
+  const sortedData = [...data.products].filter(x => x.name?.toLowerCase().includes(search.toLowerCase())).sort((a, b) => {
     const [key, direction] = sortOrder.split('_');
     if (key === 'name') return direction === 'asc' ? a.name.localeCompare(b.name) : b.name.localeCompare(a.name);
     return direction === 'asc' ? a[key] - b[key] : b[key] - a[key];
   });
+
+  // Tìm lịch sử nhập/bán của sản phẩm được chọn
+  const productLinkedDetails = useMemo(() => {
+    if (!selectedProductHistory) return { importHistory: [], salesHistory: [] };
+    
+    const importHistory = data.imports.filter(imp => (imp.items || []).some(i => i.id === selectedProductHistory.id)).map(imp => ({
+      ...imp,
+      matchedItem: imp.items.find(i => i.id === selectedProductHistory.id)
+    })).sort((a, b) => new Date(b.date) - new Date(a.date));
+
+    const salesHistory = data.orders.filter(ord => (ord.items || []).some(i => i.id === selectedProductHistory.id)).map(ord => ({
+      ...ord,
+      matchedItem: ord.items.find(i => i.id === selectedProductHistory.id)
+    })).sort((a, b) => new Date(b.date) - new Date(a.date));
+
+    return { importHistory, salesHistory };
+  }, [selectedProductHistory, data.imports, data.orders]);
 
   return (
     <div className="p-6 bg-gray-50 flex-1 h-full flex flex-col">
@@ -914,14 +978,15 @@ function InventoryView({ data, storeId, showToast }) {
           <tbody>
             {sortedData.map(p => (
               <tr key={p.id} className="border-b hover:bg-gray-50 transition-colors">
-                <td className="p-4 font-bold">{p.name}</td>
+                <td className="p-4 font-bold text-blue-700 cursor-pointer hover:underline" onClick={() => setSelectedProductHistory(p)}>{p.name} <span className="text-[10px] text-gray-400 block font-normal">Bấm để xem lịch sử liên kết</span></td>
                 <td className="p-4 text-gray-600">{p.category || '-'}</td>
                 <td className="p-4 text-right">{formatMoney(p.cost)}</td>
                 <td className="p-4 text-right font-bold text-blue-600">{formatMoney(p.price)}</td>
                 <td className="p-4 text-center"><span className={`px-3 py-1 rounded-full font-bold text-sm ${p.stock <= 5 ? 'bg-red-100 text-red-600' : 'bg-gray-100 text-gray-700'}`}>{p.stock}</span></td>
                 <td className="p-4 text-center">
-                  <button onClick={() => { setFormData(p); setShowModal(true); }} className="text-blue-600 bg-blue-50 p-2 rounded hover:bg-blue-100 mr-2"><Edit size={16} /></button>
-                  <button onClick={() => handleDelete(p.id)} className="text-red-600 bg-red-50 p-2 rounded hover:bg-red-100"><Trash2 size={16} /></button>
+                  <button onClick={() => setSelectedProductHistory(p)} className="text-green-600 bg-green-50 p-2 rounded hover:bg-green-100 mr-2" title="Xem chi tiết liên kết"><Eye size={16} /></button>
+                  <button onClick={() => { setFormData(p); setShowModal(true); }} className="text-blue-600 bg-blue-50 p-2 rounded hover:bg-blue-100 mr-2" title="Sửa"><Edit size={16} /></button>
+                  <button onClick={() => handleDelete(p.id)} className="text-red-600 bg-red-50 p-2 rounded hover:bg-red-100" title="Xóa"><Trash2 size={16} /></button>
                 </td>
               </tr>
             ))}
@@ -941,12 +1006,71 @@ function InventoryView({ data, storeId, showToast }) {
           <button className="w-full bg-blue-600 text-white py-3 rounded-lg font-bold text-lg hover:bg-blue-700 mt-2">Lưu thông tin</button>
         </form>
       </Modal>
+
+      {/* Modal hiển thị chi tiết liên kết của sản phẩm */}
+      <Modal isOpen={!!selectedProductHistory} onClose={() => setSelectedProductHistory(null)} title={`Chi tiết liên kết sản phẩm: ${selectedProductHistory?.name}`} maxWidth="max-w-3xl">
+        <div className="space-y-6">
+          <div className="bg-blue-50 p-4 rounded-xl border flex justify-between items-center">
+            <div>
+              <p className="text-xs text-gray-500">Giá vốn hiện tại: <b className="text-gray-800">{formatMoney(selectedProductHistory?.cost)}</b></p>
+              <p className="text-xs text-gray-500 mt-1">Giá bán hiện tại: <b className="text-blue-600">{formatMoney(selectedProductHistory?.price)}</b></p>
+            </div>
+            <div className="text-right">
+              <p className="text-xs text-gray-500">Tồn kho: <b className="text-gray-800">{selectedProductHistory?.stock}</b></p>
+            </div>
+          </div>
+
+          <div>
+            <h4 className="font-bold text-purple-700 mb-2 flex items-center gap-1.5"><ArrowDownToLine size={16} /> Lịch sử Nhập hàng từ Nhà Cung Cấp</h4>
+            <div className="max-h-48 overflow-auto border rounded-lg bg-white">
+              <table className="w-full text-left text-xs">
+                <thead className="bg-gray-100 sticky top-0">
+                  <tr><th className="p-2">Thời gian</th><th className="p-2">Nhà cung cấp</th><th className="p-2 text-center">SL nhập</th><th className="p-2 text-right">Giá nhập</th></tr>
+                </thead>
+                <tbody>
+                  {productLinkedDetails.importHistory.map(imp => (
+                    <tr key={imp.id} className="border-b">
+                      <td className="p-2">{formatDate(imp.date)}</td>
+                      <td className="p-2 font-bold">{imp.supplierName || 'Nhà CC lẻ'}</td>
+                      <td className="p-2 text-center font-bold text-purple-600">+{imp.matchedItem.quantity}</td>
+                      <td className="p-2 text-right font-bold">{formatMoney(imp.matchedItem.importCost)}</td>
+                    </tr>
+                  ))}
+                  {productLinkedDetails.importHistory.length === 0 && <tr><td colSpan="4" className="p-4 text-center text-gray-400">Chưa có lịch sử nhập hàng cho sản phẩm này</td></tr>}
+                </tbody>
+              </table>
+            </div>
+          </div>
+
+          <div>
+            <h4 className="font-bold text-blue-700 mb-2 flex items-center gap-1.5"><ShoppingCart size={16} /> Lịch sử Bán hàng cho Khách Hàng</h4>
+            <div className="max-h-48 overflow-auto border rounded-lg bg-white">
+              <table className="w-full text-left text-xs">
+                <thead className="bg-gray-100 sticky top-0">
+                  <tr><th className="p-2">Thời gian</th><th className="p-2">Khách hàng</th><th className="p-2 text-center">SL bán</th><th className="p-2 text-right">Giá bán</th></tr>
+                </thead>
+                <tbody>
+                  {productLinkedDetails.salesHistory.map(ord => (
+                    <tr key={ord.id} className="border-b">
+                      <td className="p-2">{formatDate(ord.date)}</td>
+                      <td className="p-2 font-bold">{ord.customerName}</td>
+                      <td className="p-2 text-center font-bold text-blue-600">-{ord.matchedItem.quantity}</td>
+                      <td className="p-2 text-right font-bold">{formatMoney(ord.matchedItem.price)}</td>
+                    </tr>
+                  ))}
+                  {productLinkedDetails.salesHistory.length === 0 && <tr><td colSpan="4" className="p-4 text-center text-gray-400">Chưa có lịch sử bán hàng cho sản phẩm này</td></tr>}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </div>
+      </Modal>
     </div>
   );
 }
 
 // ==========================================
-// 7. CONTACT VIEW
+// 7. CONTACT VIEW (KHÁCH HÀNG & NHÀ CUNG CẤP CÓ NHẬP/XUẤT EXCEL)
 // ==========================================
 function ContactView({ type, dataList, orders, storeId, showToast }) {
   const [search, setSearch] = useState('');
@@ -992,6 +1116,42 @@ function ContactView({ type, dataList, orders, storeId, showToast }) {
     showToast("Đã xuất file Excel thành công!");
   };
 
+  const importExcel = (e) => {
+    const file = e.target.files[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = async (event) => {
+      try {
+        const text = event.target.result;
+        const lines = text.split('\n');
+        let count = 0;
+        const batch = writeBatch(db);
+
+        for (let i = 1; i < lines.length; i++) {
+          const line = lines[i].trim();
+          if (!line) continue;
+          const cols = line.split(/,(?=(?:(?:[^"]*"){2})*[^"]*$)/).map(s => s.replace(/^"|"$/g, '').trim());
+          if (cols.length >= 2) {
+            const [name, phone, totalDebt] = cols;
+            if (name) {
+              const newRef = doc(collection(db, 'stores', storeId, type));
+              batch.set(newRef, { name, phone: phone || '', totalDebt: Number(totalDebt) || 0 });
+              count++;
+            }
+          }
+        }
+        if (count > 0) {
+          await batch.commit();
+          showToast(`Đã nhập thành công ${count} liên hệ!`);
+        } else {
+          showToast("File không đúng định dạng mẫu!", "error");
+        }
+      } catch (err) { showToast("Lỗi đọc file Excel!", "error"); }
+    };
+    reader.readAsText(file);
+    e.target.value = '';
+  };
+
   const sortedList = [...dataList].filter(x => x.name?.toLowerCase().includes(search.toLowerCase())).sort((a, b) => {
     const [key, direction] = sortOrder.split('_');
     if (key === 'name') return direction === 'asc' ? a.name.localeCompare(b.name) : b.name.localeCompare(a.name);
@@ -1014,6 +1174,7 @@ function ContactView({ type, dataList, orders, storeId, showToast }) {
         <h2 className="text-2xl font-bold">Quản lý {isCustomer ? 'Khách hàng' : 'Nhà cung cấp'}</h2>
         <div className="flex gap-2 items-center flex-wrap">
           <button onClick={exportExcel} className="bg-emerald-600 text-white px-3 py-2.5 rounded-lg font-bold shadow hover:bg-emerald-700 flex items-center gap-1.5 text-xs"><Download size={16} /> Xuất Excel</button>
+          <label className="bg-purple-600 text-white px-3 py-2.5 rounded-lg font-bold shadow hover:bg-purple-700 flex items-center gap-1.5 text-xs cursor-pointer"><Upload size={16} /> Nhập Excel<input type="file" accept=".csv" onChange={importExcel} className="hidden" /></label>
           <select value={sortOrder} onChange={e => setSortOrder(e.target.value)} className="p-2 border rounded-lg bg-white outline-none shadow-sm text-xs">
             <option value="debt_desc">Tiền Nợ: Cao đến Thấp</option><option value="debt_asc">Tiền Nợ: Thấp đến Cao</option>
             <option value="name_asc">Tên A-Z</option><option value="name_desc">Tên Z-A</option>
@@ -1156,7 +1317,7 @@ function ExpenseView({ data, storeId, showToast }) {
 }
 
 // ==========================================
-// 9. SETTINGS VIEW (CÀI ĐẶT GỌN GÀNG, HIỂN THỊ ĐỦ CẢ XÓA & XUẤT EXCEL)
+// 9. SETTINGS VIEW (ĐẦY ĐỦ LOGO, CẤU HÌNH & XÓA TẤT CẢ)
 // ==========================================
 function SettingsView({ config, storeId, data, showToast }) {
   const [formData, setFormData] = useState(config);
@@ -1208,7 +1369,6 @@ function SettingsView({ config, storeId, data, showToast }) {
       <h2 className="text-2xl font-bold">Cài đặt Cửa hàng & Quản lý Dữ liệu</h2>
       
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-        {/* Cấu hình chung */}
         <form onSubmit={handleSaveConfig} className="bg-white p-6 rounded-xl border shadow-sm space-y-4">
           <h3 className="font-bold text-lg text-blue-800 border-b pb-2">Thông tin chung cửa hàng</h3>
           <div><label className="block text-sm font-bold mb-1">Tên Cửa hàng</label><input value={formData.name || ''} onChange={e => setFormData({ ...formData, name: e.target.value })} className="w-full p-3 border rounded-lg outline-none focus:ring-2 focus:ring-blue-500 font-bold" /></div>
@@ -1225,7 +1385,6 @@ function SettingsView({ config, storeId, data, showToast }) {
           <button type="submit" className="w-full bg-blue-600 text-white py-3 rounded-lg font-bold text-lg shadow hover:bg-blue-700 mt-2">Lưu Cấu Hình</button>
         </form>
 
-        {/* Quản lý dữ liệu, Xóa & Xuất Excel */}
         <div className="space-y-6">
           <div className="bg-white p-6 rounded-xl border shadow-sm space-y-4">
             <h3 className="font-bold text-lg text-emerald-800 border-b pb-2">Sao lưu dữ liệu Excel</h3>
@@ -1260,7 +1419,7 @@ function SettingsView({ config, storeId, data, showToast }) {
 }
 
 // ==========================================
-// 10. STAFF VIEW
+// 10. STAFF VIEW (ĐÃ FIX LỖI NHẬP TÊN & TẠO NHÂN VIÊN)
 // ==========================================
 function StaffView({ staffList, showToast }) {
   const [formData, setFormData] = useState({ id: '', username: '', password: '', email: '', role: 'staff', name: '' });
@@ -1347,7 +1506,7 @@ function StaffView({ staffList, showToast }) {
           <div><label className="block text-sm font-bold mb-1">Tên hiển thị *</label><input required value={formData.name} onChange={e => setFormData({ ...formData, name: e.target.value })} className="w-full p-2.5 border rounded-lg outline-none focus:ring-2 focus:ring-blue-500" /></div>
           <div><label className="block text-sm font-bold mb-1">Tên đăng nhập (Username) *</label><input required disabled={!!formData.id} value={formData.username} onChange={e => setFormData({ ...formData, username: e.target.value })} className={`w-full p-2.5 border rounded-lg outline-none ${formData.id ? 'bg-gray-100 text-gray-500 cursor-not-allowed' : 'focus:ring-2 focus:ring-blue-500'}`} /></div>
           <div><label className="block text-sm font-bold mb-1">Email *</label><input required disabled={!!formData.id} type="email" value={formData.email} onChange={e => setFormData({ ...formData, email: e.target.value })} className={`w-full p-2.5 border rounded-lg outline-none ${formData.id ? 'bg-gray-100 text-gray-500 cursor-not-allowed' : 'focus:ring-2 focus:ring-blue-500'}`} /></div>
-          {!formData.id && <div><label className="block text-sm font-bold mb-1">Mật khẩu (Ít nhất 6 ký tự) *</label><input required type="password" onChange={e => setFormData({ ...formData, password: e.target.value })} className="w-full p-2.5 border rounded-lg outline-none focus:ring-2 focus:ring-blue-500" /></div>}
+          {!formData.id && <div><label className="block text-sm font-bold mb-1">Mật khẩu (Ít nhất 6 ký tự) *</label><input required type="password" value={formData.password} onChange={e => setFormData({ ...formData, password: e.target.value })} className="w-full p-2.5 border rounded-lg outline-none focus:ring-2 focus:ring-blue-500" /></div>}
           
           <div>
             <label className="block text-sm font-bold mb-1">Cấp quyền (Vai trò)</label>
