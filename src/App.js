@@ -1724,3 +1724,361 @@ function ExpenseView({ expenses, db, storeId, showToast }) {
     </div>
   );
 }
+
+
+function POSView({ products, customers, db, storeId, user, storeConfig, showToast }) {
+  const [cart, setCart] = useState([]);
+  const [customerId, setCustomerId] = useState('');
+  const [isDebt, setIsDebt] = useState(false);
+  const [orderNote, setOrderNote] = useState('');
+  const [completedOrder, setCompletedOrder] = useState(null);
+  const [showModal, setShowModal] = useState(false);
+  const [searchTerm, setSearchTerm] = useState('');
+  const [printInvoice, setPrintInvoice] = useState(true);
+  const [printType, setPrintType] = useState(storeConfig?.printDefaultSize || 'a4');
+  const [showAddCusModal, setShowAddCusModal] = useState(false);
+  const [newCusForm, setNewCusForm] = useState({ name: '', phone: '', address: '' });
+
+  useEffect(() => {
+    const handleKeyDown = (e) => {
+      if (e.key === 'Escape') {
+        setShowModal(false);
+      }
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, []);
+
+  const filteredProducts = useMemo(() => { return products.filter(p => p.name && p.name.toLowerCase().includes(searchTerm.toLowerCase())); }, [products, searchTerm]);
+
+  const addToCart = (product) => { 
+    setCart(prev => { 
+      const ex = prev.find(i => i.id === product.id); 
+      if (ex) return prev.map(i => i.id === product.id ? { ...i, quantity: i.quantity + 1 } : i); 
+      return [...prev, { ...product, quantity: 1, price: product.price, warrantyValue: '', warrantyUnit: 'tháng', note: '' }]; 
+    }); 
+  };
+  const updateQty = (id, delta) => setCart(prev => prev.map(i => { if (i.id === id) { const nq = i.quantity + delta; if (nq > 0) return { ...i, quantity: nq }; } return i; }));
+  const updatePrice = (id, newPrice) => setCart(prev => prev.map(i => i.id === id ? { ...i, price: Number(newPrice) || 0 } : i));
+  const updateItemField = (id, field, val) => setCart(prev => prev.map(i => i.id === id ? { ...i, [field]: val } : i));
+  
+  const cartTotal = cart.reduce((s, i) => s + i.price * i.quantity, 0);
+
+  const handleAddCustomerQuick = async (e) => {
+    e.preventDefault();
+    try { 
+      const nowIso = new Date().toISOString();
+      const docRef = await addDoc(collection(db, 'stores', storeId, 'customers'), { name: newCusForm.name, phone: newCusForm.phone || '', address: newCusForm.address || '', totalDebt: 0, createdAt: nowIso }); 
+      setCustomerId(docRef.id); setShowAddCusModal(false); setNewCusForm({ name: '', phone: '', address: '' }); showToast("Đã thêm và chọn khách hàng mới!"); 
+    } 
+    catch (err) { showToast("Lỗi thêm khách hàng", "error"); }
+  };
+
+  const handleCheckout = async () => {
+    if (cart.length === 0 || (isDebt && !customerId)) return;
+    try {
+      const c = customers.find(cust => cust.id === customerId);
+      const orderData = { 
+        customerId: customerId || null, 
+        customerName: c ? c.name : 'Khách lẻ', 
+        sellerUid: user.uid, 
+        note: orderNote, 
+        items: cart.map(i => ({ 
+          id: i.id, 
+          name: i.name, 
+          price: i.price, 
+          cost: i.cost || 0, 
+          quantity: i.quantity,
+          warrantyValue: i.warrantyValue || '',
+          warrantyUnit: i.warrantyUnit || 'tháng',
+          note: i.note || ''
+        })), 
+        total: cartTotal, 
+        totalCost: cart.reduce((s, item) => s + ((item.cost || 0) * item.quantity), 0), 
+        status: isDebt ? 'DEBT' : 'PAID', 
+        date: new Date().toISOString() 
+      };
+      const orderRef = await addDoc(collection(db, 'stores', storeId, 'orders'), orderData);
+      
+      let batch = writeBatch(db);
+      cart.forEach(item => { const p = products.find(prod => prod.id === item.id); if (p) { batch.update(doc(db, 'stores', storeId, 'products', p.id), { stock: p.stock - item.quantity }); } });
+      if (isDebt && c) { batch.update(doc(db, 'stores', storeId, 'customers', customerId), { totalDebt: (c.totalDebt || 0) + cartTotal }); }
+      await batch.commit();
+
+      const newOrder = { id: orderRef.id, ...orderData, phone: c?.phone || '' };
+      setCart([]); setCustomerId(''); setIsDebt(false); setOrderNote(''); showToast("Thanh toán thành công!");
+      if (printInvoice) { setCompletedOrder(newOrder); setShowModal(true); }
+    } catch (e) { showToast("Lỗi thanh toán", "error"); }
+  };
+
+  return (
+    <div className="flex-1 flex flex-col lg:flex-row bg-gray-50 h-full overflow-hidden">
+      <div className="flex-1 p-4 md:p-6 overflow-y-auto flex flex-col">
+        <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center mb-4 gap-3">
+          <h2 className="text-xl font-bold text-gray-800">Sản phẩm bán hàng</h2>
+          <div className="relative w-full sm:w-64"><Search size={16} className="absolute left-3 top-3 text-gray-400"/><input placeholder="Tìm nhanh sản phẩm..." value={searchTerm} onChange={e=>setSearchTerm(e.target.value)} className="w-full pl-9 pr-3 py-2 border rounded-lg bg-white outline-none text-sm"/></div>
+        </div>
+        <div className="grid grid-cols-2 sm:grid-cols-3 xl:grid-cols-4 gap-4">
+          {filteredProducts.map(p => {
+            const stockClass = p.stock < 0 ? 'text-red-500 font-bold' : 'text-gray-500';
+            return (
+              <div key={p.id} onClick={() => addToCart(p)} className="bg-white p-3 rounded-xl border cursor-pointer hover:border-blue-400 shadow-sm">
+                <h3 className="font-semibold text-sm truncate text-gray-800">{p.name}</h3>
+                <div className="flex justify-between items-end mt-2"><p className="text-blue-600 font-bold">{formatCurrency(p.price)}</p><p className={"text-xs " + stockClass}>Kho: {p.stock}</p></div>
+              </div>
+            );
+          })}
+        </div>
+      </div>
+      
+      <div className="w-full lg:w-[460px] bg-white border-l shadow-lg shrink-0 flex flex-col z-20 h-[65vh] lg:h-auto no-print">
+        <div className="p-4 border-b bg-blue-50/50"><h2 className="font-bold flex items-center gap-2"><ShoppingCart size={20} className="text-blue-600"/> Giỏ hàng</h2></div>
+        <div className="flex-1 overflow-y-auto p-4 space-y-3">
+          {cart.map(item => (
+            <div key={item.id} className="bg-white p-3 border rounded-xl shadow-sm space-y-2.5">
+              <div className="flex justify-between items-start"><h4 className="font-semibold text-sm text-gray-800 truncate">{item.name}</h4><button onClick={() => setCart(c => c.filter(i => i.id !== item.id))} className="text-red-400"><X size={16}/></button></div>
+              <div className="flex justify-between items-center gap-2">
+                <div><label className="text-[10px] text-gray-400 uppercase font-bold">Giá bán</label><input type="number" value={item.price} onChange={e => updatePrice(item.id, e.target.value)} className="w-28 p-1.5 border rounded text-sm font-bold text-blue-600 outline-none"/></div>
+                <div className="flex bg-gray-50 rounded p-1 items-center"><button onClick={() => updateQty(item.id, -1)} className="w-6 h-6 border bg-white rounded shadow-sm text-gray-600">-</button><span className="w-6 text-center text-sm font-medium">{item.quantity}</span><button onClick={() => updateQty(item.id, 1)} className="w-6 h-6 border bg-white rounded shadow-sm text-gray-600">+</button></div>
+              </div>
+              <div className="grid grid-cols-2 gap-2 pt-1 border-t border-gray-100">
+                <div>
+                  <label className="text-[10px] text-gray-500 font-bold block mb-0.5">Bảo hành</label>
+                  <div className="flex gap-1">
+                    <input type="number" placeholder="Số" value={item.warrantyValue || ''} onChange={e => updateItemField(item.id, 'warrantyValue', e.target.value)} className="w-12 p-1 border rounded text-xs outline-none text-center font-bold"/>
+                    <select value={item.warrantyUnit || 'tháng'} onChange={e => updateItemField(item.id, 'warrantyUnit', e.target.value)} className="p-1 border rounded text-xs bg-white outline-none flex-1">
+                      <option value="ngày">Ngày</option>
+                      <option value="tuần">Tuần</option>
+                      <option value="tháng">Tháng</option>
+                      <option value="năm">Năm</option>
+                    </select>
+                  </div>
+                </div>
+                <div>
+                  <label className="text-[10px] text-gray-500 font-bold block mb-0.5">Ghi chú sản phẩm</label>
+                  <input type="text" placeholder="IMEI, Serial..." value={item.note || ''} onChange={e => updateItemField(item.id, 'note', e.target.value)} className="w-full p-1 border rounded text-xs outline-none"/>
+                </div>
+              </div>
+            </div>
+          ))}
+        </div>
+        <div className="p-4 border-t bg-gray-50 space-y-3">
+          <div className="flex gap-2">
+            <select value={customerId} onChange={e=>setCustomerId(e.target.value)} className="flex-1 p-2.5 border rounded-lg outline-none text-sm bg-white"><option value="">-- Khách lẻ (Tiền mặt) --</option>{customers.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}</select>
+            <button onClick={() => setShowAddCusModal(true)} className="bg-blue-50 text-blue-600 border border-blue-200 px-3 rounded-lg font-bold text-xs flex items-center gap-1 shrink-0"><Plus size={14}/> Thêm KH</button>
+          </div>
+          <textarea value={orderNote} onChange={e=>setOrderNote(e.target.value)} placeholder="Ghi chú đơn hàng..." className="w-full p-2.5 border rounded-lg outline-none text-sm resize-none h-12 bg-white"></textarea>
+          <div className="flex gap-2"><button onClick={() => setIsDebt(false)} className={"flex-1 py-2 rounded-lg border font-bold " + (!isDebt ? 'bg-blue-600 text-white border-blue-600' : 'bg-white text-gray-600 border-gray-300')}>Tiền mặt</button><button onClick={() => setIsDebt(true)} className={"flex-1 py-2 rounded-lg border font-bold " + (isDebt ? 'bg-orange-500 text-white border-orange-500' : 'bg-white text-gray-600 border-gray-300')}>Ghi nợ</button></div>
+          <div className="flex items-center justify-between gap-2 pt-1">
+            <label className="flex items-center gap-2 text-xs font-medium text-gray-700 cursor-pointer select-none"><input type="checkbox" checked={printInvoice} onChange={e => setPrintInvoice(e.target.checked)} className="w-4 h-4 text-blue-600 rounded"/> In phiếu mua hàng</label>
+            <select value={printType} onChange={e => setPrintType(e.target.value)} className="p-1 border rounded text-xs bg-white font-medium outline-none">
+              <option value="bill">Khổ Bill nhỏ (K80)</option>
+              <option value="a4">Giấy A4</option>
+              <option value="a5">Giấy A5</option>
+            </select>
+          </div>
+          <div className="flex justify-between items-center py-1"><span className="font-medium text-gray-600">Tổng tiền:</span><span className="text-2xl font-bold text-blue-600">{formatCurrency(cartTotal)}</span></div>
+          <button onClick={handleCheckout} disabled={cart.length === 0 || (isDebt && !customerId)} className="w-full bg-green-600 disabled:bg-gray-300 text-white font-bold py-3 rounded-xl shadow-sm">Thanh toán</button>
+        </div>
+      </div>
+
+      <Modal isOpen={showAddCusModal} onClose={() => setShowAddCusModal(false)} title="Thêm Khách Hàng Nhanh">
+        <form onSubmit={handleAddCustomerQuick} className="space-y-4">
+          <input required placeholder="Tên khách hàng *" value={newCusForm.name} onChange={e=>setNewCusForm({...newCusForm, name:e.target.value})} className="w-full p-2.5 border rounded-lg outline-none text-sm"/>
+          <input placeholder="Số điện thoại" value={newCusForm.phone} onChange={e=>setNewCusForm({...newCusForm, phone:e.target.value})} className="w-full p-2.5 border rounded-lg outline-none text-sm"/>
+          <input placeholder="Địa chỉ" value={newCusForm.address} onChange={e=>setNewCusForm({...newCusForm, address:e.target.value})} className="w-full p-2.5 border rounded-lg outline-none text-sm"/>
+          <button type="submit" className="w-full bg-blue-600 text-white font-bold p-3 rounded-lg text-sm">Lưu & Chọn Khách Hàng</button>
+        </form>
+      </Modal>
+
+      <Modal isOpen={showModal} onClose={() => setShowModal(false)} title="Hóa đơn" maxWidth="max-w-2xl" hideHeaderInPrint={true}>
+        {completedOrder && (
+          <div className="space-y-4">
+            <div className="flex justify-between items-center bg-gray-100 p-3 rounded-lg no-print">
+              <span className="text-xs font-bold text-gray-700">Đã thanh toán thành công! Nhấn ESC hoặc nút dưới để bỏ qua in:</span>
+              <div className="flex gap-2">
+                <button onClick={() => window.print()} className="bg-blue-600 hover:bg-blue-700 text-white px-4 py-1.5 rounded-lg text-xs font-bold flex items-center gap-1.5 shadow"><Printer size={14}/> In Phiếu</button>
+                <button onClick={() => setShowModal(false)} className="bg-gray-200 hover:bg-gray-300 text-gray-700 px-3 py-1.5 rounded-lg text-xs font-bold">Bỏ qua (ESC)</button>
+              </div>
+            </div>
+
+            <div className="p-6 bg-white print-container text-gray-900 font-sans">
+              {printType === 'bill' ? (
+                <div>
+                  <div className="text-center mb-4 border-b pb-3">
+                    {storeConfig?.logo && (<img src={storeConfig.logo} alt="Logo" className="max-h-12 mx-auto mb-1 object-contain grayscale print:grayscale-0" />)}
+                    <h2 className="text-base font-bold uppercase">{storeConfig?.name || 'SmartPOS Pro'}</h2>
+                    <p className="text-xs text-gray-600">ĐC: {storeConfig?.address || '...'}</p>
+                    <p className="text-xs text-gray-600">SĐT: {storeConfig?.phone || '...'}</p>
+                    <h1 className="text-sm font-bold mt-2 uppercase tracking-wide">HÓA ĐƠN BÁN HÀNG</h1>
+                    <p className="text-[10px] text-gray-500">Mã: #{completedOrder.id.slice(0,6).toUpperCase()} | Ngày: {formatDate(completedOrder.date)}</p>
+                  </div>
+                  <div className="mb-3 text-xs">
+                    <p><strong>Khách hàng:</strong> {completedOrder.customerName}</p>
+                    {completedOrder.phone && <p><strong>SĐT:</strong> {completedOrder.phone}</p>}
+                  </div>
+                  <table className="w-full text-xs mb-4">
+                    <thead className="border-b border-gray-800">
+                      <tr><th className="py-1.5 text-left">Sản phẩm</th><th className="py-1.5 text-center">SL</th><th className="py-1.5 text-right">Thành tiền</th></tr>
+                    </thead>
+                    <tbody>
+                      {completedOrder.items.map((i, x) => (
+                        <tr key={x} className="border-b border-dashed border-gray-200">
+                          <td className="py-1.5">
+                            <p className="font-bold">{i.name}</p>
+                            {(i.warrantyValue || i.note) && (
+                              <p className="text-[10px] text-gray-500">
+                                {i.warrantyValue ? `BH: ${i.warrantyValue} ${i.warrantyUnit} ` : ''}
+                                {i.note ? `| ${i.note}` : ''}
+                              </p>
+                            )}
+                          </td>
+                          <td className="py-1.5 text-center align-top">{i.quantity}</td>
+                          <td className="py-1.5 text-right align-top font-medium">{formatCurrency(i.price * i.quantity)}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                    <tfoot className="border-t border-gray-800 font-bold">
+                      <tr><td colSpan="2" className="py-2 text-right">TỔNG CỘNG:</td><td className="py-2 text-right text-sm">{formatCurrency(completedOrder.total)}</td></tr>
+                    </tfoot>
+                  </table>
+                  <div className="text-center text-[10px] text-gray-500 mt-6 pt-2 border-t border-dashed">
+                    <p>{storeConfig?.printFooterText || 'Cảm ơn quý khách và hẹn gặp lại!'}</p>
+                  </div>
+                </div>
+              ) : (
+                <div className={printType === 'a4' ? 'max-w-[210mm] mx-auto p-4' : 'max-w-[148mm] mx-auto p-2'}>
+                  <div className="text-center border-b-2 border-gray-800 pb-4 mb-4">
+                    {storeConfig?.logo && (<img src={storeConfig.logo} alt="Logo" className="max-h-20 mx-auto mb-2 object-contain" />)}
+                    <h2 className="text-xl font-bold uppercase">{storeConfig?.name || 'SmartPOS Pro'}</h2>
+                    <p className="text-sm text-gray-700">Địa chỉ: {storeConfig?.address || '...'}</p>
+                    <p className="text-sm text-gray-700">Điện thoại: {storeConfig?.phone || '...'}</p>
+                    
+                    <h1 className="text-2xl font-bold uppercase text-blue-800 tracking-wide mt-4">PHIẾU BÁN HÀNG</h1>
+                    <p className="text-xs text-gray-500 mt-1">Mã HĐ: #{completedOrder.id.slice(0,6).toUpperCase()} | Ngày: {formatDate(completedOrder.date)}</p>
+                  </div>
+
+                  <div className="grid grid-cols-2 gap-4 bg-gray-50 p-3 rounded-lg border border-gray-200 text-xs mb-4">
+                    <div><span className="text-gray-500">Khách hàng:</span> <strong className="text-gray-800 text-sm">{completedOrder.customerName}</strong></div>
+                    <div><span className="text-gray-500">Trạng thái:</span> <strong className="text-blue-600">{completedOrder.status === 'PAID' ? 'Đã thanh toán' : 'Ghi nợ'}</strong></div>
+                  </div>
+
+                  <table className="w-full text-xs mb-6 border-collapse">
+                    <thead>
+                      <tr className="bg-gray-100 border-y-2 border-gray-800">
+                        <th className="py-2.5 px-2 text-left">STT</th>
+                        <th className="py-2.5 px-2 text-left">Tên sản phẩm</th>
+                        <th className="py-2.5 px-2 text-center">SL</th>
+                        <th className="py-2.5 px-2 text-right">Đơn giá</th>
+                        <th className="py-2.5 px-2 text-right">Thành tiền</th>
+                        <th className="py-2.5 px-2 text-center">Bảo hành</th>
+                        <th className="py-2.5 px-2 text-left">Ghi chú</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {completedOrder.items.map((i, x) => (
+                        <tr key={x} className="border-b border-gray-200">
+                          <td className="py-2.5 px-2 text-center">{x + 1}</td>
+                          <td className="py-2.5 px-2 font-medium">{i.name}</td>
+                          <td className="py-2.5 px-2 text-center font-bold">{i.quantity}</td>
+                          <td className="py-2.5 px-2 text-right">{formatCurrency(i.price)}</td>
+                          <td className="py-2.5 px-2 text-right font-bold">{formatCurrency(i.price * i.quantity)}</td>
+                          <td className="py-2.5 px-2 text-center text-gray-600">{i.warrantyValue ? `${i.warrantyValue} ${i.warrantyUnit}` : '-'}</td>
+                          <td className="py-2.5 px-2 text-gray-600">{i.note || '-'}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                    <tfoot>
+                      <tr className="border-t-2 border-gray-800 font-bold text-sm bg-gray-50">
+                        <td colSpan="4" className="py-3 px-2 text-right">TỔNG CỘNG THANH TOÁN:</td>
+                        <td colSpan="3" className="py-3 px-2 text-right text-blue-600 text-base">{formatCurrency(completedOrder.total)}</td>
+                      </tr>
+                    </tfoot>
+                  </table>
+
+                  <div className="grid grid-cols-2 gap-8 text-center pt-8 text-xs">
+                    <div>
+                      <p className="font-bold">Khách hàng ký nhận</p>
+                      <p className="text-gray-400 italic mt-1">(Ký, ghi rõ họ tên)</p>
+                    </div>
+                    <div>
+                      <p className="font-bold">Người bán hàng</p>
+                      <p className="text-gray-400 italic mt-1">(Ký, ghi rõ họ tên)</p>
+                    </div>
+                  </div>
+                  
+                  <div className="text-center text-xs text-gray-500 mt-12 italic">
+                    <p>{storeConfig?.printFooterText || 'Cảm ơn quý khách và hẹn gặp lại!'}</p>
+                  </div>
+                </div>
+              )}
+            </div>
+          </div>
+        )}
+      </Modal>
+    </div>
+  );
+}
+
+function ImportView({ products, suppliers, db, storeId, user, showToast }) {
+  const [cart, setCart] = useState([]);
+  const [supplierId, setSupplierId] = useState('');
+  const [isDebt, setIsDebt] = useState(false);
+  const [searchTerm, setSearchTerm] = useState('');
+
+  const filteredProducts = useMemo(() => { return products.filter(p => p.name && p.name.toLowerCase().includes(searchTerm.toLowerCase())); }, [products, searchTerm]);
+
+  const handleImport = async () => {
+    if (cart.length === 0 || !supplierId) return;
+    try {
+      const s = suppliers.find(sup => sup.id === supplierId);
+      const total = cart.reduce((sum, i) => sum + i.importCost * i.qty, 0);
+      await addDoc(collection(db, 'stores', storeId, 'imports'), { supplierId: supplierId, supplierName: s.name, items: cart, total: total, status: isDebt ? 'DEBT' : 'PAID', date: new Date().toISOString() });
+      
+      let batch = writeBatch(db);
+      cart.forEach(item => { const p = products.find(prod => prod.id === item.id); if (p) { batch.update(doc(db, 'stores', storeId, 'products', p.id), { stock: p.stock + item.qty, cost: item.importCost }); } });
+      if (isDebt) { batch.update(doc(db, 'stores', storeId, 'suppliers', supplierId), { totalDebt: (s.totalDebt || 0) + total }); }
+      await batch.commit();
+      
+      setCart([]); setSupplierId(''); setIsDebt(false); showToast("Nhập hàng thành công!");
+    } catch (e) { showToast("Lỗi nhập hàng", "error"); }
+  };
+
+  const addProductToCart = (p) => { setCart(c => { if (c.find(i => i.id === p.id)) return c; return [...c, { ...p, qty: 1, importCost: p.cost || 0 }]; }); };
+
+  return (
+    <div className="flex-1 flex flex-col lg:flex-row overflow-hidden bg-gray-50 h-full">
+      <div className="flex-1 p-4 md:p-6 overflow-y-auto flex flex-col">
+        <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center mb-4 gap-3">
+          <h2 className="text-xl font-bold text-gray-800">Hàng cần nhập</h2>
+          <div className="relative w-full sm:w-64"><Search size={16} className="absolute left-3 top-3 text-gray-400"/><input placeholder="Tìm kiếm sản phẩm nhập..." value={searchTerm} onChange={e=>setSearchTerm(e.target.value)} className="w-full pl-9 pr-3 py-2 border rounded-lg bg-white outline-none text-sm"/></div>
+        </div>
+        <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+          {filteredProducts.map(p => (
+            <div key={p.id} onClick={() => addProductToCart(p)} className="bg-white p-3 rounded-xl border cursor-pointer hover:border-blue-400 shadow-sm"><h3 className="font-semibold text-sm truncate">{p.name}</h3><p className="text-xs text-gray-500 mt-1">Tồn: {p.stock}</p></div>
+          ))}
+        </div>
+      </div>
+      
+      <div className="w-full lg:w-[420px] bg-white border-l shadow-lg shrink-0 z-20 flex flex-col h-[65vh] lg:h-auto">
+        <div className="p-4 border-b bg-gray-50"><h2 className="font-bold flex items-center gap-2"><ArrowDownToLine size={20} className="text-gray-600"/> Phiếu Nhập Kho</h2></div>
+        <div className="flex-1 overflow-y-auto p-4 space-y-3">
+          {cart.map(item => (
+            <div key={item.id} className="bg-gray-50 p-3 rounded-lg border space-y-2">
+              <div className="flex justify-between"><h4 className="font-medium text-sm">{item.name}</h4><button onClick={() => setCart(c => c.filter(i => i.id !== item.id))} className="text-red-400"><X size={16}/></button></div>
+              <div className="grid grid-cols-2 gap-2 text-sm">
+                <div><label className="text-xs text-gray-500">Số lượng</label><input type="number" value={item.qty} onChange={e => setCart(c => c.map(i => i.id === item.id ? {...i, qty: Number(e.target.value)} : i))} className="w-full p-1.5 border rounded outline-none" /></div>
+                <div><label className="text-xs text-gray-500">Đơn giá nhập</label><input type="number" value={item.importCost} onChange={e => setCart(c => c.map(i => i.id === item.id ? {...i, importCost: Number(e.target.value)} : i))} className="w-full p-1.5 border rounded outline-none" /></div>
+              </div>
+            </div>
+          ))}
+        </div>
+        <div className="p-4 border-t bg-gray-50 space-y-3">
+          <select value={supplierId} onChange={e=>setSupplierId(e.target.value)} className="w-full p-2.5 border rounded-lg outline-none text-sm bg-white"><option value="">-- Chọn NCC --</option>{suppliers.map(s => <option key={s.id} value={s.id}>{s.name}</option>)}</select>
+          <div className="flex gap-2"><button onClick={() => setIsDebt(false)} className={"flex-1 py-2 rounded-lg border font-bold " + (!isDebt ? 'bg-blue-600 text-white' : 'bg-white')}>Tiền mặt</button><button onClick={() => setIsDebt(true)} className={"flex-1 py-2 rounded-lg border font-bold " + (isDebt ? 'bg-orange-500 text-white' : 'bg-white')}>Ghi nợ NCC</button></div>
+          <button onClick={handleImport} disabled={!supplierId || cart.length === 0} className="w-full bg-gray-800 disabled:bg-gray-300 text-white py-3 rounded-xl font-bold mt-2 shadow-sm">Hoàn tất Nhập Hàng</button>
+        </div>
+      </div>
+    </div>
+  );
+}
