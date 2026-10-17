@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useMemo } from 'react';
-import { LayoutDashboard, ShoppingCart, Package, Users, Truck, Edit, Trash2, X, ShoppingBag, TrendingUp, AlertCircle, ArrowDownToLine, DollarSign, Receipt, CreditCard, LogOut, Database, UserCog, Printer, Image as ImageIcon, Save, Plus, Eye } from 'lucide-react';
+import { LayoutDashboard, ShoppingCart, Package, Users, Truck, Edit, Trash2, X, ShoppingBag, TrendingUp, AlertCircle, ArrowDownToLine, DollarSign, Receipt, CreditCard, LogOut, Database, UserCog, Printer, Image as ImageIcon, Save, Plus, Eye, Download, Upload } from 'lucide-react';
 import { initializeApp } from 'firebase/app';
 import { getAuth, signInWithEmailAndPassword, signOut, onAuthStateChanged, sendPasswordResetEmail } from 'firebase/auth';
 import { getFirestore, doc, setDoc, getDoc, getDocs, addDoc, updateDoc, deleteDoc, onSnapshot, collection, writeBatch, query, where } from 'firebase/firestore';
@@ -306,7 +306,7 @@ function DashboardView({ data }) {
 }
 
 // ==========================================
-// 2. POS VIEW (Thêm khách trực tiếp)
+// 2. POS VIEW
 // ==========================================
 function POSView({ data, storeId, user, storeConfig, showToast }) {
   const [cart, setCart] = useState([]);
@@ -493,7 +493,7 @@ function POSView({ data, storeId, user, storeConfig, showToast }) {
 }
 
 // ==========================================
-// 3. IN HÓA ĐƠN (Ghi chú và Bảo hành tách thành 2 cột dọc)
+// 3. IN HÓA ĐƠN
 // ==========================================
 function OrderPrintModal({ order, storeConfig, onClose }) {
   const [opt, setOpt] = useState({ s: storeConfig?.printDefaultSize || 'a4', l: true, n: true, b: true });
@@ -805,7 +805,7 @@ function ImportView({ data, storeId, user, showToast }) {
 }
 
 // ==========================================
-// 6. INVENTORY VIEW
+// 6. INVENTORY VIEW (TÍCH HỢP NHẬP / XUẤT EXCEL)
 // ==========================================
 function InventoryView({ data, storeId, showToast }) {
   const [search, setSearch] = useState('');
@@ -829,6 +829,69 @@ function InventoryView({ data, storeId, showToast }) {
     }
   };
 
+  // Xuất file Excel (CSV format)
+  const exportExcel = () => {
+    let csvContent = "\uFEFF" + "Tên hàng hóa,Nhóm hàng,Giá vốn,Giá bán,Tồn kho\n";
+    data.forEach(p => {
+      csvContent += `"${p.name || ''}","${p.category || ''}",${p.cost || 0},${p.price || 0},${p.stock || 0}\n`;
+    });
+    const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.setAttribute('href', url);
+    link.setAttribute('download', `Kho_Hang_${new Date().toISOString().slice(0,10)}.csv`);
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    showToast("Đã xuất file Excel thành công!");
+  };
+
+  // Nhập file Excel / CSV hàng loạt
+  const importExcel = (e) => {
+    const file = e.target.files[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = async (event) => {
+      try {
+        const text = event.target.result;
+        const lines = text.split('\n');
+        let count = 0;
+        const batch = writeBatch(db);
+
+        for (let i = 1; i < lines.length; i++) {
+          const line = lines[i].trim();
+          if (!line) continue;
+          // Tách dấu phẩy an toàn hoặc bọc ngoặc kép
+          const cols = line.split(/,(?=(?:(?:[^"]*"){2})*[^"]*$)/).map(s => s.replace(/^"|"$/g, '').trim());
+          if (cols.length >= 5) {
+            const [name, category, cost, price, stock] = cols;
+            if (name) {
+              const newRef = doc(collection(db, 'stores', storeId, 'products'));
+              batch.set(newRef, {
+                name,
+                category: category || '',
+                cost: Number(cost) || 0,
+                price: Number(price) || 0,
+                stock: Number(stock) || 0
+              });
+              count++;
+            }
+          }
+        }
+        if (count > 0) {
+          await batch.commit();
+          showToast(`Đã nhập thành công ${count} sản phẩm!`);
+        } else {
+          showToast("File không đúng định dạng mẫu!", "error");
+        }
+      } catch (err) {
+        showToast("Lỗi đọc file Excel!", "error");
+      }
+    };
+    reader.readAsText(file);
+    e.target.value = '';
+  };
+
   const sortedData = [...data].filter(x => x.name?.toLowerCase().includes(search.toLowerCase())).sort((a, b) => {
     const [key, direction] = sortOrder.split('_');
     if (key === 'name') return direction === 'asc' ? a.name.localeCompare(b.name) : b.name.localeCompare(a.name);
@@ -837,10 +900,20 @@ function InventoryView({ data, storeId, showToast }) {
 
   return (
     <div className="p-6 bg-gray-50 flex-1 h-full flex flex-col">
-      <div className="flex justify-between mb-4 items-center">
+      <div className="flex justify-between mb-4 items-center flex-wrap gap-2">
         <h2 className="text-2xl font-bold">Quản Lý Kho Hàng</h2>
-        <div className="flex gap-3 items-center">
-          <select value={sortOrder} onChange={e => setSortOrder(e.target.value)} className="p-2.5 border rounded-lg outline-none bg-white font-medium shadow-sm">
+        <div className="flex gap-2 items-center flex-wrap">
+          {/* Nút Xuất Excel */}
+          <button onClick={exportExcel} className="bg-emerald-600 text-white px-3 py-2.5 rounded-lg font-bold shadow hover:bg-emerald-700 flex items-center gap-1.5 text-xs">
+            <Download size={16} /> Xuất Excel
+          </button>
+          {/* Nút Nhập Excel */}
+          <label className="bg-purple-600 text-white px-3 py-2.5 rounded-lg font-bold shadow hover:bg-purple-700 flex items-center gap-1.5 text-xs cursor-pointer">
+            <Upload size={16} /> Nhập Excel
+            <input type="file" accept=".csv" onChange={importExcel} className="hidden" />
+          </label>
+
+          <select value={sortOrder} onChange={e => setSortOrder(e.target.value)} className="p-2 border rounded-lg outline-none bg-white font-medium shadow-sm text-xs">
             <option value="name_asc">Tên A-Z</option>
             <option value="name_desc">Tên Z-A</option>
             <option value="price_desc">Giá bán: Cao đến Thấp</option>
@@ -850,8 +923,8 @@ function InventoryView({ data, storeId, showToast }) {
             <option value="stock_desc">Tồn kho: Nhiều nhất</option>
             <option value="stock_asc">Tồn kho: Ít nhất</option>
           </select>
-          <input placeholder="Tìm kiếm hàng hóa..." value={search} onChange={e => setSearch(e.target.value)} className="p-2.5 border rounded-lg w-64 outline-none shadow-sm focus:ring-2 focus:ring-blue-500" />
-          <button onClick={() => { setFormData({}); setShowModal(true); }} className="bg-blue-600 text-white px-5 py-2.5 rounded-lg font-bold shadow hover:bg-blue-700 flex items-center gap-2"><Plus size={18}/> Thêm mới</button>
+          <input placeholder="Tìm kiếm..." value={search} onChange={e => setSearch(e.target.value)} className="p-2 border rounded-lg w-48 outline-none shadow-sm text-xs focus:ring-2 focus:ring-blue-500" />
+          <button onClick={() => { setFormData({}); setShowModal(true); }} className="bg-blue-600 text-white px-4 py-2.5 rounded-lg font-bold shadow hover:bg-blue-700 flex items-center gap-1 text-xs"><Plus size={16}/> Thêm mới</button>
         </div>
       </div>
       <div className="bg-white border rounded-xl shadow-sm overflow-auto flex-1">
@@ -903,7 +976,7 @@ function InventoryView({ data, storeId, showToast }) {
 }
 
 // ==========================================
-// 7. CONTACT VIEW (Khách hàng & NCC + Lịch sử chi tiết)
+// 7. CONTACT VIEW (TÍCH HỢP XUẤT EXCEL KHÁCH HÀNG / NCC)
 // ==========================================
 function ContactView({ type, dataList, orders, storeId, showToast }) {
   const [search, setSearch] = useState('');
@@ -933,6 +1006,22 @@ function ContactView({ type, dataList, orders, storeId, showToast }) {
     }
   };
 
+  const exportExcel = () => {
+    let csvContent = "\uFEFF" + "Tên,Số điện thoại,Tổng nợ\n";
+    dataList.forEach(c => {
+      csvContent += `"${c.name || ''}","${c.phone || ''}",${c.totalDebt || 0}\n`;
+    });
+    const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.setAttribute('href', url);
+    link.setAttribute('download', `${isCustomer ? 'Khach_Hang' : 'Nha_Cung_Cap'}_${new Date().toISOString().slice(0,10)}.csv`);
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    showToast("Đã xuất file Excel thành công!");
+  };
+
   const sortedList = [...dataList].filter(x => x.name?.toLowerCase().includes(search.toLowerCase())).sort((a, b) => {
     const [key, direction] = sortOrder.split('_');
     if (key === 'name') return direction === 'asc' ? a.name.localeCompare(b.name) : b.name.localeCompare(a.name);
@@ -951,17 +1040,20 @@ function ContactView({ type, dataList, orders, storeId, showToast }) {
 
   return (
     <div className="p-6 bg-gray-50 flex-1 h-full flex flex-col">
-      <div className="flex justify-between mb-4 items-center">
+      <div className="flex justify-between mb-4 items-center flex-wrap gap-2">
         <h2 className="text-2xl font-bold">Quản lý {isCustomer ? 'Khách hàng' : 'Nhà cung cấp'}</h2>
-        <div className="flex gap-3 items-center">
-          <select value={sortOrder} onChange={e => setSortOrder(e.target.value)} className="p-2.5 border rounded-lg bg-white outline-none shadow-sm">
+        <div className="flex gap-2 items-center flex-wrap">
+          <button onClick={exportExcel} className="bg-emerald-600 text-white px-3 py-2.5 rounded-lg font-bold shadow hover:bg-emerald-700 flex items-center gap-1.5 text-xs">
+            <Download size={16} /> Xuất Excel
+          </button>
+          <select value={sortOrder} onChange={e => setSortOrder(e.target.value)} className="p-2 border rounded-lg bg-white outline-none shadow-sm text-xs">
             <option value="debt_desc">Tiền Nợ: Cao đến Thấp</option>
             <option value="debt_asc">Tiền Nợ: Thấp đến Cao</option>
             <option value="name_asc">Tên A-Z</option>
             <option value="name_desc">Tên Z-A</option>
           </select>
-          <input placeholder="Tìm kiếm tên..." value={search} onChange={e => setSearch(e.target.value)} className="p-2.5 border rounded-lg w-64 outline-none shadow-sm focus:ring-2 focus:ring-blue-500" />
-          <button onClick={() => { setFormData({}); setShowModal(true); }} className="bg-blue-600 text-white px-5 py-2.5 rounded-lg font-bold shadow hover:bg-blue-700 flex items-center gap-2"><Plus size={18}/> Thêm mới</button>
+          <input placeholder="Tìm kiếm tên..." value={search} onChange={e => setSearch(e.target.value)} className="p-2 border rounded-lg w-48 outline-none shadow-sm text-xs focus:ring-2 focus:ring-blue-500" />
+          <button onClick={() => { setFormData({}); setShowModal(true); }} className="bg-blue-600 text-white px-4 py-2.5 rounded-lg font-bold shadow hover:bg-blue-700 flex items-center gap-1 text-xs"><Plus size={16}/> Thêm mới</button>
         </div>
       </div>
 
