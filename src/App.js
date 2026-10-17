@@ -8,7 +8,7 @@ DollarSign, CheckCircle2, Printer, FileText, CreditCard,
  UserCog, KeyRound, MonitorSmartphone, Mail, Download, Upload, ArrowUpDown, Search, Eye, Bell, Award, BarChart3, Receipt, ChevronDown, ChevronUp, Image
 } from 'lucide-react';
 
-import { initializeApp, getApps } from 'firebase/app';
+import { initializeApp, getApps, deleteApp } from 'firebase/app';
 import { 
 getAuth, signInWithEmailAndPassword, signOut, 
 onAuthStateChanged, sendPasswordResetEmail, createUserWithEmailAndPassword, updatePassword 
@@ -116,7 +116,7 @@ else { await setDoc(userDocRef, { username: 'admin', email: loginEmail, role: 'a
  const handleReset = async (e) => {
  e.preventDefault(); setError(''); setResetMsg(''); setLoading(true);
  try { await sendPasswordResetEmail(auth, loginInput); setResetMsg("Link khôi phục đã gửi vào Email!"); } 
-catch (err) { setError("Vول lòng nhập Email thật đã đăng ký để khôi phục."); } 
+catch (err) { setError("Vui lòng nhập Email thật đã đăng ký để khôi phục."); } 
 finally { setLoading(false); }
  };
 
@@ -1161,19 +1161,17 @@ const [logs, setLogs] = useState([]);
  showToast("Đã cập nhật quyền nhân viên thành công!");
  setIsModalOpen(false); 
  } else {
- // Sử dụng app phụ (Secondary App) để tạo user Auth mà KHÔNG làm mất phiên đăng nhập của Admin
- const secondaryAppName = "SecondaryAppForCreatingUser";
- let secondaryApp = getApps().find(app => app.name === secondaryAppName);
- if (!secondaryApp) {
- secondaryApp = initializeApp(firebaseConfig, secondaryAppName);
- }
+ // Tạo user bằng app phụ để tránh ghi đè phiên Admin hiện tại
+ const secondaryAppName = "SecondaryApp_" + Date.now();
+ const secondaryApp = initializeApp(firebaseConfig, secondaryAppName);
  const secondaryAuth = getAuth(secondaryApp);
 
+ try {
  const res = await createUserWithEmailAndPassword(secondaryAuth, form.email.trim(), form.password);
  const newUid = res.user.uid;
- await signOut(secondaryAuth); // Đăng xuất app phụ ngay lập tức
+ await signOut(secondaryAuth);
+ await deleteApp(secondaryApp);
 
- // Lưu thông tin nhân viên vào Firestore bằng kết nối db chính của Admin
  await setDoc(doc(db, 'users_db', newUid), { 
  username: form.username.toLowerCase().trim(), 
  email: form.email.trim(), 
@@ -1183,9 +1181,16 @@ const [logs, setLogs] = useState([]);
  });
  showToast("Tạo tài khoản nhân viên mới thành công!");
  setIsModalOpen(false);
+ } catch (subErr) {
+ try { await deleteApp(secondaryApp); } catch(e) {}
+ throw subErr;
+ }
  }
  } catch (err) { 
- showToast("Lỗi: " + err.message, "error"); 
+ let errMsg = err.message;
+ if (errMsg.includes('email-already-in-use')) errMsg = "Email này đã được đăng ký cho tài khoản khác!";
+ else if (errMsg.includes('weak-password')) errMsg = "Mật khẩu quá yếu (cần ít nhất 6 ký tự)!";
+ showToast("Lỗi: " + errMsg, "error"); 
  } finally { 
  setLoading(false); 
  }
@@ -2446,4 +2451,3 @@ setCart([]); setSupplierId(''); setIsDebt(false); showToast("Nhập hàng thành
  </div>
  );
 }
-
