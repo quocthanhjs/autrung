@@ -39,6 +39,15 @@ export default function EnhancedPOS() {
   const storeId = 'main_store';
 
   useEffect(() => {
+    // Đảm bảo thiết lập viewport chuẩn mobile cho trình duyệt điện thoại
+    let vp = document.querySelector('meta[name=viewport]');
+    if (!vp) {
+      vp = document.createElement('meta');
+      vp.name = 'viewport';
+      document.head.appendChild(vp);
+    }
+    vp.content = 'width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no';
+
     if (!document.getElementById('html2canvas-script')) {
       const script = document.createElement('script');
       script.id = 'html2canvas-script';
@@ -99,8 +108,8 @@ export default function EnhancedPOS() {
       } catch (err) { alert("Sai tài khoản hoặc mật khẩu!"); }
     };
     return (
-      <div className="h-screen bg-gray-100 flex items-center justify-center">
-        <form onSubmit={handleLogin} className="bg-white p-8 rounded-xl shadow-xl w-96 space-y-4 text-center">
+      <div className="h-screen bg-gray-100 flex items-center justify-center p-4">
+        <form onSubmit={handleLogin} className="bg-white p-8 rounded-xl shadow-xl w-full max-w-sm space-y-4 text-center">
           {storeConfig.logo && <img src={storeConfig.logo} alt="Logo" className="max-h-16 mx-auto object-contain mb-2" />}
           <h1 className="text-xl font-bold text-blue-800">{storeConfig.name || 'SmartPOS'}</h1>
           <input required name="username" placeholder="Tên đăng nhập hoặc Email" className="w-full p-3 border rounded outline-none focus:ring-2 focus:ring-blue-500" />
@@ -545,7 +554,7 @@ function POSView({ data, storeId, user, storeConfig, showToast }) {
 }
 
 // ==========================================
-// 3. IN HÓA ĐƠN (IN HÌNH ẢNH POPUP TRỰC TIẾP, IN GIẤY CHUẨN)
+// 3. IN HÓA ĐƠN
 // ==========================================
 function OrderPrintModal({ order, storeConfig, onClose }) {
   const [opt, setOpt] = useState({ s: storeConfig?.printDefaultSize || 'a4', l: true, n: true, b: true });
@@ -997,7 +1006,7 @@ function InventoryView({ data, storeId, showToast }) {
                 <td className="p-4 text-center"><span className={`px-3 py-1 rounded-full font-bold text-sm ${p.stock <= 5 ? 'bg-red-100 text-red-600' : 'bg-gray-100 text-gray-700'}`}>{p.stock}</span></td>
                 <td className="p-4 text-center">
                   <button onClick={() => setSelectedProductHistory(p)} className="text-green-600 bg-green-50 p-2 rounded hover:bg-green-100 mr-2" title="Xem chi tiết liên kết"><Eye size={16} /></button>
-                  <button onClick={() => { setFormData(p); setShowModal(true); }} className="text-blue-600 bg-blue-50 p-2 rounded hover:bg-blue-100 mr-2" title="Sửa"><Edit size={16} /></button>
+                  <button onClick={() => { setFormData(p); setShowModal(true); }} className="text-blue-600 bg-blue-50 p-2 rounded hover:bg-green-100 mr-2" title="Sửa"><Edit size={16} /></button>
                   <button onClick={() => handleDelete(p.id)} className="text-red-600 bg-red-50 p-2 rounded hover:bg-red-100" title="Xóa"><Trash2 size={16} /></button>
                 </td>
               </tr>
