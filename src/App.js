@@ -112,7 +112,7 @@ function InventoryView({ products, suppliers, orders, imports, db, storeId, show
       .filter(o => matchTime(o.date))
       .flatMap(o => (o.items || []).filter(item => item.id === detailProduct.id).map(it => ({ ...it, date: o.date, status: o.status, customerName: o.customerName || 'Khách lẻ' })))
       .sort((a,b) => new Date(b.date) - new Date(a.date));
-      
+     export default function App() { 
     const imp = (imports || [])
       .filter(i => matchTime(i.date))
       .flatMap(i => (i.items || []).filter(item => item.id === detailProduct.id).map(it => ({ ...it, date: i.date, status: i.status, supplierName: i.supplierName || 'NCC Ẩn' })))
