@@ -2148,6 +2148,9 @@ function ImportView({ products, suppliers, db, storeId, user, showToast }) {
  const [searchTerm, setSearchTerm] = useState('');
  const [showAddSuppModal, setShowAddSuppModal] = useState(false);
  const [newSuppForm, setNewSuppForm] = useState({ name: '', phone: '', address: '' });
+ 
+const [showAddProdModal, setShowAddProdModal] = useState(false);
+ const [newProdForm, setNewProdForm] = useState({ name: '', category: '', cost: '', price: '', stock: '' });
 
  const filteredProducts = useMemo(() => { return products.filter(p => p.name && p.name.toLowerCase().includes(searchTerm.toLowerCase())); }, [products, searchTerm]);
 
@@ -2160,14 +2163,42 @@ function ImportView({ products, suppliers, db, storeId, user, showToast }) {
  } catch (err) { showToast("Lỗi thêm nhà cung cấp", "error"); }
  };
 
+ const handleAddNewProductInImport = async (e) => {
+ e.preventDefault();
+ try {
+ const nowIso = new Date().toISOString();
+ const costVal = Number(newProdForm.cost) || 0;
+ const priceVal = Number(newProdForm.price) || 0;
+ const initStock = Number(newProdForm.stock) || 0;
+
+ const newProdData = {
+ name: newProdForm.name,
+ category: newProdForm.category || '',
+ cost: costVal,
+ price: priceVal,
+ stock: initStock,
+ createdAt: nowIso
+ };
+
+ const docRef = await addDoc(collection(db, 'stores', storeId, 'products'), newProdData);
+ 
+ setCart(c => [...c, { id: docRef.id, name: newProdData.name, category: newProdData.category, qty: initStock > 0 ? initStock : 1, importCost: costVal, price: priceVal }]);
+ setShowAddProdModal(false);
+ setNewProdForm({ name: '', category: '', cost: '', price: '', stock: '' });
+ showToast("Đã thêm hàng mới và đưa vào phiếu nhập!");
+ } catch (err) {
+ showToast("Lỗi thêm sản phẩm mới", "error");
+ }
+ };
+
  const handleImport = async () => {
  if (cart.length === 0 || !supplierId) {
- showToast("Vui lòng chọn hoặc thêm mới Nhà cung cấp trước khi nhập hàng!", "error");
+ showToast("Vui lòng chọn hoặc thêm mới Nhà cung cấp và có ít nhất 1 sản phẩm trước khi nhập hàng!", "error");
  return;
  }
  try {
  const s = suppliers.find(sup => sup.id === supplierId);
- const total = cart.reduce((sum, i) => sum + i.importCost * i.qty, 0);
+ const total = cart.reduce((sum, i) => sum + Number(i.importCost || 0) * Number(i.qty || 1), 0);
  await addDoc(collection(db, 'stores', storeId, 'imports'), { supplierId: supplierId, supplierName: s.name, items: cart, total: total, status: isDebt ? 'DEBT' : 'PAID', date: new Date().toISOString() });
  
 let batch = writeBatch(db);
@@ -2175,8 +2206,8 @@ let batch = writeBatch(db);
 const p = products.find(prod => prod.id === item.id); 
 if (p) { 
 batch.update(doc(db, 'stores', storeId, 'products', p.id), { 
-stock: p.stock + item.qty, 
-cost: item.importCost,
+stock: Number(p.stock || 0) + Number(item.qty || 1), 
+cost: Number(item.importCost || p.cost || 0),
  lastSupplierId: supplierId,
  lastSupplierName: s.name
  }); 
@@ -2189,45 +2220,64 @@ setCart([]); setSupplierId(''); setIsDebt(false); showToast("Nhập hàng thành
  } catch (e) { showToast("Lỗi nhập hàng", "error"); }
  };
 
- const addProductToCart = (p) => { setCart(c => { if (c.find(i => i.id === p.id)) return c; return [...c, { ...p, qty: 1, importCost: p.cost || 0 }]; }); };
+ const addProductToCart = (p) => { setCart(c => { if (c.find(i => i.id === p.id)) return c; return [...c, { id: p.id, name: p.name, category: p.category || '', qty: 1, importCost: p.cost || 0, price: p.price || 0 }]; }); };
 
  return (
  <div className="flex-1 flex flex-col lg:flex-row overflow-hidden bg-gray-50 h-full">
  <div className="flex-1 p-4 md:p-6 overflow-y-auto flex flex-col">
  <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center mb-4 gap-3">
- <h2 className="text-xl font-bold text-gray-800">Hàng cần nhập</h2>
+ <div className="flex items-center gap-2">
+ <h2 className="text-xl font-bold text-gray-800">Kho hàng (Chọn sản phẩm nhập)</h2>
+ <button onClick={() => setShowAddProdModal(true)} className="bg-blue-600 hover:bg-blue-700 text-white px-3 py-1.5 rounded-lg text-xs font-bold flex items-center gap-1 shadow"><Plus size={14}/> + Thêm hàng mới</button>
+ </div>
  <div className="relative w-full sm:w-64"><Search size={16} className="absolute left-3 top-3 text-gray-400"/><input placeholder="Tìm kiếm sản phẩm nhập..." value={searchTerm} onChange={e=>setSearchTerm(e.target.value)} className="w-full pl-9 pr-3 py-2 border rounded-lg bg-white outline-none text-sm"/></div>
  </div>
  <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
  {filteredProducts.map(p => (
- <div key={p.id} onClick={() => addProductToCart(p)} className="bg-white p-3 rounded-xl border cursor-pointer hover:border-blue-400 shadow-sm"><h3 className="font-semibold text-sm truncate">{p.name}</h3><p className="text-xs text-gray-500 mt-1">Tồn: {p.stock}</p></div>
+ <div key={p.id} onClick={() => addProductToCart(p)} className="bg-white p-3 rounded-xl border cursor-pointer hover:border-blue-400 shadow-sm transition">
+ {p.category && <span className="text-[10px] bg-blue-50 text-blue-600 px-1.5 py-0.5 rounded font-bold mb-1 inline-block">{p.category}</span>}
+ <h3 className="font-semibold text-sm truncate text-gray-800">{p.name}</h3>
+ <div className="flex justify-between items-end mt-2"><p className="text-xs text-gray-500">Tồn: {p.stock}</p><p className="text-blue-600 font-bold text-xs">{formatCurrency(p.cost)}</p></div>
+ </div>
  ))}
  </div>
  </div>
  
-<div className="w-full lg:w-[420px] bg-white border-l shadow-lg shrink-0 z-20 flex flex-col h-[65vh] lg:h-auto">
+<div className="w-full lg:w-[460px] bg-white border-l shadow-lg shrink-0 z-20 flex flex-col h-[65vh] lg:h-auto">
  <div className="p-4 border-b bg-gray-50"><h2 className="font-bold flex items-center gap-2"><ArrowDownToLine size={20} className="text-gray-600"/> Phiếu Nhập Kho</h2></div>
  <div className="flex-1 overflow-y-auto p-4 space-y-3">
  {cart.map(item => (
- <div key={item.id} className="bg-gray-50 p-3 rounded-lg border space-y-2">
- <div className="flex justify-between"><h4 className="font-medium text-sm">{item.name}</h4><button onClick={() => setCart(c => c.filter(i => i.id !== item.id))} className="text-red-400"><X size={16}/></button></div>
- <div className="grid grid-cols-2 gap-2 text-sm">
- <div><label className="text-xs text-gray-500">Số lượng</label><input type="number" value={item.qty} onChange={e => setCart(c => c.map(i => i.id === item.id ? {...i, qty: Number(e.target.value)} : i))} className="w-full p-1.5 border rounded outline-none" /></div>
- <div><label className="text-xs text-gray-500">Đơn giá nhập</label><input type="number" value={item.importCost} onChange={e => setCart(c => c.map(i => i.id === item.id ? {...i, importCost: Number(e.target.value)} : i))} className="w-full p-1.5 border rounded outline-none" /></div>
+ <div key={item.id} className="bg-gray-50 p-3 rounded-xl border space-y-2 shadow-sm">
+ <div className="flex justify-between items-center"><h4 className="font-bold text-sm text-gray-800 truncate">{item.name}</h4><button onClick={() => setCart(c => c.filter(i => i.id !== item.id))} className="text-red-400 hover:text-red-600"><X size={16}/></button></div>
+ <div className="grid grid-cols-2 gap-2 text-xs">
+ <div>
+ <label className="text-[10px] text-gray-500 font-bold">Số lượng nhập</label>
+ <input type="number" value={item.qty} onChange={e => setCart(c => c.map(i => i.id === item.id ? {...i, qty: Number(e.target.value)} : i))} className="w-full p-1.5 border rounded outline-none font-bold text-center bg-white" />
+ </div>
+ <div>
+ <label className="text-[10px] text-gray-500 font-bold">Đơn giá nhập (đ)</label>
+ <input type="number" value={item.importCost} onChange={e => setCart(c => c.map(i => i.id === item.id ? {...i, importCost: Number(e.target.value)} : i))} className="w-full p-1.5 border rounded outline-none font-bold text-blue-600 text-center bg-white" />
+ </div>
+ </div>
+ <div className="flex justify-between items-center pt-1 border-t border-gray-200">
+ <span className="text-[11px] text-gray-500">Thành tiền:</span>
+ <span className="font-bold text-xs text-gray-900">{formatCurrency(Number(item.qty || 0) * Number(item.importCost || 0))}</span>
  </div>
  </div>
  ))}
+ {cart.length === 0 && <div className="text-center text-gray-400 py-12">Chưa chọn sản phẩm nào để nhập</div>}
  </div>
  <div className="p-4 border-t bg-gray-50 space-y-3">
  <div className="flex gap-2">
- <select required value={supplierId} onChange={e=>setSupplierId(e.target.value)} className="flex-1 p-2.5 border rounded-lg outline-none text-sm bg-white">
+ <select required value={supplierId} onChange={e=>setSupplierId(e.target.value)} className="flex-1 p-2.5 border rounded-lg outline-none text-sm bg-white font-medium">
  <option value="">-- Bắt buộc chọn NCC --</option>
  {suppliers.map(s => <option key={s.id} value={s.id}>{s.name}</option>)}
  </select>
  <button type="button" onClick={() => setShowAddSuppModal(true)} className="bg-blue-50 text-blue-600 border border-blue-200 px-3 rounded-lg font-bold text-xs flex items-center gap-1 shrink-0"><Plus size={14}/> Thêm NCC</button>
  </div>
- <div className="flex gap-2"><button onClick={() => setIsDebt(false)} className={"flex-1 py-2 rounded-lg border font-bold " + (!isDebt ? 'bg-blue-600 text-white' : 'bg-white')}>Tiền mặt</button><button onClick={() => setIsDebt(true)} className={"flex-1 py-2 rounded-lg border font-bold " + (isDebt ? 'bg-orange-500 text-white' : 'bg-white')}>Ghi nợ NCC</button></div>
- <button onClick={handleImport} disabled={!supplierId || cart.length === 0} className="w-full bg-gray-800 disabled:bg-gray-300 text-white py-3 rounded-xl font-bold mt-2 shadow-sm">Hoàn tất Nhập Hàng</button>
+ <div className="flex gap-2"><button onClick={() => setIsDebt(false)} className={"flex-1 py-2 rounded-lg border font-bold text-xs " + (!isDebt ? 'bg-blue-600 text-white' : 'bg-white')}>Tiền mặt</button><button onClick={() => setIsDebt(true)} className={"flex-1 py-2 rounded-lg border font-bold text-xs " + (isDebt ? 'bg-orange-500 text-white' : 'bg-white')}>Ghi nợ NCC</button></div>
+ <div className="flex justify-between items-center px-1"><span className="text-sm font-bold text-gray-700">Tổng tiền nhập:</span><span className="text-lg font-bold text-blue-600">{formatCurrency(cart.reduce((sum, i) => sum + (Number(i.qty || 0) * Number(i.importCost || 0)), 0))}</span></div>
+ <button onClick={handleImport} disabled={!supplierId || cart.length === 0} className="w-full bg-gray-800 disabled:bg-gray-300 text-white py-3 rounded-xl font-bold mt-1 shadow-sm">Hoàn tất Nhập Hàng</button>
  </div>
  </div>
 
@@ -2237,6 +2287,34 @@ setCart([]); setSupplierId(''); setIsDebt(false); showToast("Nhập hàng thành
  <input placeholder="Số điện thoại" value={newSuppForm.phone} onChange={e=>setNewSuppForm({...newSuppForm, phone:e.target.value})} className="w-full p-2.5 border rounded-lg outline-none text-sm"/>
  <input placeholder="Địa chỉ" value={newSuppForm.address} onChange={e=>setNewSuppForm({...newSuppForm, address:e.target.value})} className="w-full p-2.5 border rounded-lg outline-none text-sm"/>
  <button type="submit" className="w-full bg-blue-600 text-white font-bold p-3 rounded-lg text-sm">Lưu & Chọn Nhà Cung Cấp</button>
+ </form>
+ </Modal>
+
+ <Modal isOpen={showAddProdModal} onClose={() => setShowAddProdModal(false)} title="Thêm Hàng Hóa Mới (Nhập Kho)">
+ <form onSubmit={handleAddNewProductInImport} className="space-y-4">
+ <div>
+ <label className="block text-xs font-bold text-gray-500 mb-1">Tên sản phẩm *</label>
+ <input required placeholder="Nhập tên sản phẩm..." value={newProdForm.name} onChange={e=>setNewProdForm({...newProdForm, name: e.target.value})} className="w-full p-2.5 border rounded-lg outline-none text-sm"/>
+ </div>
+ <div>
+ <label className="block text-xs font-bold text-gray-500 mb-1">Nhóm hàng</label>
+ <input placeholder="VD: Điện thoại, Ốp lưng, Sạc..." value={newProdForm.category} onChange={e=>setNewProdForm({...newProdForm, category: e.target.value})} className="w-full p-2.5 border rounded-lg outline-none text-sm"/>
+ </div>
+ <div className="grid grid-cols-2 gap-3">
+ <div>
+ <label className="block text-xs font-bold text-gray-500 mb-1">Giá vốn (đ) *</label>
+ <input required type="number" placeholder="0" value={newProdForm.cost} onChange={e=>setNewProdForm({...newProdForm, cost: e.target.value})} className="w-full p-2.5 border rounded-lg outline-none text-sm font-bold"/>
+ </div>
+ <div>
+ <label className="block text-xs font-bold text-gray-500 mb-1">Giá bán (đ) *</label>
+ <input required type="number" placeholder="0" value={newProdForm.price} onChange={e=>setNewProdForm({...newProdForm, price: e.target.value})} className="w-full p-2.5 border rounded-lg outline-none text-sm font-bold text-blue-600"/>
+ </div>
+ </div>
+ <div>
+ <label className="block text-xs font-bold text-gray-500 mb-1">Số lượng tồn ban đầu *</label>
+ <input required type="number" placeholder="0" value={newProdForm.stock} onChange={e=>setNewProdForm({...newProdForm, stock: e.target.value})} className="w-full p-2.5 border rounded-lg outline-none text-sm font-bold"/>
+ </div>
+ <button type="submit" className="w-full bg-blue-600 text-white font-bold p-3 rounded-lg text-sm">Lưu & Đưa Vào Phiếu Nhập</button>
  </form>
  </Modal>
  </div>
