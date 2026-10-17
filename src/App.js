@@ -1156,7 +1156,7 @@ function ExpenseView({ data, storeId, showToast }) {
 }
 
 // ==========================================
-// 9. SETTINGS VIEW (CÀI ĐẶT + XÓA DỮ LIỆU + XUẤT/NHẬP EXCEL TOÀN HỆ THỐNG)
+// 9. SETTINGS VIEW (CÀI ĐẶT GỌN GÀNG, HIỂN THỊ ĐỦ CẢ XÓA & XUẤT EXCEL)
 // ==========================================
 function SettingsView({ config, storeId, data, showToast }) {
   const [formData, setFormData] = useState(config);
@@ -1167,7 +1167,6 @@ function SettingsView({ config, storeId, data, showToast }) {
     showToast("Đã lưu cấu hình cửa hàng thành công!");
   };
 
-  // Tính năng Xóa dữ liệu toàn hệ thống
   const handleDeleteAllData = async (collectionName, label) => {
     if (!window.confirm(`CẢNH BÁO NGUY HIỂM: Bạn có chắc chắn muốn XÓA SẠCH toàn bộ ${label} không? Hành động này không thể hoàn tác!`)) return;
     if (!window.confirm(`Xác nhận lần cuối: Toàn bộ ${label} sẽ bị xóa vĩnh viễn?`)) return;
@@ -1183,7 +1182,6 @@ function SettingsView({ config, storeId, data, showToast }) {
     }
   };
 
-  // Xuất toàn bộ dữ liệu ra Excel (CSV)
   const exportAllDataExcel = () => {
     let content = "\uFEFF" + "=== DANH SÁCH SẢN PHẨM ===\nTên,Nhóm,Giá vốn,Giá bán,Tồn kho\n";
     data.products.forEach(p => { content += `"${p.name}","${p.category || ''}",${p.cost || 0},${p.price || 0},${p.stock || 0}\n`; });
