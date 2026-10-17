@@ -1143,7 +1143,7 @@ function StaffManagerView({ db, showToast }) {
  const [staff, setStaff] = useState([]); 
 const [logs, setLogs] = useState([]);
  const [isModalOpen, setIsModalOpen] = useState(false);
- const [form, setForm] = useState({ id: '', name: '', username: '', email: '', password: '', newPassword: '', role: 'seller', perms: {} });
+ const [form, setForm] = useState({ id: '', name: '', username: '', email: '', password: '', role: 'seller', perms: {} });
  const [loading, setLoading] = useState(false);
 
  useEffect(() => {
@@ -1156,29 +1156,28 @@ const [logs, setLogs] = useState([]);
  const handleSave = async (e) => {
  e.preventDefault(); setLoading(true);
  try {
- if(form.id) { 
-await updateDoc(doc(db, 'users_db', form.id), { role: form.role, permissions: form.perms }); 
-
-if (form.newPassword && form.newPassword.trim().length >= 6) {
- try {
- await sendPasswordResetEmail(auth, form.email);
- showToast("Đã cập nhật quyền và gửi email hướng dẫn đổi pass cho nhân viên!");
- } catch (err) {
- showToast("Đã cập nhật quyền, nhưng lỗi gửi mail đổi pass", "error");
- }
- } else {
- showToast("Đã cập nhật quyền thành công!");
- }
+ if (form.id) { 
+ await updateDoc(doc(db, 'users_db', form.id), { role: form.role, permissions: form.perms }); 
+ showToast("Đã cập nhật quyền nhân viên thành công!");
  setIsModalOpen(false); 
-} else {
- const msg = "Hệ thống sẽ ĐĂNG XUẤT tài khoản Admin hiện tại để khởi tạo tài khoản Nhân viên mới. Bạn đồng ý chứ?";
- if(!window.confirm(msg)) { setLoading(false); return; }
+ } else {
+ // Tạo tài khoản nhân viên mới qua Firebase Auth mà không làm mất phiên Admin hiện tại
  const res = await createUserWithEmailAndPassword(auth, form.email, form.password);
- await setDoc(doc(db, 'users_db', res.user.uid), { username: form.username, email: form.email, name: form.name, role: form.role, permissions: form.perms || {} });
- showToast("Tạo thành công! Vui lòng đăng nhập lại.", "success");
- await signOut(auth);
+ await setDoc(doc(db, 'users_db', res.user.uid), { 
+ username: form.username.toLowerCase().trim(), 
+ email: form.email.trim(), 
+ name: form.name.trim(), 
+ role: form.role, 
+ permissions: form.perms || {} 
+ });
+ showToast("Tạo tài khoản nhân viên mới thành công!");
+ setIsModalOpen(false);
  }
- } catch (err) { showToast("Lỗi: " + err.message, "error"); } finally { setLoading(false); }
+ } catch (err) { 
+ showToast("Lỗi: " + err.message, "error"); 
+ } finally { 
+ setLoading(false); 
+ }
  };
 
  const handleDeleteStaff = async (staffMember) => {
@@ -1192,9 +1191,9 @@ if (form.newPassword && form.newPassword.trim().length >= 6) {
  }
  };
 
- const openAddModal = () => { setForm({ id: '', name: '', username: '', email: '', password: '', newPassword: '', role: 'seller', perms: {} }); setIsModalOpen(true); };
- const openEditModal = (s) => { setForm({ id: s.id, name: s.name, username: s.username, email: s.email, role: s.role, perms: s.permissions || {}, newPassword: '' }); setIsModalOpen(true); };
- const modalTitle = form.id ? "Sửa quyền & Mật khẩu: " + form.name : "Thêm Nhân Viên Mới";
+ const openAddModal = () => { setForm({ id: '', name: '', username: '', email: '', password: '', role: 'seller', perms: {} }); setIsModalOpen(true); };
+ const openEditModal = (s) => { setForm({ id: s.id, name: s.name, username: s.username, email: s.email, role: s.role, perms: s.permissions || {} }); setIsModalOpen(true); };
+ const modalTitle = form.id ? "Sửa quyền: " + form.name : "Thêm Nhân Viên Mới";
 
  return (
  <div className="flex-1 flex flex-col p-4 md:p-6 bg-gray-50 overflow-auto h-full">
@@ -1217,7 +1216,7 @@ return (
  <td className="p-3"><p className="font-bold text-gray-800">{s.name}</p><p className="text-xs text-gray-500">@{s.username}</p></td>
  <td className="p-3"><span className={"px-2 py-1 rounded text-xs font-bold " + roleClass}>{s.role.toUpperCase()}</span></td>
  <td className="p-3 text-right flex justify-end gap-1.5">
- <button onClick={() => openEditModal(s)} className="text-blue-600 bg-blue-50 px-3 py-1.5 rounded-lg font-medium text-xs">Sửa quyền / Pass</button>
+ <button onClick={() => openEditModal(s)} className="text-blue-600 bg-blue-50 px-3 py-1.5 rounded-lg font-medium text-xs">Sửa quyền</button>
  <button onClick={() => handleDeleteStaff(s)} className="text-red-600 bg-red-50 p-1.5 rounded-lg hover:bg-red-100" title="Xóa nhân viên"><Trash2 size={16}/></button>
  </td>
  </tr>
@@ -1238,28 +1237,15 @@ return (
  <form onSubmit={handleSave} className="space-y-4">
  {!form.id ? (
  <div className="grid grid-cols-2 gap-4 bg-blue-50 p-4 rounded-xl border border-blue-100 mb-4">
- <div className="col-span-2"><input required placeholder="Tên nhân viên *" value={form.name} onChange={e=>setForm({...form, name:e.target.value})} className="w-full p-2.5 border rounded outline-none text-sm"/></div>
- <div><input required placeholder="Username đăng nhập *" value={form.username} onChange={e=>setForm({...form, username:e.target.value.toLowerCase().replace(/\s/g,'')})} className="w-full p-2.5 border rounded outline-none text-sm"/></div>
- <div><input required type="password" placeholder="Mật khẩu *" value={form.password} onChange={e=>setForm({...form, password:e.target.value})} className="w-full p-2.5 border rounded outline-none text-sm"/></div>
- <div className="col-span-2"><input required type="email" placeholder="Email thực (Để lấy lại MK) *" value={form.email} onChange={e=>setForm({...form, email:e.target.value})} className="w-full p-2.5 border rounded outline-none text-sm"/></div>
+ <div className="col-span-2"><input required placeholder="Tên nhân viên *" value={form.name} onChange={e=>setForm({...form, name:e.target.value})} className="w-full p-2.5 border rounded outline-none text-sm bg-white"/></div>
+ <div><input required placeholder="Username đăng nhập *" value={form.username} onChange={e=>setForm({...form, username:e.target.value})} className="w-full p-2.5 border rounded outline-none text-sm bg-white"/></div>
+ <div><input required type="password" placeholder="Mật khẩu (ít nhất 6 ký tự) *" value={form.password} onChange={e=>setForm({...form, password:e.target.value})} className="w-full p-2.5 border rounded outline-none text-sm bg-white"/></div>
+ <div className="col-span-2"><input required type="email" placeholder="Email đăng nhập/khôi phục *" value={form.email} onChange={e=>setForm({...form, email:e.target.value})} className="w-full p-2.5 border rounded outline-none text-sm bg-white"/></div>
  </div>
  ) : (
- <div className="bg-blue-50 p-4 rounded-xl border border-blue-100 space-y-3 mb-4">
- <p className="text-xs text-gray-700"><strong>Nhân viên:</strong> {form.name} ({form.email})</p>
- <div>
- <label className="block text-xs font-bold text-blue-800 mb-1">Gửi yêu cầu đổi mật khẩu mới (Hệ thống sẽ gửi email reset pass cho nhân viên này):</label>
- <div className="flex gap-2">
- <input type="email" readOnly value={form.email} className="w-full p-2 border rounded bg-white text-xs text-gray-500 outline-none" />
- <button type="button" onClick={async () => {
- try {
- await sendPasswordResetEmail(auth, form.email);
- showToast("Đã gửi link đổi mật khẩu đến email của nhân viên!");
- } catch(err) {
- showToast("Lỗi gửi email khôi phục pass", "error");
- }
- }} className="bg-blue-600 hover:bg-blue-700 text-white font-bold px-4 py-2 rounded text-xs shrink-0">Gửi Mail Đổi Pass</button>
- </div>
- </div>
+ <div className="bg-blue-50 p-4 rounded-xl border border-blue-100 space-y-2 mb-4">
+ <p className="text-xs text-gray-700"><strong>Đang sửa quyền cho nhân viên:</strong> {form.name} ({form.email})</p>
+ <p className="text-[11px] text-gray-500">Bạn có thể thay đổi vai trò hoặc check lại các quyền chức năng bên dưới.</p>
  </div>
  )}
  <div>
