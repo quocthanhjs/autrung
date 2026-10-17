@@ -222,51 +222,40 @@ export default function EnhancedPOS() {
     return userData.perms[t.permId];
   });
 
+  // BẢN VÁ LỖI IN TRANG TRẮNG CỰC MẠNH BẰNG VISIBILITY TRICK
   const printStyle = `
     @media print {
-      body > #root > div > .min-h-screen { display: none !important; }
-      
-      .fixed { position: absolute !important; inset: 0 !important; background: transparent !important; }
-      .overflow-hidden { overflow: visible !important; }
-      .max-h-[90vh] { max-height: none !important; }
-      
-      .hide-on-print { display: none !important; }
-      .modal-overlay { 
-        position: absolute !important; 
-        background: transparent !important; 
-        padding: 0 !important;
+      body * {
+        visibility: hidden;
       }
-      .modal-content {
-        box-shadow: none !important;
-        border: none !important;
-        width: 100% !important;
+      .print-container, .print-container * {
+        visibility: visible;
+      }
+      .print-container {
+        position: absolute !important;
+        left: 0 !important;
+        top: 0 !important;
+        width: 100vw !important;
         max-width: 100% !important;
-        max-height: none !important;
-        overflow: visible !important;
-      }
-      .print-area-wrapper {
-        overflow: visible !important;
         padding: 0 !important;
-      }
-      .print-container { 
-        position: absolute; 
-        left: 0; 
-        top: 0; 
-        width: 100%; 
-        background: white !important; 
-        color: black !important;
-        padding: 0 10px !important;
         margin: 0 !important;
+        background: white !important;
+        color: black !important;
       }
-      .no-print { display: none !important; }
+      .no-print {
+        display: none !important;
+      }
+      @page {
+        margin: 5mm;
+      }
     }
   `;
 
   return (
     <>
       <style>{printStyle}</style>
-      <div className="min-h-screen bg-gray-50 flex flex-col md:flex-row font-sans text-sm md:text-base hide-on-print print:hidden">
-        <aside className="w-full md:w-64 bg-white border-r border-gray-200 flex flex-col shadow-sm z-10 shrink-0">
+      <div className="min-h-screen bg-gray-50 flex flex-col md:flex-row font-sans text-sm md:text-base">
+        <aside className="w-full md:w-64 bg-white border-r border-gray-200 flex flex-col shadow-sm z-10 shrink-0 no-print">
           <div className="p-5 border-b border-gray-100 flex items-center gap-3">
             {storeConfig.logo ? <img src={storeConfig.logo} alt="Logo" className="w-10 h-10 object-contain rounded bg-white p-1 shadow-sm" /> : <div className="bg-blue-600 text-white p-2 rounded-lg"><ShoppingBag size={24} /></div>}
             <div className="min-w-0"><h1 className="text-lg font-bold tracking-tight text-gray-800 truncate">{storeConfig.name || 'SmartPOS'}</h1></div>
@@ -286,7 +275,7 @@ export default function EnhancedPOS() {
           </div>
         </aside>
 
-        <main className="flex-1 overflow-hidden flex flex-col h-[calc(100vh-80px)] md:h-screen relative">
+        <main className="flex-1 overflow-hidden flex flex-col h-[calc(100vh-80px)] md:h-screen relative no-print">
           {toast && <div className={"absolute top-4 right-4 z-50 px-6 py-3 rounded-lg shadow-lg flex items-center gap-2 text-white " + (toast.type === 'success' ? 'bg-green-600' : 'bg-red-600')}>{toast.type === 'success' ? <Check size={20} /> : <AlertCircle size={20} />}<span className="font-medium">{toast.msg}</span></div>}
           
           {activeTab === 'dashboard' && <DashboardView orders={orders} imports={imports} expenses={expenses} customers={customers} suppliers={suppliers} showToast={showToast} />}
@@ -928,8 +917,9 @@ function SalesHistoryView({ orders, products, storeConfig, db, storeId, showToas
                 </div>
               ) : (
                 <div className={printType === 'a4' ? 'max-w-[210mm] mx-auto p-4' : 'max-w-[148mm] mx-auto p-2'}>
-                  <div className="flex justify-between items-center border-b-2 border-gray-800 pb-4 mb-4">
-                    <div className="flex items-center gap-3">
+                  {/* BẢN VÁ: TIÊU ĐỀ PHIẾU BÁN HÀNG CĂN GIỮA */}
+                  <div className="flex flex-col border-b-2 border-gray-800 pb-4 mb-4 gap-4">
+                    <div className="w-full flex items-center gap-3">
                       {storeConfig?.logo && (<img src={storeConfig.logo} alt="Logo" className="max-h-16 object-contain" />)}
                       <div>
                         <h2 className="text-lg font-bold">{storeConfig?.name || 'SmartPOS Pro'}</h2>
@@ -937,10 +927,9 @@ function SalesHistoryView({ orders, products, storeConfig, db, storeId, showToas
                         <p className="text-xs text-gray-600">Điện thoại: {storeConfig?.phone || '...'}</p>
                       </div>
                     </div>
-                    <div className="text-right mt-6">
-                      <h1 className="text-xl font-bold uppercase text-blue-800">PHIẾU BÁN HÀNG</h1>
-                      <p className="text-xs text-gray-500 mt-1">Mã HĐ: #{viewingOrderPrint.id.slice(0,6).toUpperCase()}</p>
-                      <p className="text-xs text-gray-500">Ngày: {formatDate(viewingOrderPrint.date)}</p>
+                    <div className="text-center w-full mt-2">
+                      <h1 className="text-2xl font-bold uppercase text-blue-800 tracking-wide">PHIẾU BÁN HÀNG</h1>
+                      <p className="text-xs text-gray-500 mt-1">Mã HĐ: #{viewingOrderPrint.id.slice(0,6).toUpperCase()} | Ngày: {formatDate(viewingOrderPrint.date)}</p>
                     </div>
                   </div>
 
@@ -1898,7 +1887,7 @@ function POSView({ products, customers, db, storeId, user, storeConfig, showToas
         </div>
       </div>
       
-      <div className="w-full lg:w-[460px] bg-white border-l shadow-lg shrink-0 flex flex-col z-20 h-[65vh] lg:h-auto">
+      <div className="w-full lg:w-[460px] bg-white border-l shadow-lg shrink-0 flex flex-col z-20 h-[65vh] lg:h-auto no-print">
         <div className="p-4 border-b bg-blue-50/50"><h2 className="font-bold flex items-center gap-2"><ShoppingCart size={20} className="text-blue-600"/> Giỏ hàng</h2></div>
         <div className="flex-1 overflow-y-auto p-4 space-y-3">
           {cart.map(item => (
@@ -2015,8 +2004,9 @@ function POSView({ products, customers, db, storeId, user, storeConfig, showToas
                 </div>
               ) : (
                 <div className={printType === 'a4' ? 'max-w-[210mm] mx-auto p-4' : 'max-w-[148mm] mx-auto p-2'}>
-                  <div className="flex justify-between items-center border-b-2 border-gray-800 pb-4 mb-4">
-                    <div className="flex items-center gap-3">
+                  {/* BẢN VÁ: TIÊU ĐỀ PHIẾU BÁN HÀNG CĂN GIỮA */}
+                  <div className="flex flex-col border-b-2 border-gray-800 pb-4 mb-4 gap-4">
+                    <div className="w-full flex items-center gap-3">
                       {storeConfig?.logo && (<img src={storeConfig.logo} alt="Logo" className="max-h-16 object-contain" />)}
                       <div>
                         <h2 className="text-lg font-bold">{storeConfig?.name || 'SmartPOS Pro'}</h2>
@@ -2024,10 +2014,9 @@ function POSView({ products, customers, db, storeId, user, storeConfig, showToas
                         <p className="text-xs text-gray-600">Điện thoại: {storeConfig?.phone || '...'}</p>
                       </div>
                     </div>
-                    <div className="text-right mt-6">
-                      <h1 className="text-xl font-bold uppercase text-blue-800">PHIẾU BÁN HÀNG</h1>
-                      <p className="text-xs text-gray-500 mt-1">Mã HĐ: #{completedOrder.id.slice(0,6).toUpperCase()}</p>
-                      <p className="text-xs text-gray-500">Ngày: {formatDate(completedOrder.date)}</p>
+                    <div className="text-center w-full mt-2">
+                      <h1 className="text-2xl font-bold uppercase text-blue-800 tracking-wide">PHIẾU BÁN HÀNG</h1>
+                      <p className="text-xs text-gray-500 mt-1">Mã HĐ: #{completedOrder.id.slice(0,6).toUpperCase()} | Ngày: {formatDate(completedOrder.date)}</p>
                     </div>
                   </div>
 
