@@ -166,7 +166,7 @@ export default function EnhancedPOS() {
         {activeTab === 'customers' && <ContactView type="customers" dataList={data.customers} orders={data.orders} storeId={storeId} showToast={showToast} />}
         {activeTab === 'suppliers' && <ContactView type="suppliers" dataList={data.suppliers} orders={data.imports} storeId={storeId} showToast={showToast} />}
         {activeTab === 'expenses' && <ExpenseView data={data.expenses} storeId={storeId} showToast={showToast} />}
-        {activeTab === 'settings' && <SettingsView config={storeConfig} storeId={storeId} showToast={showToast} />}
+        {activeTab === 'settings' && <SettingsView config={storeConfig} storeId={storeId} data={data} showToast={showToast} />}
         {activeTab === 'staff' && <StaffView staffList={data.staff} showToast={showToast} />}
       </main>
     </div>
@@ -805,7 +805,7 @@ function ImportView({ data, storeId, user, showToast }) {
 }
 
 // ==========================================
-// 6. INVENTORY VIEW (TÍCH HỢP NHẬP / XUẤT EXCEL)
+// 6. INVENTORY VIEW
 // ==========================================
 function InventoryView({ data, storeId, showToast }) {
   const [search, setSearch] = useState('');
@@ -829,7 +829,6 @@ function InventoryView({ data, storeId, showToast }) {
     }
   };
 
-  // Xuất file Excel (CSV format)
   const exportExcel = () => {
     let csvContent = "\uFEFF" + "Tên hàng hóa,Nhóm hàng,Giá vốn,Giá bán,Tồn kho\n";
     data.forEach(p => {
@@ -846,7 +845,6 @@ function InventoryView({ data, storeId, showToast }) {
     showToast("Đã xuất file Excel thành công!");
   };
 
-  // Nhập file Excel / CSV hàng loạt
   const importExcel = (e) => {
     const file = e.target.files[0];
     if (!file) return;
@@ -861,19 +859,12 @@ function InventoryView({ data, storeId, showToast }) {
         for (let i = 1; i < lines.length; i++) {
           const line = lines[i].trim();
           if (!line) continue;
-          // Tách dấu phẩy an toàn hoặc bọc ngoặc kép
           const cols = line.split(/,(?=(?:(?:[^"]*"){2})*[^"]*$)/).map(s => s.replace(/^"|"$/g, '').trim());
           if (cols.length >= 5) {
             const [name, category, cost, price, stock] = cols;
             if (name) {
               const newRef = doc(collection(db, 'stores', storeId, 'products'));
-              batch.set(newRef, {
-                name,
-                category: category || '',
-                cost: Number(cost) || 0,
-                price: Number(price) || 0,
-                stock: Number(stock) || 0
-              });
+              batch.set(newRef, { name, category: category || '', cost: Number(cost) || 0, price: Number(price) || 0, stock: Number(stock) || 0 });
               count++;
             }
           }
@@ -884,9 +875,7 @@ function InventoryView({ data, storeId, showToast }) {
         } else {
           showToast("File không đúng định dạng mẫu!", "error");
         }
-      } catch (err) {
-        showToast("Lỗi đọc file Excel!", "error");
-      }
+      } catch (err) { showToast("Lỗi đọc file Excel!", "error"); }
     };
     reader.readAsText(file);
     e.target.value = '';
@@ -903,25 +892,13 @@ function InventoryView({ data, storeId, showToast }) {
       <div className="flex justify-between mb-4 items-center flex-wrap gap-2">
         <h2 className="text-2xl font-bold">Quản Lý Kho Hàng</h2>
         <div className="flex gap-2 items-center flex-wrap">
-          {/* Nút Xuất Excel */}
-          <button onClick={exportExcel} className="bg-emerald-600 text-white px-3 py-2.5 rounded-lg font-bold shadow hover:bg-emerald-700 flex items-center gap-1.5 text-xs">
-            <Download size={16} /> Xuất Excel
-          </button>
-          {/* Nút Nhập Excel */}
-          <label className="bg-purple-600 text-white px-3 py-2.5 rounded-lg font-bold shadow hover:bg-purple-700 flex items-center gap-1.5 text-xs cursor-pointer">
-            <Upload size={16} /> Nhập Excel
-            <input type="file" accept=".csv" onChange={importExcel} className="hidden" />
-          </label>
-
+          <button onClick={exportExcel} className="bg-emerald-600 text-white px-3 py-2.5 rounded-lg font-bold shadow hover:bg-emerald-700 flex items-center gap-1.5 text-xs"><Download size={16} /> Xuất Excel</button>
+          <label className="bg-purple-600 text-white px-3 py-2.5 rounded-lg font-bold shadow hover:bg-purple-700 flex items-center gap-1.5 text-xs cursor-pointer"><Upload size={16} /> Nhập Excel<input type="file" accept=".csv" onChange={importExcel} className="hidden" /></label>
           <select value={sortOrder} onChange={e => setSortOrder(e.target.value)} className="p-2 border rounded-lg outline-none bg-white font-medium shadow-sm text-xs">
-            <option value="name_asc">Tên A-Z</option>
-            <option value="name_desc">Tên Z-A</option>
-            <option value="price_desc">Giá bán: Cao đến Thấp</option>
-            <option value="price_asc">Giá bán: Thấp đến Cao</option>
-            <option value="cost_desc">Giá vốn: Cao đến Thấp</option>
-            <option value="cost_asc">Giá vốn: Thấp đến Cao</option>
-            <option value="stock_desc">Tồn kho: Nhiều nhất</option>
-            <option value="stock_asc">Tồn kho: Ít nhất</option>
+            <option value="name_asc">Tên A-Z</option><option value="name_desc">Tên Z-A</option>
+            <option value="price_desc">Giá bán: Cao đến Thấp</option><option value="price_asc">Giá bán: Thấp đến Cao</option>
+            <option value="cost_desc">Giá vốn: Cao đến Thấp</option><option value="cost_asc">Giá vốn: Thấp đến Cao</option>
+            <option value="stock_desc">Tồn kho: Nhiều nhất</option><option value="stock_asc">Tồn kho: Ít nhất</option>
           </select>
           <input placeholder="Tìm kiếm..." value={search} onChange={e => setSearch(e.target.value)} className="p-2 border rounded-lg w-48 outline-none shadow-sm text-xs focus:ring-2 focus:ring-blue-500" />
           <button onClick={() => { setFormData({}); setShowModal(true); }} className="bg-blue-600 text-white px-4 py-2.5 rounded-lg font-bold shadow hover:bg-blue-700 flex items-center gap-1 text-xs"><Plus size={16}/> Thêm mới</button>
@@ -931,12 +908,7 @@ function InventoryView({ data, storeId, showToast }) {
         <table className="w-full text-left">
           <thead className="bg-gray-100 border-b sticky top-0">
             <tr>
-              <th className="p-4">Tên hàng hóa</th>
-              <th className="p-4">Nhóm</th>
-              <th className="p-4 text-right">Giá Vốn</th>
-              <th className="p-4 text-right">Giá Bán</th>
-              <th className="p-4 text-center">Tồn kho</th>
-              <th className="p-4 text-center">Hành động</th>
+              <th className="p-4">Tên hàng hóa</th><th className="p-4">Nhóm</th><th className="p-4 text-right">Giá Vốn</th><th className="p-4 text-right">Giá Bán</th><th className="p-4 text-center">Tồn kho</th><th className="p-4 text-center">Hành động</th>
             </tr>
           </thead>
           <tbody>
@@ -946,9 +918,7 @@ function InventoryView({ data, storeId, showToast }) {
                 <td className="p-4 text-gray-600">{p.category || '-'}</td>
                 <td className="p-4 text-right">{formatMoney(p.cost)}</td>
                 <td className="p-4 text-right font-bold text-blue-600">{formatMoney(p.price)}</td>
-                <td className="p-4 text-center">
-                  <span className={`px-3 py-1 rounded-full font-bold text-sm ${p.stock <= 5 ? 'bg-red-100 text-red-600' : 'bg-gray-100 text-gray-700'}`}>{p.stock}</span>
-                </td>
+                <td className="p-4 text-center"><span className={`px-3 py-1 rounded-full font-bold text-sm ${p.stock <= 5 ? 'bg-red-100 text-red-600' : 'bg-gray-100 text-gray-700'}`}>{p.stock}</span></td>
                 <td className="p-4 text-center">
                   <button onClick={() => { setFormData(p); setShowModal(true); }} className="text-blue-600 bg-blue-50 p-2 rounded hover:bg-blue-100 mr-2"><Edit size={16} /></button>
                   <button onClick={() => handleDelete(p.id)} className="text-red-600 bg-red-50 p-2 rounded hover:bg-red-100"><Trash2 size={16} /></button>
@@ -976,7 +946,7 @@ function InventoryView({ data, storeId, showToast }) {
 }
 
 // ==========================================
-// 7. CONTACT VIEW (TÍCH HỢP XUẤT EXCEL KHÁCH HÀNG / NCC)
+// 7. CONTACT VIEW
 // ==========================================
 function ContactView({ type, dataList, orders, storeId, showToast }) {
   const [search, setSearch] = useState('');
@@ -1043,14 +1013,10 @@ function ContactView({ type, dataList, orders, storeId, showToast }) {
       <div className="flex justify-between mb-4 items-center flex-wrap gap-2">
         <h2 className="text-2xl font-bold">Quản lý {isCustomer ? 'Khách hàng' : 'Nhà cung cấp'}</h2>
         <div className="flex gap-2 items-center flex-wrap">
-          <button onClick={exportExcel} className="bg-emerald-600 text-white px-3 py-2.5 rounded-lg font-bold shadow hover:bg-emerald-700 flex items-center gap-1.5 text-xs">
-            <Download size={16} /> Xuất Excel
-          </button>
+          <button onClick={exportExcel} className="bg-emerald-600 text-white px-3 py-2.5 rounded-lg font-bold shadow hover:bg-emerald-700 flex items-center gap-1.5 text-xs"><Download size={16} /> Xuất Excel</button>
           <select value={sortOrder} onChange={e => setSortOrder(e.target.value)} className="p-2 border rounded-lg bg-white outline-none shadow-sm text-xs">
-            <option value="debt_desc">Tiền Nợ: Cao đến Thấp</option>
-            <option value="debt_asc">Tiền Nợ: Thấp đến Cao</option>
-            <option value="name_asc">Tên A-Z</option>
-            <option value="name_desc">Tên Z-A</option>
+            <option value="debt_desc">Tiền Nợ: Cao đến Thấp</option><option value="debt_asc">Tiền Nợ: Thấp đến Cao</option>
+            <option value="name_asc">Tên A-Z</option><option value="name_desc">Tên Z-A</option>
           </select>
           <input placeholder="Tìm kiếm tên..." value={search} onChange={e => setSearch(e.target.value)} className="p-2 border rounded-lg w-48 outline-none shadow-sm text-xs focus:ring-2 focus:ring-blue-500" />
           <button onClick={() => { setFormData({}); setShowModal(true); }} className="bg-blue-600 text-white px-4 py-2.5 rounded-lg font-bold shadow hover:bg-blue-700 flex items-center gap-1 text-xs"><Plus size={16}/> Thêm mới</button>
@@ -1061,10 +1027,7 @@ function ContactView({ type, dataList, orders, storeId, showToast }) {
         <table className="w-full text-left">
           <thead className="bg-gray-100 border-b sticky top-0">
             <tr>
-              <th className="p-4">Tên</th>
-              <th className="p-4">Số điện thoại</th>
-              <th className="p-4 text-right">Tổng Nợ hiện tại</th>
-              <th className="p-4 text-center">Hành động</th>
+              <th className="p-4">Tên</th><th className="p-4">Số điện thoại</th><th className="p-4 text-right">Tổng Nợ hiện tại</th><th className="p-4 text-center">Hành động</th>
             </tr>
           </thead>
           <tbody>
@@ -1074,7 +1037,7 @@ function ContactView({ type, dataList, orders, storeId, showToast }) {
                 <td className="p-4 text-gray-600">{c.phone || '-'}</td>
                 <td className="p-4 text-right font-black text-red-600 text-lg">{formatMoney(c.totalDebt)}</td>
                 <td className="p-4 text-center">
-                  <button onClick={() => setHistoryContact(c)} className="text-green-600 bg-green-50 p-2.5 rounded-lg hover:bg-green-100 mr-2 border border-green-200 shadow-sm" title="Xem chi tiết lịch sử mua bán và nợ"><Eye size={18} /></button>
+                  <button onClick={() => setHistoryContact(c)} className="text-green-600 bg-green-50 p-2.5 rounded-lg hover:bg-green-100 mr-2 border border-green-200 shadow-sm" title="Xem chi tiết lịch sử"><Eye size={18} /></button>
                   <button onClick={() => { setFormData(c); setShowModal(true); }} className="text-blue-600 bg-blue-50 p-2.5 rounded-lg hover:bg-blue-100 mr-2"><Edit size={18} /></button>
                   <button onClick={() => handleDelete(c.id)} className="text-red-600 bg-red-50 p-2.5 rounded-lg hover:bg-red-100"><Trash2 size={18} /></button>
                 </td>
@@ -1108,28 +1071,15 @@ function ContactView({ type, dataList, orders, storeId, showToast }) {
         <div className="max-h-96 overflow-auto border rounded-xl shadow-sm bg-white">
           <table className="w-full text-left text-sm">
             <thead className="bg-gray-100 sticky top-0 border-b">
-              <tr>
-                <th className="p-3">Ngày giao dịch</th>
-                <th className="p-3">Chi tiết {isCustomer ? 'Bán' : 'Nhập'}</th>
-                <th className="p-3 text-right">Tổng tiền phiếu</th>
-                <th className="p-3 text-center">Trạng thái</th>
-              </tr>
+              <tr><th className="p-3">Ngày giao dịch</th><th className="p-3">Chi tiết</th><th className="p-3 text-right">Tổng tiền</th><th className="p-3 text-center">Trạng thái</th></tr>
             </thead>
             <tbody>
               {historyTransactions.map(tx => (
                 <tr key={tx.id} className="border-b hover:bg-gray-50">
                   <td className="p-3 text-gray-600">{formatDate(tx.date)}</td>
-                  <td className="p-3">
-                    {tx.items.map((i, idx) => (
-                      <div key={idx} className="mb-1"><b className="text-gray-800">{i.name}</b> <span className="text-blue-600 text-xs font-bold">(x{i.quantity || i.q})</span></div>
-                    ))}
-                  </td>
+                  <td className="p-3">{tx.items.map((i, idx) => (<div key={idx}><b className="text-gray-800">{i.name}</b> <span className="text-blue-600 text-xs font-bold">(x{i.quantity || i.q})</span></div>))}</td>
                   <td className="p-3 text-right font-black">{formatMoney(tx.total)}</td>
-                  <td className="p-3 text-center">
-                    <span className={`px-2 py-1 rounded font-bold text-xs ${tx.status === 'DEBT' ? 'bg-orange-100 text-orange-700' : 'bg-green-100 text-green-700'}`}>
-                      {tx.status === 'DEBT' ? 'GHI NỢ' : 'ĐÃ THANH TOÁN'}
-                    </span>
-                  </td>
+                  <td className="p-3 text-center"><span className={`px-2 py-1 rounded font-bold text-xs ${tx.status === 'DEBT' ? 'bg-orange-100 text-orange-700' : 'bg-green-100 text-green-700'}`}>{tx.status === 'DEBT' ? 'GHI NỢ' : 'ĐÃ THANH TOÁN'}</span></td>
                 </tr>
               ))}
               {historyTransactions.length === 0 && <tr><td colSpan="4" className="p-6 text-center text-gray-400">Không có dữ liệu giao dịch trong khoảng thời gian này.</td></tr>}
@@ -1173,10 +1123,8 @@ function ExpenseView({ data, storeId, showToast }) {
       <div className="flex justify-between items-center mb-4">
         <h2 className="text-2xl font-bold">Quản lý Chi Phí</h2>
         <select value={sortOrder} onChange={e => setSortOrder(e.target.value)} className="p-2.5 border rounded-lg bg-white outline-none shadow-sm">
-          <option value="date_desc">Ngày gần nhất</option>
-          <option value="date_asc">Ngày xa nhất</option>
-          <option value="amt_desc">Số tiền: Cao đến Thấp</option>
-          <option value="amt_asc">Số tiền: Thấp đến Cao</option>
+          <option value="date_desc">Ngày gần nhất</option><option value="date_asc">Ngày xa nhất</option>
+          <option value="amt_desc">Số tiền: Cao đến Thấp</option><option value="amt_asc">Số tiền: Thấp đến Cao</option>
         </select>
       </div>
 
@@ -1189,12 +1137,7 @@ function ExpenseView({ data, storeId, showToast }) {
       <div className="bg-white border rounded-xl shadow-sm overflow-auto flex-1">
         <table className="w-full text-left">
           <thead className="bg-gray-100 border-b sticky top-0">
-            <tr>
-              <th className="p-4">Ngày chi</th>
-              <th className="p-4">Nội dung</th>
-              <th className="p-4 text-right">Số tiền</th>
-              <th className="p-4 text-center">Hành động</th>
-            </tr>
+            <tr><th className="p-4">Ngày chi</th><th className="p-4">Nội dung</th><th className="p-4 text-right">Số tiền</th><th className="p-4 text-center">Hành động</th></tr>
           </thead>
           <tbody>
             {sortedData.map(e => (
@@ -1202,9 +1145,7 @@ function ExpenseView({ data, storeId, showToast }) {
                 <td className="p-4 text-gray-500">{formatDate(e.date)}</td>
                 <td className="p-4 font-bold text-gray-800">{e.note}</td>
                 <td className="p-4 text-orange-600 font-black text-right text-lg">{formatMoney(e.amount)}</td>
-                <td className="p-4 text-center">
-                  <button onClick={() => handleDelete(e.id)} className="text-red-600 bg-red-50 p-2 rounded hover:bg-red-100"><Trash2 size={18} /></button>
-                </td>
+                <td className="p-4 text-center"><button onClick={() => handleDelete(e.id)} className="text-red-600 bg-red-50 p-2 rounded hover:bg-red-100"><Trash2 size={18} /></button></td>
               </tr>
             ))}
           </tbody>
@@ -1215,32 +1156,107 @@ function ExpenseView({ data, storeId, showToast }) {
 }
 
 // ==========================================
-// 9. SETTINGS VIEW
+// 9. SETTINGS VIEW (CÀI ĐẶT + XÓA DỮ LIỆU + XUẤT/NHẬP EXCEL TOÀN HỆ THỐNG)
 // ==========================================
-function SettingsView({ config, storeId, showToast }) {
+function SettingsView({ config, storeId, data, showToast }) {
   const [formData, setFormData] = useState(config);
-  const handleSave = async (e) => {
+
+  const handleSaveConfig = async (e) => {
     e.preventDefault();
     await setDoc(doc(db, 'stores', storeId), formData, { merge: true });
     showToast("Đã lưu cấu hình cửa hàng thành công!");
   };
+
+  // Tính năng Xóa dữ liệu toàn hệ thống
+  const handleDeleteAllData = async (collectionName, label) => {
+    if (!window.confirm(`CẢNH BÁO NGUY HIỂM: Bạn có chắc chắn muốn XÓA SẠCH toàn bộ ${label} không? Hành động này không thể hoàn tác!`)) return;
+    if (!window.confirm(`Xác nhận lần cuối: Toàn bộ ${label} sẽ bị xóa vĩnh viễn?`)) return;
+    
+    try {
+      const snap = await getDocs(collection(db, 'stores', storeId, collectionName));
+      const batch = writeBatch(db);
+      snap.docs.forEach(d => batch.delete(d.ref));
+      await batch.commit();
+      showToast(`Đã xóa sạch toàn bộ ${label}!`);
+    } catch (err) {
+      showToast(`Lỗi khi xóa ${label}!`, "error");
+    }
+  };
+
+  // Xuất toàn bộ dữ liệu ra Excel (CSV)
+  const exportAllDataExcel = () => {
+    let content = "\uFEFF" + "=== DANH SÁCH SẢN PHẨM ===\nTên,Nhóm,Giá vốn,Giá bán,Tồn kho\n";
+    data.products.forEach(p => { content += `"${p.name}","${p.category || ''}",${p.cost || 0},${p.price || 0},${p.stock || 0}\n`; });
+    
+    content += "\n=== DANH SÁCH KHÁCH HÀNG ===\nTên,SĐT,Tổng nợ\n";
+    data.customers.forEach(c => { content += `"${c.name}","${c.phone || ''}",${c.totalDebt || 0}\n`; });
+
+    content += "\n=== DANH SÁCH NHÀ CUNG CẤP ===\nTên,SĐT,Tổng nợ\n";
+    data.suppliers.forEach(s => { content += `"${s.name}","${s.phone || ''}",${s.totalDebt || 0}\n`; });
+
+    const blob = new Blob([content], { type: 'text/csv;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = `Sao_Luu_Du_Lieu_${new Date().toISOString().slice(0,10)}.csv`;
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    showToast("Đã xuất toàn bộ dữ liệu ra file thành công!");
+  };
+
   return (
-    <div className="p-6 bg-gray-50 flex-1 overflow-auto">
-      <h2 className="text-2xl font-bold mb-6">Cài đặt Cửa hàng</h2>
-      <form onSubmit={handleSave} className="bg-white p-6 rounded-xl border shadow-sm max-w-lg space-y-4">
-        <div><label className="block text-sm font-bold mb-1">Tên Cửa hàng</label><input value={formData.name || ''} onChange={e => setFormData({ ...formData, name: e.target.value })} className="w-full p-3 border rounded-lg outline-none focus:ring-2 focus:ring-blue-500 font-bold" /></div>
-        <div><label className="block text-sm font-bold mb-1">Địa chỉ</label><input value={formData.address || ''} onChange={e => setFormData({ ...formData, address: e.target.value })} className="w-full p-3 border rounded-lg outline-none focus:ring-2 focus:ring-blue-500" /></div>
-        <div><label className="block text-sm font-bold mb-1">Số điện thoại</label><input value={formData.phone || ''} onChange={e => setFormData({ ...formData, phone: e.target.value })} className="w-full p-3 border rounded-lg outline-none focus:ring-2 focus:ring-blue-500" /></div>
-        <div><label className="block text-sm font-bold mb-1">Link Logo (URL hình ảnh)</label><input value={formData.logo || ''} onChange={e => setFormData({ ...formData, logo: e.target.value })} className="w-full p-3 border rounded-lg outline-none focus:ring-2 focus:ring-blue-500" placeholder="https://..." /></div>
-        <div>
-          <label className="block text-sm font-bold mb-1">Khổ giấy in mặc định</label>
-          <select value={formData.printDefaultSize || 'a4'} onChange={e => setFormData({ ...formData, printDefaultSize: e.target.value })} className="w-full p-3 border rounded-lg outline-none focus:ring-2 focus:ring-blue-500 bg-white">
-            <option value="a4">Giấy A4</option><option value="bill">Máy in nhiệt K80</option>
-          </select>
+    <div className="p-6 bg-gray-50 flex-1 overflow-auto space-y-6">
+      <h2 className="text-2xl font-bold">Cài đặt Cửa hàng & Quản lý Dữ liệu</h2>
+      
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+        {/* Cấu hình chung */}
+        <form onSubmit={handleSaveConfig} className="bg-white p-6 rounded-xl border shadow-sm space-y-4">
+          <h3 className="font-bold text-lg text-blue-800 border-b pb-2">Thông tin chung cửa hàng</h3>
+          <div><label className="block text-sm font-bold mb-1">Tên Cửa hàng</label><input value={formData.name || ''} onChange={e => setFormData({ ...formData, name: e.target.value })} className="w-full p-3 border rounded-lg outline-none focus:ring-2 focus:ring-blue-500 font-bold" /></div>
+          <div><label className="block text-sm font-bold mb-1">Địa chỉ</label><input value={formData.address || ''} onChange={e => setFormData({ ...formData, address: e.target.value })} className="w-full p-3 border rounded-lg outline-none focus:ring-2 focus:ring-blue-500" /></div>
+          <div><label className="block text-sm font-bold mb-1">Số điện thoại</label><input value={formData.phone || ''} onChange={e => setFormData({ ...formData, phone: e.target.value })} className="w-full p-3 border rounded-lg outline-none focus:ring-2 focus:ring-blue-500" /></div>
+          <div><label className="block text-sm font-bold mb-1">Link Logo (URL hình ảnh)</label><input value={formData.logo || ''} onChange={e => setFormData({ ...formData, logo: e.target.value })} className="w-full p-3 border rounded-lg outline-none focus:ring-2 focus:ring-blue-500" placeholder="https://..." /></div>
+          <div>
+            <label className="block text-sm font-bold mb-1">Khổ giấy in mặc định</label>
+            <select value={formData.printDefaultSize || 'a4'} onChange={e => setFormData({ ...formData, printDefaultSize: e.target.value })} className="w-full p-3 border rounded-lg outline-none focus:ring-2 focus:ring-blue-500 bg-white">
+              <option value="a4">Giấy A4</option><option value="bill">Máy in nhiệt K80</option>
+            </select>
+          </div>
+          <div><label className="block text-sm font-bold mb-1">Lời cảm ơn trên Hóa đơn</label><input value={formData.printFooterText || ''} onChange={e => setFormData({ ...formData, printFooterText: e.target.value })} className="w-full p-3 border rounded-lg outline-none focus:ring-2 focus:ring-blue-500" /></div>
+          <button type="submit" className="w-full bg-blue-600 text-white py-3 rounded-lg font-bold text-lg shadow hover:bg-blue-700 mt-2">Lưu Cấu Hình</button>
+        </form>
+
+        {/* Quản lý dữ liệu, Xóa & Xuất Excel */}
+        <div className="space-y-6">
+          <div className="bg-white p-6 rounded-xl border shadow-sm space-y-4">
+            <h3 className="font-bold text-lg text-emerald-800 border-b pb-2">Sao lưu dữ liệu Excel</h3>
+            <p className="text-xs text-gray-500">Tải toàn bộ danh sách Hàng hóa, Khách hàng và Nhà cung cấp ra file sao lưu dự phòng bất cứ lúc nào.</p>
+            <button onClick={exportAllDataExcel} className="w-full bg-emerald-600 text-white py-3 rounded-lg font-bold shadow hover:bg-emerald-700 flex items-center justify-center gap-2">
+              <Download size={18} /> Xuất toàn bộ dữ liệu ra Excel
+            </button>
+          </div>
+
+          <div className="bg-white p-6 rounded-xl border border-red-200 shadow-sm space-y-4">
+            <h3 className="font-bold text-lg text-red-600 border-b pb-2">Khu vực xóa dữ liệu nhanh</h3>
+            <p className="text-xs text-gray-500">Cẩn thận: Các thao tác dưới đây sẽ xóa vĩnh viễn dữ liệu tương ứng khỏi hệ thống cơ sở dữ liệu.</p>
+            <div className="space-y-3">
+              <button onClick={() => handleDeleteAllData('products', 'Toàn bộ Kho hàng')} className="w-full bg-red-50 text-red-600 border border-red-200 py-2.5 rounded-lg font-bold hover:bg-red-100 flex items-center justify-center gap-2">
+                <Trash2 size={16} /> Xóa sạch tất cả sản phẩm trong Kho
+              </button>
+              <button onClick={() => handleDeleteAllData('orders', 'Toàn bộ Lịch sử Bán hàng')} className="w-full bg-red-50 text-red-600 border border-red-200 py-2.5 rounded-lg font-bold hover:bg-red-100 flex items-center justify-center gap-2">
+                <Trash2 size={16} /> Xóa sạch toàn bộ Lịch sử bán hàng
+              </button>
+              <button onClick={() => handleDeleteAllData('customers', 'Toàn bộ Khách hàng')} className="w-full bg-red-50 text-red-600 border border-red-200 py-2.5 rounded-lg font-bold hover:bg-red-100 flex items-center justify-center gap-2">
+                <Trash2 size={16} /> Xóa sạch danh sách Khách hàng
+              </button>
+              <button onClick={() => handleDeleteAllData('suppliers', 'Toàn bộ Nhà cung cấp')} className="w-full bg-red-50 text-red-600 border border-red-200 py-2.5 rounded-lg font-bold hover:bg-red-100 flex items-center justify-center gap-2">
+                <Trash2 size={16} /> Xóa sạch danh sách Nhà cung cấp
+              </button>
+            </div>
+          </div>
         </div>
-        <div><label className="block text-sm font-bold mb-1">Lời cảm ơn trên Hóa đơn</label><input value={formData.printFooterText || ''} onChange={e => setFormData({ ...formData, printFooterText: e.target.value })} className="w-full p-3 border rounded-lg outline-none focus:ring-2 focus:ring-blue-500" /></div>
-        <button type="submit" className="w-full bg-blue-600 text-white py-3 rounded-lg font-bold text-lg shadow hover:bg-blue-700 mt-4">Lưu Cấu Hình</button>
-      </form>
+      </div>
     </div>
   );
 }
@@ -1306,21 +1322,14 @@ function StaffView({ staffList, showToast }) {
       <div className="bg-white border rounded-xl shadow-sm overflow-auto flex-1">
         <table className="w-full text-left">
           <thead className="bg-gray-100 border-b sticky top-0">
-            <tr>
-              <th className="p-4">Tên Nhân viên</th>
-              <th className="p-4">Tài khoản (Username / Email)</th>
-              <th className="p-4">Vai trò (Role)</th>
-              <th className="p-4 text-center">Hành động</th>
-            </tr>
+            <tr><th className="p-4">Tên Nhân viên</th><th className="p-4">Tài khoản (Username / Email)</th><th className="p-4">Vai trò (Role)</th><th className="p-4 text-center">Hành động</th></tr>
           </thead>
           <tbody>
             {staffList.map(s => (
               <tr key={s.id} className="border-b hover:bg-gray-50">
                 <td className="p-4 font-bold text-gray-800">{s.name}</td>
                 <td className="p-4 text-blue-600">{s.email || s.username}</td>
-                <td className="p-4">
-                  <span className={`px-3 py-1.5 rounded-full text-xs font-bold ${s.role === 'admin' ? 'bg-purple-100 text-purple-700' : 'bg-gray-100 text-gray-700'}`}>{s.role === 'admin' ? 'Quản trị viên' : 'Nhân viên'}</span>
-                </td>
+                <td className="p-4"><span className={`px-3 py-1.5 rounded-full text-xs font-bold ${s.role === 'admin' ? 'bg-purple-100 text-purple-700' : 'bg-gray-100 text-gray-700'}`}>{s.role === 'admin' ? 'Quản trị viên' : 'Nhân viên'}</span></td>
                 <td className="p-4 text-center">
                   {s.role !== 'admin' && (
                     <div className="flex justify-center gap-2">
@@ -1345,8 +1354,7 @@ function StaffView({ staffList, showToast }) {
           <div>
             <label className="block text-sm font-bold mb-1">Cấp quyền (Vai trò)</label>
             <select value={formData.role} onChange={e => setFormData({ ...formData, role: e.target.value })} className="w-full p-2.5 border rounded-lg outline-none focus:ring-2 focus:ring-blue-500 bg-white">
-              <option value="staff">Nhân viên (Bị giới hạn)</option>
-              <option value="admin">Quản trị viên (Toàn quyền)</option>
+              <option value="staff">Nhân viên (Bị giới hạn)</option><option value="admin">Quản trị viên (Toàn quyền)</option>
             </select>
           </div>
 
