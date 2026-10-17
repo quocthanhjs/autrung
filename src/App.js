@@ -18,7 +18,7 @@ const Modal = ({ isOpen, onClose, title, children, mw="max-w-md", noHeader=false
   return (
     <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-black/60 print:p-0 print:bg-white print:absolute print:inset-0">
       <div className={`bg-white rounded-xl shadow-2xl w-full ${mw} flex flex-col max-h-[90vh] print:max-h-none print:shadow-none`}>
-        {!noHeader && <div className="flex justify-between p-4 border-b no-print"><h3 className="font-bold text-lg">{title}</h3><button onClick={onClose}><X/></button></div>}
+        {!noHeader && <div className="flex justify-between p-4 border-b no-print"><h3 className="font-bold text-lg">{title}</h3><button type="button" onClick={onClose}><X/></button></div>}
         <div className="p-4 overflow-y-auto print:p-0 print:overflow-visible">{children}</div>
       </div>
     </div>
@@ -46,10 +46,10 @@ function OrderPrintModal({ order, storeConfig, onClose }) {
       <div className="bg-blue-50 p-3 border-b flex flex-wrap gap-3 items-center justify-between no-print shrink-0">
         <b className="text-blue-800">Tùy chọn Lưu Ảnh/In</b>
         <div className="flex gap-3 items-center text-sm">
-          <select value={opt.size} onChange={e=>setOpt({...opt, size: e.target.value})} className="p-1 border"><option value="bill">In nhiệt K80</option><option value="a4">Giấy A4</option></select>
-          <label><input type="checkbox" checked={opt.logo} onChange={e=>setOpt({...opt, logo: e.target.checked})}/> Logo</label>
-          <label><input type="checkbox" checked={opt.note} onChange={e=>setOpt({...opt, note: e.target.checked})}/> Ghi chú</label>
-          <label><input type="checkbox" checked={opt.bh} onChange={e=>setOpt({...opt, bh: e.target.checked})}/> B.Hành</label>
+          <select value={opt.size} onChange={e=>setOpt({...opt, size: e.target.value})} className="p-1 border bg-white"><option value="bill">In nhiệt K80</option><option value="a4">Giấy A4</option></select>
+          <label className="flex items-center gap-1 cursor-pointer"><input type="checkbox" checked={opt.logo} onChange={e=>setOpt({...opt, logo: e.target.checked})}/> Logo</label>
+          <label className="flex items-center gap-1 cursor-pointer"><input type="checkbox" checked={opt.note} onChange={e=>setOpt({...opt, note: e.target.checked})}/> G.Chú</label>
+          <label className="flex items-center gap-1 cursor-pointer"><input type="checkbox" checked={opt.bh} onChange={e=>setOpt({...opt, bh: e.target.checked})}/> B.Hành</label>
           <button onClick={saveJPG} disabled={loading} className="bg-blue-600 text-white px-3 py-1.5 rounded flex items-center gap-1 font-bold"><ImageIcon size={16}/> {loading ? 'Đang xuất...' : 'Lưu JPG'}</button>
           <button onClick={() => window.print()} className="bg-gray-600 text-white px-3 py-1.5 rounded flex items-center gap-1 font-bold"><Printer size={16}/> In giấy</button>
           <button onClick={onClose} className="text-red-500 font-bold ml-2">X</button>
@@ -203,7 +203,7 @@ function DashboardView({ d }) {
 
   return (
     <div className="p-4 overflow-auto bg-gray-50 flex-1 space-y-4">
-      <div className="flex justify-between"><h2 className="text-xl font-bold">Báo Cáo</h2><div className="flex gap-2"><select value={fm} onChange={e=>setFm(e.target.value)} className="p-1 border rounded"><option value="ALL">Cả năm</option>{[...Array(12)].map((_,i)=><option key={i} value={i+1}>Tháng {i+1}</option>)}</select><input type="number" value={fy} onChange={e=>setFy(e.target.value)} className="p-1 border rounded w-20"/></div></div>
+      <div className="flex justify-between"><h2 className="text-xl font-bold">Báo Cáo</h2><div className="flex gap-2"><select value={fm} onChange={e=>setFm(e.target.value)} className="p-1 border rounded bg-white"><option value="ALL">Cả năm</option>{[...Array(12)].map((_,i)=><option key={i} value={i+1}>Tháng {i+1}</option>)}</select><input type="number" value={fy} onChange={e=>setFy(e.target.value)} className="p-1 border rounded w-20"/></div></div>
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
         <StatCard icon={<TrendingUp/>} title="Doanh Thu" value={formatCurrency(stats.tr)} color="bg-blue-100 text-blue-600"/>
         <StatCard icon={<Package/>} title="Giá Vốn" value={formatCurrency(stats.tc)} color="bg-gray-200"/>
@@ -232,6 +232,8 @@ function DashboardView({ d }) {
 function POSView({ d, db, stId, u, cfg, t }) {
   const [cart, setCart] = useState([]); const [search, setSearch] = useState(''); const [selCus, setSelCus] = useState(null);
   const [printOrd, setPrintOrd] = useState(null); const [isProc, setIsProc] = useState(false);
+  const [moCus, setMoCus] = useState(false); const [fc, setFc] = useState({n:'',p:''});
+
   const addCart = (p) => setCart(pr => pr.find(i=>i.id===p.id) ? pr.map(i=>i.id===p.id?{...i, quantity:i.quantity+1}:i) : [...pr, {...p, quantity:1, cost: p.cost||0, note:'', warrantyValue:'', warrantyUnit:'tháng'}]);
   const updateCart = (id, f, v) => setCart(pr => pr.map(i=>i.id===id?{...i, [f]: (f==='price'||f==='quantity')?Number(v):v}:i));
   const tot = cart.reduce((s, i) => s + (i.price*i.quantity), 0);
@@ -249,10 +251,12 @@ function POSView({ d, db, stId, u, cfg, t }) {
     } catch(e) { t("Lỗi thanh toán!", "error"); } finally { setIsProc(false); }
   };
 
+  const saveCus = async(e) => { e.preventDefault(); const res = await addDoc(collection(db,'stores',stId,'customers'), {name:fc.n, phone:fc.p, totalDebt:0}); setSelCus({id:res.id, name:fc.n, phone:fc.p}); setMoCus(false); t("Đã thêm khách"); };
+
   return (
     <div className="flex h-full bg-gray-50">
       <div className="flex-1 flex flex-col p-3 border-r">
-        <input placeholder="Tìm sản phẩm..." value={search} onChange={e=>setSearch(e.target.value)} className="w-full p-2.5 mb-3 border rounded shadow-sm"/>
+        <input placeholder="Tìm sản phẩm..." value={search} onChange={e=>setSearch(e.target.value)} className="w-full p-2.5 mb-3 border rounded shadow-sm outline-none"/>
         <div className="flex-1 overflow-auto grid grid-cols-2 lg:grid-cols-3 gap-3">
           {d.products.filter(p=>p.name?.toLowerCase().includes(search.toLowerCase())).map(p=>(
             <div key={p.id} onClick={()=>addCart(p)} className="bg-white p-3 border rounded-lg cursor-pointer hover:border-blue-500 flex flex-col justify-between shadow-sm">
@@ -263,19 +267,22 @@ function POSView({ d, db, stId, u, cfg, t }) {
         </div>
       </div>
       <div className="w-[420px] flex flex-col bg-white shadow-xl">
-        <div className="p-3 border-b"><select value={selCus?selCus.id:''} onChange={e=>setSelCus(d.customers.find(c=>c.id===e.target.value)||null)} className="w-full p-2 border rounded"><option value="">-- Khách lẻ --</option>{d.customers.map(c=><option key={c.id} value={c.id}>{c.name}</option>)}</select></div>
+        <div className="p-3 border-b flex gap-2">
+          <select value={selCus?selCus.id:''} onChange={e=>setSelCus(d.customers.find(c=>c.id===e.target.value)||null)} className="flex-1 p-2 border rounded bg-white outline-none"><option value="">-- Khách lẻ --</option>{d.customers.map(c=><option key={c.id} value={c.id}>{c.name}</option>)}</select>
+          <button onClick={()=>setMoCus(true)} className="bg-blue-600 text-white px-4 rounded font-bold hover:bg-blue-700">+</button>
+        </div>
         <div className="flex-1 overflow-auto p-3 space-y-2 bg-gray-50">
           {cart.map(i => (
             <div key={i.id} className="bg-white p-2 border rounded shadow-sm">
               <div className="flex justify-between mb-1"><b className="text-sm">{i.name}</b><button onClick={()=>setCart(pr=>pr.filter(x=>x.id!==i.id))} className="text-red-500 font-bold bg-red-50 px-2 rounded text-xs">Xóa</button></div>
               <div className="flex gap-2 mb-1">
-                <div className="flex-1"><label className="text-[10px] text-gray-500">Giá bán</label><input type="number" value={i.price} onChange={e=>updateCart(i.id, 'price', e.target.value)} className="w-full p-1.5 border rounded text-blue-600 font-bold text-sm"/></div>
-                <div className="w-16"><label className="text-[10px] text-gray-500">SL</label><input type="number" value={i.quantity} onChange={e=>updateCart(i.id, 'quantity', e.target.value)} className="w-full p-1.5 border rounded text-center font-bold text-sm"/></div>
+                <div className="flex-1"><label className="text-[10px] text-gray-500">Giá bán</label><input type="number" value={i.price} onChange={e=>updateCart(i.id, 'price', e.target.value)} className="w-full p-1.5 border rounded text-blue-600 font-bold text-sm outline-none"/></div>
+                <div className="w-16"><label className="text-[10px] text-gray-500">SL</label><input type="number" value={i.quantity} onChange={e=>updateCart(i.id, 'quantity', e.target.value)} className="w-full p-1.5 border rounded text-center font-bold text-sm outline-none"/></div>
               </div>
               <div className="flex gap-1 mb-1">
-                <div className="flex-1"><label className="text-[10px] text-gray-500">Ghi chú(Màu/IMEI)</label><input value={i.note} onChange={e=>updateCart(i.id, 'note', e.target.value)} className="w-full p-1 border rounded text-xs"/></div>
-                <div className="w-12"><label className="text-[10px] text-gray-500">B.Hành</label><input type="number" value={i.warrantyValue} onChange={e=>updateCart(i.id, 'warrantyValue', e.target.value)} className="w-full p-1 border rounded text-xs text-center"/></div>
-                <div className="w-16"><label className="text-[10px] text-gray-500">Đ.Vị</label><select value={i.warrantyUnit} onChange={e=>updateCart(i.id, 'warrantyUnit', e.target.value)} className="w-full p-1 border rounded text-xs"><option value="ngày">Ngày</option><option value="tuần">Tuần</option><option value="tháng">Tháng</option><option value="năm">Năm</option></select></div>
+                <div className="flex-1"><label className="text-[10px] text-gray-500">Ghi chú(Màu/IMEI)</label><input value={i.note} onChange={e=>updateCart(i.id, 'note', e.target.value)} className="w-full p-1 border rounded text-xs outline-none"/></div>
+                <div className="w-12"><label className="text-[10px] text-gray-500">B.Hành</label><input type="number" value={i.warrantyValue} onChange={e=>updateCart(i.id, 'warrantyValue', e.target.value)} className="w-full p-1 border rounded text-xs text-center outline-none"/></div>
+                <div className="w-16"><label className="text-[10px] text-gray-500">Đ.Vị</label><select value={i.warrantyUnit} onChange={e=>updateCart(i.id, 'warrantyUnit', e.target.value)} className="w-full p-1 border rounded text-xs bg-white outline-none"><option value="ngày">Ngày</option><option value="tuần">Tuần</option><option value="tháng">Tháng</option><option value="năm">Năm</option></select></div>
               </div>
               <div className="text-right text-xs"><span className="text-gray-500">Thành tiền: </span><b className="text-blue-800 text-sm">{formatCurrency(i.price*i.quantity)}</b></div>
             </div>
@@ -292,6 +299,13 @@ function POSView({ d, db, stId, u, cfg, t }) {
         </div>
       </div>
       <OrderPrintModal order={printOrd} storeConfig={cfg} onClose={()=>setPrintOrd(null)} />
+      <Modal isOpen={moCus} onClose={()=>setMoCus(false)} title="Thêm Khách Hàng Mới">
+        <form onSubmit={saveCus} className="space-y-3">
+          <input required placeholder="Tên khách hàng *" onChange={e=>setFc({...fc,n:e.target.value})} className="w-full p-2 border rounded outline-none"/>
+          <input placeholder="Số điện thoại" onChange={e=>setFc({...fc,p:e.target.value})} className="w-full p-2 border rounded outline-none"/>
+          <button className="w-full bg-blue-600 text-white py-2 rounded font-bold">Lưu lại</button>
+        </form>
+      </Modal>
     </div>
   );
 }
@@ -318,7 +332,7 @@ function SalesHistoryView({ d, db, stId, cfg, t }) {
 
   return (
     <div className="flex-1 p-4 bg-gray-50 flex flex-col h-full overflow-hidden">
-      <div className="flex justify-between mb-4"><h2 className="text-xl font-bold">Lịch sử Bán Hàng</h2><input placeholder="Tìm mã / khách..." value={search} onChange={e=>setSearch(e.target.value)} className="p-2 border rounded w-64 shadow-sm"/></div>
+      <div className="flex justify-between mb-4"><h2 className="text-xl font-bold">Lịch sử Bán Hàng</h2><input placeholder="Tìm mã / khách..." value={search} onChange={e=>setSearch(e.target.value)} className="p-2 border rounded w-64 shadow-sm outline-none"/></div>
       <div className="flex-1 bg-white border rounded shadow-sm overflow-auto">
         <table className="w-full text-left"><thead className="bg-gray-100 sticky top-0"><tr><th className="p-3">Mã/Ngày</th><th className="p-3">Khách hàng</th><th className="p-3 w-1/3">Chi tiết (GC/BH)</th><th className="p-3">Tổng</th><th className="p-3 text-right">Thao tác</th></tr></thead><tbody>
           {ords.map(o=>(
@@ -345,13 +359,13 @@ function SalesHistoryView({ d, db, stId, cfg, t }) {
               <div key={i.id} className="border p-3 rounded bg-gray-50">
                 <p className="font-bold mb-2">{i.name}</p>
                 <div className="flex gap-2 mb-2">
-                  <div className="flex-1"><label className="text-xs text-gray-500">Giá mới</label><input type="number" value={i.price} onChange={e=>setEditOrd({...editOrd, items: editOrd.items.map(x=>x.id===i.id?{...x, price:Number(e.target.value)}:x)})} className="w-full p-2 border rounded"/></div>
-                  <div className="w-24"><label className="text-xs text-gray-500">Số lượng</label><input type="number" value={i.quantity} onChange={e=>setEditOrd({...editOrd, items: editOrd.items.map(x=>x.id===i.id?{...x, quantity:Number(e.target.value)}:x)})} className="w-full p-2 border rounded text-center"/></div>
+                  <div className="flex-1"><label className="text-xs text-gray-500">Giá mới</label><input type="number" value={i.price} onChange={e=>setEditOrd({...editOrd, items: editOrd.items.map(x=>x.id===i.id?{...x, price:Number(e.target.value)}:x)})} className="w-full p-2 border rounded outline-none"/></div>
+                  <div className="w-24"><label className="text-xs text-gray-500">Số lượng</label><input type="number" value={i.quantity} onChange={e=>setEditOrd({...editOrd, items: editOrd.items.map(x=>x.id===i.id?{...x, quantity:Number(e.target.value)}:x)})} className="w-full p-2 border rounded text-center outline-none"/></div>
                 </div>
                 <div className="flex gap-2">
-                  <div className="flex-1"><input placeholder="Ghi chú" value={i.note||''} onChange={e=>setEditOrd({...editOrd, items: editOrd.items.map(x=>x.id===i.id?{...x, note:e.target.value}:x)})} className="w-full p-1.5 border rounded text-xs"/></div>
-                  <div className="w-16"><input placeholder="BH" value={i.warrantyValue||''} onChange={e=>setEditOrd({...editOrd, items: editOrd.items.map(x=>x.id===i.id?{...x, warrantyValue:e.target.value}:x)})} className="w-full p-1.5 border rounded text-xs text-center"/></div>
-                  <div className="w-20"><select value={i.warrantyUnit||'tháng'} onChange={e=>setEditOrd({...editOrd, items: editOrd.items.map(x=>x.id===i.id?{...x, warrantyUnit:e.target.value}:x)})} className="w-full p-1.5 border rounded text-xs"><option value="ngày">Ngày</option><option value="tuần">Tuần</option><option value="tháng">Tháng</option><option value="năm">Năm</option></select></div>
+                  <div className="flex-1"><input placeholder="Ghi chú" value={i.note||''} onChange={e=>setEditOrd({...editOrd, items: editOrd.items.map(x=>x.id===i.id?{...x, note:e.target.value}:x)})} className="w-full p-1.5 border rounded text-xs outline-none"/></div>
+                  <div className="w-16"><input placeholder="BH" value={i.warrantyValue||''} onChange={e=>setEditOrd({...editOrd, items: editOrd.items.map(x=>x.id===i.id?{...x, warrantyValue:e.target.value}:x)})} className="w-full p-1.5 border rounded text-xs text-center outline-none"/></div>
+                  <div className="w-20"><select value={i.warrantyUnit||'tháng'} onChange={e=>setEditOrd({...editOrd, items: editOrd.items.map(x=>x.id===i.id?{...x, warrantyUnit:e.target.value}:x)})} className="w-full p-1.5 border rounded text-xs bg-white outline-none"><option value="ngày">Ngày</option><option value="tuần">Tuần</option><option value="tháng">Tháng</option><option value="năm">Năm</option></select></div>
                 </div>
               </div>
             ))}
@@ -378,8 +392,8 @@ function ImportView({ d, db, stId, u, t }) {
   };
   return (
     <div className="flex h-full bg-gray-50">
-      <div className="flex-1 p-4 border-r overflow-auto"><input placeholder="Tìm..." value={s} onChange={e=>setS(e.target.value)} className="w-full p-2 mb-3 border rounded"/><div className="grid grid-cols-3 gap-3">{d.products.filter(p=>p.name?.toLowerCase().includes(s.toLowerCase())).map(p=><div key={p.id} onClick={()=>setC(pr=>pr.find(x=>x.id===p.id)?pr.map(x=>x.id===p.id?{...x,q:x.q+1}:x):[...pr,{...p,q:1,ic:p.cost||0}])} className="bg-white p-3 border rounded cursor-pointer hover:border-purple-500"><b>{p.name}</b><br/><span className="text-purple-600 text-xs">{formatCurrency(p.cost)}</span></div>)}</div></div>
-      <div className="w-[350px] bg-white flex flex-col"><div className="p-3 border-b"><select value={sup?.id||''} onChange={e=>setSup(d.suppliers.find(x=>x.id===e.target.value)||null)} className="w-full p-2 border rounded"><option value="">-- NCC Lẻ --</option>{d.suppliers.map(x=><option key={x.id} value={x.id}>{x.name}</option>)}</select></div><div className="flex-1 p-3 overflow-auto">{c.map(i=><div key={i.id} className="bg-purple-50 p-2 mb-2 rounded border flex flex-col gap-1"><div className="flex justify-between"><b>{i.name}</b><button onClick={()=>setC(pr=>pr.filter(x=>x.id!==i.id))} className="text-red-500 text-xs">Xóa</button></div><div className="flex gap-2"><input type="number" value={i.ic} onChange={e=>upC(i.id,'ic',e.target.value)} className="w-full p-1 border rounded text-xs"/><input type="number" value={i.q} onChange={e=>upC(i.id,'q',e.target.value)} className="w-16 p-1 border rounded text-xs text-center"/></div></div>)}</div><div className="p-3 border-t"><b className="text-purple-600 text-lg block mb-2">{formatCurrency(tot)}</b><div className="flex gap-2"><button onClick={()=>handleImp('DEBT')} className="flex-1 bg-orange-100 text-orange-700 py-2 rounded font-bold">Nợ</button><button onClick={()=>handleImp('PAID')} className="flex-1 bg-purple-600 text-white py-2 rounded font-bold">Đã Trả</button></div></div></div>
+      <div className="flex-1 p-4 border-r overflow-auto"><input placeholder="Tìm..." value={s} onChange={e=>setS(e.target.value)} className="w-full p-2 mb-3 border rounded outline-none"/><div className="grid grid-cols-3 gap-3">{d.products.filter(p=>p.name?.toLowerCase().includes(s.toLowerCase())).map(p=><div key={p.id} onClick={()=>setC(pr=>pr.find(x=>x.id===p.id)?pr.map(x=>x.id===p.id?{...x,q:x.q+1}:x):[...pr,{...p,q:1,ic:p.cost||0}])} className="bg-white p-3 border rounded cursor-pointer hover:border-purple-500"><b>{p.name}</b><br/><span className="text-purple-600 text-xs">{formatCurrency(p.cost)}</span></div>)}</div></div>
+      <div className="w-[350px] bg-white flex flex-col"><div className="p-3 border-b"><select value={sup?.id||''} onChange={e=>setSup(d.suppliers.find(x=>x.id===e.target.value)||null)} className="w-full p-2 border rounded bg-white outline-none"><option value="">-- NCC Lẻ --</option>{d.suppliers.map(x=><option key={x.id} value={x.id}>{x.name}</option>)}</select></div><div className="flex-1 p-3 overflow-auto">{c.map(i=><div key={i.id} className="bg-purple-50 p-2 mb-2 rounded border flex flex-col gap-1"><div className="flex justify-between"><b>{i.name}</b><button onClick={()=>setC(pr=>pr.filter(x=>x.id!==i.id))} className="text-red-500 text-xs">Xóa</button></div><div className="flex gap-2"><input type="number" value={i.ic} onChange={e=>upC(i.id,'ic',e.target.value)} className="w-full p-1 border rounded text-xs outline-none"/><input type="number" value={i.q} onChange={e=>upC(i.id,'q',e.target.value)} className="w-16 p-1 border rounded text-xs text-center outline-none"/></div></div>)}</div><div className="p-3 border-t"><b className="text-purple-600 text-lg block mb-2">{formatCurrency(tot)}</b><div className="flex gap-2"><button onClick={()=>handleImp('DEBT')} className="flex-1 bg-orange-100 text-orange-700 py-2 rounded font-bold">Nợ</button><button onClick={()=>handleImp('PAID')} className="flex-1 bg-purple-600 text-white py-2 rounded font-bold">Đã Trả</button></div></div></div>
     </div>
   );
 }
@@ -389,7 +403,7 @@ function InventoryView({ d, db, stId, t }) {
   const save = async(e) => { e.preventDefault(); const p = {name:f.name, category:f.category||'', price:Number(f.price), cost:Number(f.cost||0), stock:Number(f.stock)}; if(f.id) await updateDoc(doc(db,'stores',stId,'products',f.id), p); else await addDoc(collection(db,'stores',stId,'products'), p); setMo(false); t("Đã lưu"); };
   const del = async(id) => { if(window.confirm("Xóa?")) { await deleteDoc(doc(db,'stores',stId,'products',id)); t("Đã xóa"); } };
   return (
-    <div className="p-4 bg-gray-50 flex-1 h-full flex flex-col"><div className="flex justify-between mb-4"><h2 className="text-xl font-bold">Kho Hàng</h2><div className="flex gap-2"><input placeholder="Tìm..." value={s} onChange={e=>setS(e.target.value)} className="p-2 border rounded"/><button onClick={()=>{setF({});setMo(true);}} className="bg-blue-600 text-white px-4 rounded font-bold">+ Thêm</button></div></div><div className="bg-white border rounded overflow-auto flex-1"><table className="w-full text-left text-sm"><thead className="bg-gray-100 border-b"><tr><th className="p-3">Tên</th><th className="p-3">Giá Vốn</th><th className="p-3">Giá Bán</th><th className="p-3">Tồn</th><th className="p-3 text-right">Hành động</th></tr></thead><tbody>{d.products.filter(x=>x.name?.toLowerCase().includes(s.toLowerCase())).map(p=><tr key={p.id} className="border-b"><td className="p-3 font-bold">{p.name}</td><td className="p-3">{formatCurrency(p.cost)}</td><td className="p-3 font-bold text-blue-600">{formatCurrency(p.price)}</td><td className="p-3">{p.stock}</td><td className="p-3 text-right"><button onClick={()=>{setF(p);setMo(true);}} className="text-blue-600 mr-3">Sửa</button><button onClick={()=>del(p.id)} className="text-red-600">Xóa</button></td></tr>)}</tbody></table></div><Modal isOpen={mo} onClose={()=>setMo(false)} title="Hàng hóa"><form onSubmit={save} className="space-y-3"><input required placeholder="Tên" value={f.name||''} onChange={e=>setF({...f,name:e.target.value})} className="w-full p-2 border rounded"/><input placeholder="Nhóm hàng" value={f.category||''} onChange={e=>setF({...f,category:e.target.value})} className="w-full p-2 border rounded"/><input required type="number" placeholder="Giá vốn" value={f.cost||''} onChange={e=>setF({...f,cost:e.target.value})} className="w-full p-2 border rounded"/><input required type="number" placeholder="Giá bán" value={f.price||''} onChange={e=>setF({...f,price:e.target.value})} className="w-full p-2 border rounded"/><input required type="number" placeholder="Tồn kho" value={f.stock||''} onChange={e=>setF({...f,stock:e.target.value})} className="w-full p-2 border rounded"/><button className="w-full bg-blue-600 text-white py-2 rounded font-bold">Lưu</button></form></Modal></div>
+    <div className="p-4 bg-gray-50 flex-1 h-full flex flex-col"><div className="flex justify-between mb-4"><h2 className="text-xl font-bold">Kho Hàng</h2><div className="flex gap-2"><input placeholder="Tìm..." value={s} onChange={e=>setS(e.target.value)} className="p-2 border rounded outline-none"/><button onClick={()=>{setF({});setMo(true);}} className="bg-blue-600 text-white px-4 rounded font-bold">+ Thêm</button></div></div><div className="bg-white border rounded overflow-auto flex-1"><table className="w-full text-left text-sm"><thead className="bg-gray-100 border-b"><tr><th className="p-3">Tên</th><th className="p-3">Giá Vốn</th><th className="p-3">Giá Bán</th><th className="p-3">Tồn</th><th className="p-3 text-right">Hành động</th></tr></thead><tbody>{d.products.filter(x=>x.name?.toLowerCase().includes(s.toLowerCase())).map(p=><tr key={p.id} className="border-b"><td className="p-3 font-bold">{p.name}</td><td className="p-3">{formatCurrency(p.cost)}</td><td className="p-3 font-bold text-blue-600">{formatCurrency(p.price)}</td><td className="p-3">{p.stock}</td><td className="p-3 text-right"><button onClick={()=>{setF(p);setMo(true);}} className="text-blue-600 mr-3">Sửa</button><button onClick={()=>del(p.id)} className="text-red-600">Xóa</button></td></tr>)}</tbody></table></div><Modal isOpen={mo} onClose={()=>setMo(false)} title="Hàng hóa"><form onSubmit={save} className="space-y-3"><input required placeholder="Tên" value={f.name||''} onChange={e=>setF({...f,name:e.target.value})} className="w-full p-2 border rounded outline-none"/><input placeholder="Nhóm hàng" value={f.category||''} onChange={e=>setF({...f,category:e.target.value})} className="w-full p-2 border rounded outline-none"/><input required type="number" placeholder="Giá vốn" value={f.cost||''} onChange={e=>setF({...f,cost:e.target.value})} className="w-full p-2 border rounded outline-none"/><input required type="number" placeholder="Giá bán" value={f.price||''} onChange={e=>setF({...f,price:e.target.value})} className="w-full p-2 border rounded outline-none"/><input required type="number" placeholder="Tồn kho" value={f.stock||''} onChange={e=>setF({...f,stock:e.target.value})} className="w-full p-2 border rounded outline-none"/><button className="w-full bg-blue-600 text-white py-2 rounded font-bold">Lưu</button></form></Modal></div>
   );
 }
 
@@ -398,7 +412,7 @@ function ContactManager({ type, d, db, stId, t }) {
   const save = async(e) => { e.preventDefault(); const p = {name:f.name, phone:f.phone||'', totalDebt:Number(f.totalDebt||0)}; if(f.id) await updateDoc(doc(db,'stores',stId,type,f.id), p); else await addDoc(collection(db,'stores',stId,type), p); setMo(false); t("Đã lưu"); };
   const del = async(id) => { if(window.confirm("Xóa?")) { await deleteDoc(doc(db,'stores',stId,type,id)); t("Đã xóa"); } };
   return (
-    <div className="p-4 bg-gray-50 flex-1 h-full flex flex-col"><div className="flex justify-between mb-4"><h2 className="text-xl font-bold">QL Liên hệ</h2><div className="flex gap-2"><input placeholder="Tìm..." value={s} onChange={e=>setS(e.target.value)} className="p-2 border rounded"/><button onClick={()=>{setF({});setMo(true);}} className="bg-blue-600 text-white px-4 rounded font-bold">+ Thêm</button></div></div><div className="bg-white border rounded overflow-auto flex-1"><table className="w-full text-left text-sm"><thead className="bg-gray-100 border-b"><tr><th className="p-3">Tên</th><th className="p-3">SĐT</th><th className="p-3">Nợ</th><th className="p-3 text-right">Hành động</th></tr></thead><tbody>{d.filter(x=>x.name?.toLowerCase().includes(s.toLowerCase())).map(c=><tr key={c.id} className="border-b"><td className="p-3 font-bold">{c.name}</td><td className="p-3">{c.phone}</td><td className="p-3 font-bold text-red-600">{formatCurrency(c.totalDebt)}</td><td className="p-3 text-right"><button onClick={()=>{setF(c);setMo(true);}} className="text-blue-600 mr-3">Sửa</button><button onClick={()=>del(c.id)} className="text-red-600">Xóa</button></td></tr>)}</tbody></table></div><Modal isOpen={mo} onClose={()=>setMo(false)} title="Liên hệ"><form onSubmit={save} className="space-y-3"><input required placeholder="Tên" value={f.name||''} onChange={e=>setF({...f,name:e.target.value})} className="w-full p-2 border rounded"/><input placeholder="SĐT" value={f.phone||''} onChange={e=>setF({...f,phone:e.target.value})} className="w-full p-2 border rounded"/><input type="number" placeholder="Nợ ban đầu" value={f.totalDebt||0} onChange={e=>setF({...f,totalDebt:e.target.value})} className="w-full p-2 border rounded"/><button className="w-full bg-blue-600 text-white py-2 rounded font-bold">Lưu</button></form></Modal></div>
+    <div className="p-4 bg-gray-50 flex-1 h-full flex flex-col"><div className="flex justify-between mb-4"><h2 className="text-xl font-bold">QL Liên hệ</h2><div className="flex gap-2"><input placeholder="Tìm..." value={s} onChange={e=>setS(e.target.value)} className="p-2 border rounded outline-none"/><button onClick={()=>{setF({});setMo(true);}} className="bg-blue-600 text-white px-4 rounded font-bold">+ Thêm</button></div></div><div className="bg-white border rounded overflow-auto flex-1"><table className="w-full text-left text-sm"><thead className="bg-gray-100 border-b"><tr><th className="p-3">Tên</th><th className="p-3">SĐT</th><th className="p-3">Nợ</th><th className="p-3 text-right">Hành động</th></tr></thead><tbody>{d.filter(x=>x.name?.toLowerCase().includes(s.toLowerCase())).map(c=><tr key={c.id} className="border-b"><td className="p-3 font-bold">{c.name}</td><td className="p-3">{c.phone}</td><td className="p-3 font-bold text-red-600">{formatCurrency(c.totalDebt)}</td><td className="p-3 text-right"><button onClick={()=>{setF(c);setMo(true);}} className="text-blue-600 mr-3">Sửa</button><button onClick={()=>del(c.id)} className="text-red-600">Xóa</button></td></tr>)}</tbody></table></div><Modal isOpen={mo} onClose={()=>setMo(false)} title="Liên hệ"><form onSubmit={save} className="space-y-3"><input required placeholder="Tên" value={f.name||''} onChange={e=>setF({...f,name:e.target.value})} className="w-full p-2 border rounded outline-none"/><input placeholder="SĐT" value={f.phone||''} onChange={e=>setF({...f,phone:e.target.value})} className="w-full p-2 border rounded outline-none"/><input type="number" placeholder="Nợ ban đầu" value={f.totalDebt||0} onChange={e=>setF({...f,totalDebt:e.target.value})} className="w-full p-2 border rounded outline-none"/><button className="w-full bg-blue-600 text-white py-2 rounded font-bold">Lưu</button></form></Modal></div>
   );
 }
 
@@ -407,7 +421,7 @@ function ExpenseView({ d, db, stId, t }) {
   const save = async(e) => { e.preventDefault(); await addDoc(collection(db,'stores',stId,'expenses'), {amount:Number(f.a), note:f.n, date:new Date().toISOString()}); setF({a:'',n:''}); t("Đã thêm"); };
   const del = async(id) => { if(window.confirm("Xóa?")) { await deleteDoc(doc(db,'stores',stId,'expenses',id)); t("Đã xóa"); } };
   return (
-    <div className="p-4 bg-gray-50 flex-1 h-full flex flex-col"><h2 className="text-xl font-bold mb-4">Chi phí</h2><form onSubmit={save} className="bg-white p-3 rounded border mb-4 flex gap-2"><input required type="number" placeholder="Số tiền" value={f.a} onChange={e=>setF({...f,a:e.target.value})} className="p-2 border rounded"/><input required placeholder="Nội dung" value={f.n} onChange={e=>setF({...f,n:e.target.value})} className="p-2 border rounded flex-1"/><button className="bg-orange-600 text-white px-6 rounded font-bold">Thêm</button></form><div className="bg-white border rounded overflow-auto flex-1"><table className="w-full text-left text-sm"><thead className="bg-gray-100 border-b"><tr><th className="p-3">Ngày</th><th className="p-3">Nội dung</th><th className="p-3">Tiền</th><th className="p-3 text-right">Xóa</th></tr></thead><tbody>{d.sort((a,b)=>new Date(b.date)-new Date(a.date)).map(e=><tr key={e.id} className="border-b"><td className="p-3">{formatDate(e.date)}</td><td className="p-3 font-bold">{e.note}</td><td className="p-3 text-orange-600 font-bold">{formatCurrency(e.amount)}</td><td className="p-3 text-right"><button onClick={()=>del(e.id)} className="text-red-600"><Trash2 size={16}/></button></td></tr>)}</tbody></table></div></div>
+    <div className="p-4 bg-gray-50 flex-1 h-full flex flex-col"><h2 className="text-xl font-bold mb-4">Chi phí</h2><form onSubmit={save} className="bg-white p-3 rounded border mb-4 flex gap-2"><input required type="number" placeholder="Số tiền" value={f.a} onChange={e=>setF({...f,a:e.target.value})} className="p-2 border rounded outline-none"/><input required placeholder="Nội dung" value={f.n} onChange={e=>setF({...f,n:e.target.value})} className="p-2 border rounded flex-1 outline-none"/><button className="bg-orange-600 text-white px-6 rounded font-bold">Thêm</button></form><div className="bg-white border rounded overflow-auto flex-1"><table className="w-full text-left text-sm"><thead className="bg-gray-100 border-b"><tr><th className="p-3">Ngày</th><th className="p-3">Nội dung</th><th className="p-3">Tiền</th><th className="p-3 text-right">Xóa</th></tr></thead><tbody>{d.sort((a,b)=>new Date(b.date)-new Date(a.date)).map(e=><tr key={e.id} className="border-b"><td className="p-3">{formatDate(e.date)}</td><td className="p-3 font-bold">{e.note}</td><td className="p-3 text-orange-600 font-bold">{formatCurrency(e.amount)}</td><td className="p-3 text-right"><button onClick={()=>del(e.id)} className="text-red-600"><Trash2 size={16}/></button></td></tr>)}</tbody></table></div></div>
   );
 }
 
@@ -415,14 +429,14 @@ function SettingsView({ cfg, db, stId, t }) {
   const [f, setF] = useState(cfg);
   const save = async(e) => { e.preventDefault(); await setDoc(doc(db,'stores',stId), f, {merge:true}); t("Đã lưu cài đặt"); };
   return (
-    <div className="p-4 bg-gray-50 flex-1 overflow-auto"><h2 className="text-xl font-bold mb-4">Cài đặt</h2><form onSubmit={save} className="bg-white p-6 rounded border max-w-lg space-y-4"><div><input placeholder="Tên CH" value={f.name||''} onChange={e=>setF({...f,name:e.target.value})} className="w-full p-2 border rounded mb-2"/><input placeholder="ĐC" value={f.address||''} onChange={e=>setF({...f,address:e.target.value})} className="w-full p-2 border rounded mb-2"/><input placeholder="SĐT" value={f.phone||''} onChange={e=>setF({...f,phone:e.target.value})} className="w-full p-2 border rounded mb-2"/><input placeholder="Logo URL" value={f.logo||''} onChange={e=>setF({...f,logo:e.target.value})} className="w-full p-2 border rounded mb-2"/><select value={f.printDefaultSize||'a4'} onChange={e=>setF({...f,printDefaultSize:e.target.value})} className="w-full p-2 border rounded mb-2"><option value="a4">Giấy A4</option><option value="bill">Máy Bill K80</option></select><input placeholder="Lời cảm ơn" value={f.printFooterText||''} onChange={e=>setF({...f,printFooterText:e.target.value})} className="w-full p-2 border rounded"/></div><button className="bg-blue-600 text-white w-full py-2 rounded font-bold">Lưu Cấu Hình</button></form></div>
+    <div className="p-4 bg-gray-50 flex-1 overflow-auto"><h2 className="text-xl font-bold mb-4">Cài đặt</h2><form onSubmit={save} className="bg-white p-6 rounded border max-w-lg space-y-4"><div><input placeholder="Tên CH" value={f.name||''} onChange={e=>setF({...f,name:e.target.value})} className="w-full p-2 border rounded mb-2 outline-none"/><input placeholder="ĐC" value={f.address||''} onChange={e=>setF({...f,address:e.target.value})} className="w-full p-2 border rounded mb-2 outline-none"/><input placeholder="SĐT" value={f.phone||''} onChange={e=>setF({...f,phone:e.target.value})} className="w-full p-2 border rounded mb-2 outline-none"/><input placeholder="Logo URL" value={f.logo||''} onChange={e=>setF({...f,logo:e.target.value})} className="w-full p-2 border rounded mb-2 outline-none"/><select value={f.printDefaultSize||'a4'} onChange={e=>setF({...f,printDefaultSize:e.target.value})} className="w-full p-2 border rounded mb-2 bg-white outline-none"><option value="a4">Giấy A4</option><option value="bill">Máy Bill K80</option></select><input placeholder="Lời cảm ơn" value={f.printFooterText||''} onChange={e=>setF({...f,printFooterText:e.target.value})} className="w-full p-2 border rounded outline-none"/></div><button className="bg-blue-600 text-white w-full py-2 rounded font-bold">Lưu Cấu Hình</button></form></div>
   );
 }
 
-// 5. NHÂN VIÊN & PHÂN QUYỀN (ĐÃ KHÔI PHỤC)
+// 5. SỬA ĐỔI NHÂN VIÊN & PHÂN QUYỀN
 function StaffManagerView({ d, db, auth, t }) {
-  const [f, setF] = useState({u:'',p:'',e:'',r:'staff',n:''});
-  const [perms, setPerms] = useState({tong_quan_xem:false, ban_hang:true, mua_nhap_hang:false, hh_danh_sach:false, kh_danh_sach:false, mua_ncc:false, quy_so_quy:false});
+  const [f, setF] = useState({id:'', u:'',p:'',e:'',r:'staff',n:''});
+  const [perms, setPerms] = useState({});
   const [mo, setMo] = useState(false);
   
   const permList = [
@@ -433,15 +447,45 @@ function StaffManagerView({ d, db, auth, t }) {
   ];
 
   const save = async(e) => {
-    e.preventDefault(); try {
-      const { getApp, initializeApp } = await import('firebase/app'); const { getAuth, createUserWithEmailAndPassword } = await import('firebase/auth');
-      let sApp; try { sApp = initializeApp(getApp().options, "SA"); } catch { sApp = getApp("SA"); }
-      const cr = await createUserWithEmailAndPassword(getAuth(sApp), f.e, f.p);
-      await setDoc(doc(db,'users_db',cr.user.uid), {username:f.u, email:f.e, name:f.n, role:f.r, permissions: f.r==='admin'?{}:perms});
-      await getAuth(sApp).signOut(); setMo(false); t("Đã thêm NV");
-    } catch(err) { t("Lỗi tạo NV", "error"); }
+    e.preventDefault(); 
+    try {
+      if(f.id) {
+        await updateDoc(doc(db,'users_db',f.id), {name:f.n, role:f.r, permissions: f.r==='admin'?{}:perms});
+        t("Đã cập nhật Nhân viên!"); setMo(false);
+      } else {
+        const { getApp, initializeApp } = await import('firebase/app'); const { getAuth, createUserWithEmailAndPassword } = await import('firebase/auth');
+        let sApp; try { sApp = initializeApp(getApp().options, "SA"); } catch { sApp = getApp("SA"); }
+        const cr = await createUserWithEmailAndPassword(getAuth(sApp), f.e, f.p);
+        await setDoc(doc(db,'users_db',cr.user.uid), {username:f.u, email:f.e, name:f.n, role:f.r, permissions: f.r==='admin'?{}:perms});
+        await getAuth(sApp).signOut(); setMo(false); t("Đã thêm NV");
+      }
+    } catch(err) { t("Lỗi tạo/sửa NV", "error"); }
   };
+
+  const resetPw = async () => {
+    if(!f.e) return;
+    try { await sendPasswordResetEmail(auth, f.e); t("Đã gửi link Reset MK vào Email!"); } 
+    catch(e) { t("Lỗi gửi link", "error"); }
+  };
+
   return (
-    <div className="p-4 bg-gray-50 flex-1"><div className="flex justify-between mb-4"><h2 className="text-xl font-bold">Nhân viên</h2><button onClick={()=>setMo(true)} className="bg-blue-600 text-white px-4 rounded font-bold">+ Thêm</button></div><div className="bg-white border rounded overflow-auto"><table className="w-full text-left text-sm"><thead className="bg-gray-100 border-b"><tr><th className="p-3">Tên</th><th className="p-3">User/Email</th><th className="p-3">Quyền</th><th className="p-3 text-right">Xóa</th></tr></thead><tbody>{d.map(s=><tr key={s.id} className="border-b"><td className="p-3 font-bold">{s.name}</td><td className="p-3 text-blue-600">{s.email||s.username}</td><td className="p-3">{s.role}</td><td className="p-3 text-right">{s.role!=='admin'&&<button onClick={()=>deleteDoc(doc(db,'users_db',s.id))} className="text-red-600"><Trash2 size={16}/></button>}</td></tr>)}</tbody></table></div><Modal isOpen={mo} onClose={()=>setMo(false)} title="Thêm NV"><form onSubmit={save} className="space-y-3"><input required placeholder="Tên" onChange={e=>setF({...f,n:e.target.value})} className="w-full p-2 border rounded"/><input required placeholder="User" onChange={e=>setF({...f,u:e.target.value})} className="w-full p-2 border rounded"/><input required type="email" placeholder="Email" onChange={e=>setF({...f,e:e.target.value})} className="w-full p-2 border rounded"/><input required type="password" placeholder="Pass" onChange={e=>setF({...f,p:e.target.value})} className="w-full p-2 border rounded"/><select onChange={e=>setF({...f,r:e.target.value})} className="w-full p-2 border rounded"><option value="staff">Nhân viên</option><option value="admin">Quản trị</option></select>{f.r === 'staff' && (<div className="border p-3 rounded bg-gray-50"><p className="font-bold text-xs mb-2 text-blue-800">Cấp quyền Tab cho Nhân viên này:</p><div className="grid grid-cols-2 gap-2 text-xs">{permList.map(p=><label key={p.id} className="flex items-center gap-1 cursor-pointer"><input type="checkbox" checked={perms[p.id]} onChange={e=>setPerms({...perms, [p.id]: e.target.checked})}/> {p.l}</label>)}</div></div>)}<button className="w-full bg-blue-600 text-white py-2 rounded font-bold">Tạo Nhân viên</button></form></Modal></div>
+    <div className="p-4 bg-gray-50 flex-1"><div className="flex justify-between mb-4"><h2 className="text-xl font-bold">Nhân viên</h2><button onClick={()=>{setF({id:'', u:'',p:'',e:'',r:'staff',n:''}); setPerms({}); setMo(true);}} className="bg-blue-600 text-white px-4 py-2 rounded font-bold">+ Thêm NV</button></div><div className="bg-white border rounded overflow-auto"><table className="w-full text-left text-sm"><thead className="bg-gray-100 border-b"><tr><th className="p-3">Tên</th><th className="p-3">User/Email</th><th className="p-3">Quyền</th><th className="p-3 text-right">Thao tác</th></tr></thead><tbody>{d.map(s=><tr key={s.id} className="border-b"><td className="p-3 font-bold">{s.name}</td><td className="p-3 text-blue-600">{s.email||s.username}</td><td className="p-3">{s.role}</td><td className="p-3 text-right flex justify-end gap-2">{s.role!=='admin'&&<button onClick={()=>{setF({id:s.id, u:s.username||'', e:s.email||'', r:s.role, n:s.name}); setPerms(s.permissions||{}); setMo(true);}} className="text-blue-600 bg-blue-50 p-2 rounded"><Edit size={16}/></button>}{s.role!=='admin'&&<button onClick={()=>deleteDoc(doc(db,'users_db',s.id))} className="text-red-600 bg-red-50 p-2 rounded"><Trash2 size={16}/></button>}</td></tr>)}</tbody></table></div>
+    <Modal isOpen={mo} onClose={()=>setMo(false)} title={f.id ? "Sửa Nhân Viên" : "Thêm Nhân Viên"}>
+      <form onSubmit={save} className="space-y-3">
+        <input required placeholder="Tên" value={f.n} onChange={e=>setF({...f,n:e.target.value})} className="w-full p-2 border rounded outline-none"/>
+        <input required disabled={!!f.id} placeholder="User" value={f.u} onChange={e=>setF({...f,u:e.target.value})} className={`w-full p-2 border rounded outline-none ${f.id?'bg-gray-100 text-gray-500':''}`}/>
+        <input required disabled={!!f.id} type="email" placeholder="Email" value={f.e} onChange={e=>setF({...f,e:e.target.value})} className={`w-full p-2 border rounded outline-none ${f.id?'bg-gray-100 text-gray-500':''}`}/>
+        {!f.id && <input required type="password" placeholder="Pass (từ 6 ký tự)" onChange={e=>setF({...f,p:e.target.value})} className="w-full p-2 border rounded outline-none"/>}
+        <select value={f.r} onChange={e=>setF({...f,r:e.target.value})} className="w-full p-2 border rounded bg-white outline-none"><option value="staff">Nhân viên</option><option value="admin">Quản trị viên</option></select>
+        {f.r === 'staff' && (
+          <div className="border p-3 rounded bg-gray-50"><p className="font-bold text-xs mb-2 text-blue-800">Cấp quyền Tab cho Nhân viên này:</p><div className="grid grid-cols-2 gap-2 text-xs">{permList.map(p=><label key={p.id} className="flex items-center gap-1 cursor-pointer"><input type="checkbox" checked={perms[p.id]||false} onChange={e=>setPerms({...perms, [p.id]: e.target.checked})}/> {p.l}</label>)}</div></div>
+        )}
+        <div className="flex gap-2 pt-2">
+          {f.id && <button type="button" onClick={resetPw} className="flex-1 bg-orange-100 text-orange-700 py-2 rounded font-bold">Gửi Email Reset MK</button>}
+          <button type="submit" className="flex-1 bg-blue-600 text-white py-2 rounded font-bold">Lưu lại</button>
+        </div>
+      </form>
+    </Modal>
+    </div>
   );
 }
