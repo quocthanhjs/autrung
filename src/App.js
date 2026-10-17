@@ -62,18 +62,17 @@ const getDeviceInfo = () => {
 
 const Modal = ({ isOpen, onClose, title, children, maxWidth = "max-w-md", hideHeaderInPrint = false }) => {
  if (!isOpen) return null;
- let containerClass = "bg-white rounded-xl shadow-2xl w-full " + maxWidth + " overflow-hidden flex flex-col max-h-[90vh] print:max-h-none print:shadow-none print:rounded-none print:w-full";
+ let containerClass = "bg-white rounded-xl shadow-2xl w-full " + maxWidth + " overflow-hidden flex flex-col max-h-[90vh]";
  return (
- <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm print:bg-transparent print:p-0">
+ <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm">
  <div className={containerClass}>
  {!hideHeaderInPrint && (
- <div className="flex justify-between items-center p-4 border-b shrink-0 print:hidden">
+ <div className="flex justify-between items-center p-4 border-b shrink-0">
  <h3 className="text-lg font-semibold text-gray-800">{title}</h3>
  <button type="button" onClick={onClose} className="text-gray-400 hover:text-gray-600"><X size={20} /></button>
  </div>
  )}
- <div className="p-4 overflow-y-auto print:overflow-visible print:p-0">{children}</div>
- </div>
+ <div className="p-4 overflow-y-auto">{children}</div>
  </div>
  );
 };
@@ -161,7 +160,6 @@ export default function EnhancedPOS() {
  const [suppliers, setSuppliers] = useState([]);
  const [expenses, setExpenses] = useState([]);
  const [loading, setLoading] = useState(true);
- const [toast, setToast] = useState(null);
  const storeId = 'main_store';
 
  useEffect(() => {
@@ -203,6 +201,7 @@ setUserData({ role: null, name: '', perms: {} });
  return () => { unsubStore(); unsubProducts(); unsubOrders(); unsubImports(); unsubCustomers(); unsubSuppliers(); unsubExpenses(); };
  }, [user]);
 
+ const [toast, setToast] = useState(null);
  const showToast = (msg, type = 'success') => { setToast({ msg, type }); setTimeout(() => setToast(null), 3000); };
 
  if (loading) return <div className="min-h-screen flex items-center justify-center bg-gray-50"><div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600"></div></div>;
@@ -228,12 +227,8 @@ setUserData({ role: null, name: '', perms: {} });
  return userData.perms[t.permId];
  });
 
- const printStyle = "@media print { body * { visibility: hidden; } .print-container, .print-container * { visibility: visible; } .print-container { position: absolute; left: 0; top: 0; width: 100%; padding: 20px; } .no-print { display: none !important; } }";
-
  return (
- <>
- <style>{printStyle}</style>
- <div className="min-h-screen bg-gray-50 flex flex-col md:flex-row font-sans text-sm md:text-base print:hidden">
+ <div className="min-h-screen bg-gray-50 flex flex-col md:flex-row font-sans text-sm md:text-base">
  <aside className="w-full md:w-64 bg-white border-r border-gray-200 flex flex-col shadow-sm z-10 shrink-0">
  <div className="p-5 border-b border-gray-100 flex items-center gap-3">
  {storeConfig.logo ? <img src={storeConfig.logo} alt="Logo" className="w-10 h-10 object-contain rounded bg-white p-1 shadow-sm" /> : <div className="bg-blue-600 text-white p-2 rounded-lg"><ShoppingBag size={24} /></div>}
@@ -259,7 +254,7 @@ setUserData({ role: null, name: '', perms: {} });
  
 {activeTab === 'dashboard' && <DashboardView orders={orders} imports={imports} expenses={expenses} customers={customers} suppliers={suppliers} showToast={showToast} />}
  {activeTab === 'pos' && <POSView products={products} customers={customers} db={db} storeId={storeId} user={user} storeConfig={storeConfig} showToast={showToast} />}
- {activeTab === 'sales_history' && <SalesHistoryView orders={orders} products={products} storeConfig={storeConfig} db={db} storeId={storeId} showToast={showToast} />}
+ {activeTab === 'sales_history' && <SalesHistoryView orders={orders} products={products} customers={customers} storeConfig={storeConfig} db={db} storeId={storeId} user={user} showToast={showToast} />}
  {activeTab === 'imports' && <ImportView products={products} suppliers={suppliers} db={db} storeId={storeId} user={user} showToast={showToast} />}
  {activeTab === 'products' && <InventoryView products={products} orders={orders} imports={imports} db={db} storeId={storeId} showToast={showToast} />}
  {activeTab === 'customers' && <ContactManager type="customers" data={customers} orders={orders} db={db} storeId={storeId} showToast={showToast} />}
@@ -269,7 +264,6 @@ setUserData({ role: null, name: '', perms: {} });
  {activeTab === 'staff' && <StaffManagerView db={db} showToast={showToast} />}
  </main>
  </div>
- </>
  );
 }
 
@@ -546,7 +540,7 @@ className="mt-3 text-xs text-orange-600 font-bold hover:underline flex items-cen
  );
 }
 
-function SalesHistoryView({ orders, products, storeConfig, db, storeId, showToast }) {
+function SalesHistoryView({ orders, products, customers, storeConfig, db, storeId, user, showToast }) {
  const currentDate = new Date();
  const [filterType, setFilterType] = useState('day'); 
 const [selectedDate, setSelectedDate] = useState(currentDate.toISOString().split('T')[0]);
@@ -557,16 +551,90 @@ const [selectedDate, setSelectedDate] = useState(currentDate.toISOString().split
 const [editingOrder, setEditingOrder] = useState(null);
  const [viewingOrderPrint, setViewingOrderPrint] = useState(null);
  const [printType, setPrintType] = useState('bill');
+ const [isCreatingOrder, setIsCreatingOrder] = useState(false);
+
+ const [newCart, setNewCart] = useState([]);
+ const [newCustomerId, setNewCustomerId] = useState('');
+ const [newIsDebt, setNewIsDebt] = useState(false);
+ const [newOrderNote, setNewOrderNote] = useState('');
+ const [productSearchTerm, setProductSearchTerm] = useState('');
 
  useEffect(() => {
  const handleKeyDown = (e) => {
  if (e.key === 'Escape') {
  setViewingOrderPrint(null);
+ setIsCreatingOrder(false);
  }
  };
  window.addEventListener('keydown', handleKeyDown);
  return () => window.removeEventListener('keydown', handleKeyDown);
  }, []);
+
+ const filteredProductsForNew = useMemo(() => {
+ return products.filter(p => p.name && p.name.toLowerCase().includes(productSearchTerm.toLowerCase()));
+ }, [products, productSearchTerm]);
+
+ const newCartTotal = newCart.reduce((sum, item) => sum + (item.price * item.quantity), 0);
+
+ const handleAddProductToNewOrder = (p) => {
+ setNewCart(prev => {
+ const exist = prev.find(i => i.id === p.id);
+ if (exist) return prev.map(i => i.id === p.id ? {...i, quantity: i.quantity + 1} : i);
+ return [...prev, { ...p, quantity: 1, price: p.price, warrantyValue: '', warrantyUnit: 'tháng', note: '' }];
+ });
+ };
+
+ const handleCreateNewOrderSubmit = async (e) => {
+ e.preventDefault();
+ if (newCart.length === 0 || (newIsDebt && !newCustomerId)) {
+ return showToast("Vui lòng chọn sản phẩm và khách hàng (nếu ghi nợ)!", "error");
+ }
+ try {
+ const c = customers.find(cust => cust.id === newCustomerId);
+ const orderData = {
+ customerId: newCustomerId || null,
+ customerName: c ? c.name : 'Khách lẻ',
+ sellerUid: user.uid,
+ note: newOrderNote,
+ items: newCart.map(i => ({
+ id: i.id,
+ name: i.name,
+ price: i.price,
+ cost: i.cost || 0,
+ quantity: i.quantity,
+ warrantyValue: i.warrantyValue || '',
+ warrantyUnit: i.warrantyUnit || 'tháng',
+ note: i.note || ''
+ })),
+ total: newCartTotal,
+ totalCost: newCart.reduce((s, item) => s + ((item.cost || 0) * item.quantity), 0),
+ status: newIsDebt ? 'DEBT' : 'PAID',
+ date: new Date().toISOString()
+ };
+
+ await addDoc(collection(db, 'stores', storeId, 'orders'), orderData);
+ let batch = writeBatch(db);
+ newCart.forEach(item => {
+ const p = products.find(prod => prod.id === item.id);
+ if (p) {
+ batch.update(doc(db, 'stores', storeId, 'products', p.id), { stock: p.stock - item.quantity });
+ }
+ });
+ if (newIsDebt && c) {
+ batch.update(doc(db, 'stores', storeId, 'customers', newCustomerId), { totalDebt: (c.totalDebt || 0) + newCartTotal });
+ }
+ await batch.commit();
+
+ setNewCart([]);
+ setNewCustomerId('');
+ setNewIsDebt(false);
+ setNewOrderNote('');
+ setIsCreatingOrder(false);
+ showToast("Đã tạo hóa đơn bán hàng thành công!");
+ } catch (err) {
+ showToast("Lỗi khi tạo hóa đơn", "error");
+ }
+ };
 
  const handlePrintAsImage = async () => {
  if (!window.html2canvas) {
@@ -579,7 +647,7 @@ const [editingOrder, setEditingOrder] = useState(null);
  const dataUrl = canvas.toDataURL("image/png");
  const win = window.open('', '_blank');
  win.document.write(`
- <html><head><title>In Hóa Đơn (Ảnh)</title></head>
+ <html><head><title>Hóa Đơn Bán Hàng</title></head>
  <body style="margin:0; background:#f3f4f6; display:flex; flex-direction:column; align-items:center; padding:20px; font-family:sans-serif;">
  <div style="margin-bottom:20px; display:flex; gap:10px;">
  <button onclick="window.print()" style="padding:10px 20px; font-size:14px; font-weight:bold; cursor:pointer; background:#2563eb; color:white; border:none; border-radius:8px; box-shadow:0 2px 4px rgba(0,0,0,0.1);">🖨️ Tiến Hành In</button>
@@ -685,9 +753,12 @@ const [editingOrder, setEditingOrder] = useState(null);
  <h2 className="text-2xl font-bold text-gray-800 flex items-center gap-2"><Receipt className="text-blue-600"/> Quản lý Bán Hàng</h2>
  <p className="text-xs text-gray-500 mt-0.5">Theo dõi chi tiết giá nhập, giá bán, tiền lãi, bảo hành, ghi chú và in ấn chuẩn KiotViet</p>
  </div>
- <div className="relative w-full sm:w-64">
+ <div className="flex items-center gap-3 w-full sm:w-auto">
+ <div className="relative flex-1 sm:w-64">
  <Search size={16} className="absolute left-3 top-3 text-gray-400"/>
  <input placeholder="Tìm mã HĐ hoặc tên khách..." value={searchTerm} onChange={e=>setSearchTerm(e.target.value)} className="w-full pl-9 pr-3 py-2 border rounded-lg bg-white outline-none text-sm"/>
+ </div>
+ <button onClick={() => setIsCreatingOrder(true)} className="bg-blue-600 text-white px-4 py-2 rounded-lg font-bold flex items-center gap-2 shrink-0"><Plus size={18}/> Tạo HĐ Bán Hàng</button>
  </div>
  </div>
 
@@ -788,7 +859,7 @@ const [editingOrder, setEditingOrder] = useState(null);
  </td>
  <td className="p-3 text-right">
  <div className="flex justify-end gap-1">
- <button onClick={() => setViewingOrderPrint(o)} title="In lại hóa đơn" className="text-green-600 bg-green-50 p-2 rounded-lg hover:bg-green-100"><Printer size={16}/></button>
+ <button onClick={() => setViewingOrderPrint(o)} title="Xem chi tiết & In ảnh" className="text-green-600 bg-green-50 p-2 rounded-lg hover:bg-green-100"><Printer size={16}/></button>
  <button onClick={() => setEditingOrder(JSON.parse(JSON.stringify(o)))} title="Chỉnh sửa hóa đơn" className="text-blue-600 bg-blue-50 p-2 rounded-lg hover:bg-blue-100"><Edit size={16}/></button>
  <button onClick={() => handleDeleteOrder(o)} title="Xóa hóa đơn" className="text-red-600 bg-red-50 p-2 rounded-lg hover:bg-red-100"><Trash2 size={16}/></button>
  </div>
@@ -802,6 +873,63 @@ const [editingOrder, setEditingOrder] = useState(null);
  </tbody>
  </table>
  </div>
+
+ <Modal isOpen={isCreatingOrder} onClose={() => setIsCreatingOrder(false)} title="Tạo Hóa Đơn Bán Hàng" maxWidth="max-w-4xl">
+ <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+ <div className="flex flex-col border rounded-xl p-3 bg-gray-50">
+ <h4 className="font-bold text-sm text-gray-700 mb-2">Chọn sản phẩm bán</h4>
+ <input placeholder="Tìm sản phẩm..." value={productSearchTerm} onChange={e=>setProductSearchTerm(e.target.value)} className="w-full p-2 border rounded-lg mb-2 text-xs bg-white outline-none"/>
+ <div className="flex-1 max-h-72 overflow-y-auto space-y-2">
+ {filteredProductsForNew.map(p => (
+ <div key={p.id} onClick={() => handleAddProductToNewOrder(p)} className="p-2.5 bg-white rounded-lg border cursor-pointer hover:border-blue-500 flex justify-between items-center shadow-sm">
+ <div><p className="font-bold text-xs text-gray-800">{p.name}</p><p className="text-[10px] text-gray-500">Kho: {p.stock} | Giá: {formatCurrency(p.price)}</p></div>
+ <Plus size={16} className="text-blue-600"/>
+ </div>
+ ))}
+ </div>
+ </div>
+
+ <div className="flex flex-col border rounded-xl p-3 bg-white">
+ <h4 className="font-bold text-sm text-gray-700 mb-2">Giỏ hàng hiện tại</h4>
+ <div className="flex-1 max-h-56 overflow-y-auto space-y-2 mb-3">
+ {newCart.map(item => (
+ <div key={item.id} className="p-2 border rounded-lg bg-gray-50 text-xs space-y-1">
+ <div className="flex justify-between font-bold text-gray-800">
+ <span>{item.name}</span>
+ <button onClick={() => setNewCart(c => c.filter(i => i.id !== item.id))} className="text-red-500"><X size={14}/></button>
+ </div>
+ <div className="flex justify-between items-center gap-2">
+ <input type="number" value={item.price} onChange={e=> { const val = Number(e.target.value); setNewCart(c => c.map(i => i.id === item.id ? {...i, price: val} : i)); }} className="w-24 p-1 border rounded font-bold text-blue-600 text-center bg-white"/>
+ <div className="flex items-center gap-1">
+ <button onClick={() => setNewCart(c => c.map(i => i.id === item.id ? {...i, quantity: Math.max(1, i.quantity - 1)} : i))} className="px-2 border rounded bg-white">-</button>
+ <span className="font-bold">{item.quantity}</span>
+ <button onClick={() => setNewCart(c => c.map(i => i.id === item.id ? {...i, quantity: i.quantity + 1} : i))} className="px-2 border rounded bg-white">+</button>
+ </div>
+ </div>
+ </div>
+ ))}
+ {newCart.length === 0 && <div className="text-center text-gray-400 py-10 text-xs">Chưa có sản phẩm trong giỏ</div>}
+ </div>
+
+ <div className="space-y-3 pt-2 border-t">
+ <select value={newCustomerId} onChange={e=>setNewCustomerId(e.target.value)} className="w-full p-2 border rounded-lg text-xs bg-white font-medium outline-none">
+ <option value="">-- Khách lẻ (Tiền mặt) --</option>
+ {customers.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
+ </select>
+ <textarea placeholder="Ghi chú đơn hàng..." value={newOrderNote} onChange={e=>setNewOrderNote(e.target.value)} className="w-full p-2 border rounded-lg text-xs outline-none h-12 resize-none"></textarea>
+ <div className="flex gap-2">
+ <button type="button" onClick={() => setNewIsDebt(false)} className={"flex-1 py-1.5 rounded-lg border font-bold text-xs " + (!newIsDebt ? 'bg-blue-600 text-white' : 'bg-white')}>Tiền mặt</button>
+ <button type="button" onClick={() => setNewIsDebt(true)} className={"flex-1 py-1.5 rounded-lg border font-bold text-xs " + (newIsDebt ? 'bg-orange-500 text-white' : 'bg-white')}>Ghi nợ</button>
+ </div>
+ <div className="flex justify-between items-center font-bold text-sm">
+ <span>Tổng thanh toán:</span>
+ <span className="text-blue-600 text-base">{formatCurrency(newCartTotal)}</span>
+ </div>
+ <button onClick={handleCreateNewOrderSubmit} disabled={newCart.length === 0 || (newIsDebt && !newCustomerId)} className="w-full bg-green-600 disabled:bg-gray-300 text-white font-bold p-2.5 rounded-lg text-xs">Hoàn Tất & Tạo Hóa Đơn</button>
+ </div>
+ </div>
+ </div>
+ </Modal>
 
  <Modal isOpen={!!editingOrder} onClose={() => setEditingOrder(null)} title="Chỉnh sửa Hóa đơn">
  {editingOrder && (
@@ -860,10 +988,10 @@ const [editingOrder, setEditingOrder] = useState(null);
  )}
  </Modal>
 
- <Modal isOpen={!!viewingOrderPrint} onClose={() => setViewingOrderPrint(null)} title="In Lại Hóa Đơn" maxWidth="max-w-2xl" hideHeaderInPrint={true}>
+ <Modal isOpen={!!viewingOrderPrint} onClose={() => setViewingOrderPrint(null)} title="Xem Chi Tiết & In Hóa Đơn" maxWidth="max-w-2xl">
  {viewingOrderPrint && (
  <div className="space-y-4">
- <div className="flex justify-between items-center bg-gray-100 p-3 rounded-lg no-print">
+ <div className="flex justify-between items-center bg-gray-100 p-3 rounded-lg">
  <div className="flex items-center gap-3">
  <span className="text-xs font-bold text-gray-700">Khổ giấy in:</span>
  <select value={printType} onChange={e => setPrintType(e.target.value)} className="p-1.5 border rounded text-xs bg-white font-medium outline-none">
@@ -873,22 +1001,21 @@ const [editingOrder, setEditingOrder] = useState(null);
  </select>
  </div>
  <div className="flex gap-2">
- <button onClick={() => window.print()} className="bg-blue-600 hover:bg-blue-700 text-white px-4 py-1.5 rounded-lg text-xs font-bold flex items-center gap-1.5 shadow"><Printer size={14}/> In Phiếu</button>
- <button onClick={handlePrintAsImage} className="bg-emerald-600 hover:bg-emerald-700 text-white px-4 py-1.5 rounded-lg text-xs font-bold flex items-center gap-1.5 shadow"><Image size={14}/> Tải/In Ảnh</button>
+ <button onClick={handlePrintAsImage} className="bg-emerald-600 hover:bg-emerald-700 text-white px-4 py-1.5 rounded-lg text-xs font-bold flex items-center gap-1.5 shadow"><Image size={14}/> Xem Ảnh & In Trực Tiếp</button>
  <button onClick={() => setViewingOrderPrint(null)} className="bg-gray-200 hover:bg-gray-300 text-gray-700 px-3 py-1.5 rounded-lg text-xs font-bold">Thoát (ESC)</button>
  </div>
  </div>
 
- <div id="print-invoice-area" className="p-6 bg-white print-container text-gray-900 font-sans">
+ <div id="print-invoice-area" className="p-6 bg-white text-gray-900 font-sans border rounded-xl shadow-sm">
  {printType === 'bill' ? (
  <div>
  <div className="text-center mb-4 border-b pb-3">
- {storeConfig?.logo && (<img src={storeConfig.logo} alt="Logo" className="max-h-12 mx-auto mb-1 object-contain grayscale print:grayscale-0" />)}
- <h2 className="text-base font-bold">{storeConfig?.name || 'SmartPOS Pro'}</h2>
- <p className="text-xs text-gray-600">ĐC: {storeConfig?.address || '...'}</p>
- <p className="text-xs text-gray-600">SĐT: {storeConfig?.phone || '...'}</p>
- <h1 className="text-sm font-bold mt-2 uppercase tracking-wide">HÓA ĐƠN BÁN HÀNG</h1>
- <p className="text-[10px] text-gray-500">Mã: #{viewingOrderPrint.id.slice(0,6).toUpperCase()} | Ngày: {formatDate(viewingOrderPrint.date)}</p>
+ {storeConfig?.logo && (<img src={storeConfig.logo} alt="Logo" className="max-h-12 mx-auto mb-2 object-contain block" />)}
+ <h2 className="text-base font-bold text-center w-full">{storeConfig?.name || 'SmartPOS Pro'}</h2>
+ <p className="text-xs text-gray-600 text-center w-full">ĐC: {storeConfig?.address || '...'}</p>
+ <p className="text-xs text-gray-600 text-center w-full">SĐT: {storeConfig?.phone || '...'}</p>
+ <h1 className="text-sm font-bold mt-3 uppercase tracking-wide text-center w-full">HÓA ĐƠN BÁN HÀNG</h1>
+ <p className="text-[10px] text-gray-500 text-center w-full mt-1">Mã: #{viewingOrderPrint.id.slice(0,6).toUpperCase()} | Ngày: {formatDate(viewingOrderPrint.date)}</p>
  </div>
  <div className="mb-3 text-xs">
  <p><strong>Khách hàng:</strong> {viewingOrderPrint.customerName}</p>
@@ -925,20 +1052,13 @@ const [editingOrder, setEditingOrder] = useState(null);
  </div>
  ) : (
  <div className={printType === 'a4' ? 'max-w-[210mm] mx-auto p-4' : 'max-w-[148mm] mx-auto p-2'}>
- <div className="flex justify-between items-start border-b-2 border-gray-800 pb-4 mb-4">
- <div className="flex items-center gap-3">
- {storeConfig?.logo && (<img src={storeConfig.logo} alt="Logo" className="max-h-16 object-contain" />)}
- <div>
- <h2 className="text-lg font-bold">{storeConfig?.name || 'SmartPOS Pro'}</h2>
- <p className="text-xs text-gray-600">Địa chỉ: {storeConfig?.address || '...'}</p>
- <p className="text-xs text-gray-600">Điện thoại: {storeConfig?.phone || '...'}</p>
- </div>
- </div>
- <div className="text-right">
- <h1 className="text-xl font-bold uppercase text-blue-800">PHIẾU BÁN HÀNG</h1>
- <p className="text-xs text-gray-500 mt-1">Mã HĐ: #{viewingOrderPrint.id.slice(0,6).toUpperCase()}</p>
- <p className="text-xs text-gray-500">Ngày: {formatDate(viewingOrderPrint.date)}</p>
- </div>
+ <div className="border-b-2 border-gray-800 pb-4 mb-4 text-center">
+ {storeConfig?.logo && (<img src={storeConfig.logo} alt="Logo" className="max-h-16 mx-auto mb-2 object-contain block" />)}
+ <h2 className="text-lg font-bold w-full">{storeConfig?.name || 'SmartPOS Pro'}</h2>
+ <p className="text-xs text-gray-600 w-full">Địa chỉ: {storeConfig?.address || '...'}</p>
+ <p className="text-xs text-gray-600 w-full">Điện thoại: {storeConfig?.phone || '...'}</p>
+ <h1 className="text-xl font-bold uppercase text-blue-800 mt-3 w-full">PHIẾU BÁN HÀNG</h1>
+ <p className="text-xs text-gray-500 mt-1 w-full">Mã HĐ: #{viewingOrderPrint.id.slice(0,6).toUpperCase()} | Ngày: {formatDate(viewingOrderPrint.date)}</p>
  </div>
 
  <div className="grid grid-cols-2 gap-4 bg-gray-50 p-3 rounded-lg border border-gray-200 text-xs mb-4">
@@ -1904,7 +2024,7 @@ let batch = writeBatch(db);
  const dataUrl = canvas.toDataURL("image/png");
  const win = window.open('', '_blank');
  win.document.write(`
- <html><head><title>In Hóa Đơn (Ảnh)</title></head>
+ <html><head><title>Hóa Đơn Bán Hàng</title></head>
  <body style="margin:0; background:#f3f4f6; display:flex; flex-direction:column; align-items:center; padding:20px; font-family:sans-serif;">
  <div style="margin-bottom:20px; display:flex; gap:10px;">
  <button onclick="window.print()" style="padding:10px 20px; font-size:14px; font-weight:bold; cursor:pointer; background:#2563eb; color:white; border:none; border-radius:8px; box-shadow:0 2px 4px rgba(0,0,0,0.1);">🖨️ Tiến Hành In</button>
@@ -2009,28 +2129,27 @@ let batch = writeBatch(db);
  </form>
  </Modal>
 
- <Modal isOpen={showModal} onClose={() => setShowModal(false)} title="Hóa đơn" maxWidth="max-w-2xl" hideHeaderInPrint={true}>
+ <Modal isOpen={showModal} onClose={() => setShowModal(false)} title="Hóa đơn" maxWidth="max-w-2xl">
  {completedOrder && (
  <div className="space-y-4">
- <div className="flex justify-between items-center bg-gray-100 p-3 rounded-lg no-print">
- <span className="text-xs font-bold text-gray-700">Đã thanh toán thành công! Nhấn ESC hoặc nút dưới để bỏ qua in:</span>
+ <div className="flex justify-between items-center bg-gray-100 p-3 rounded-lg">
+ <span className="text-xs font-bold text-gray-700">Thanh toán thành công! Chọn hành động bên dưới:</span>
  <div className="flex gap-2">
- <button onClick={() => window.print()} className="bg-blue-600 hover:bg-blue-700 text-white px-4 py-1.5 rounded-lg text-xs font-bold flex items-center gap-1.5 shadow"><Printer size={14}/> In Phiếu</button>
- <button onClick={handlePrintAsImage} className="bg-emerald-600 hover:bg-emerald-700 text-white px-4 py-1.5 rounded-lg text-xs font-bold flex items-center gap-1.5 shadow"><Image size={14}/> Tải/In Ảnh</button>
+ <button onClick={handlePrintAsImage} className="bg-emerald-600 hover:bg-emerald-700 text-white px-4 py-1.5 rounded-lg text-xs font-bold flex items-center gap-1.5 shadow"><Image size={14}/> Xem Ảnh & In Trực Tiếp</button>
  <button onClick={() => setShowModal(false)} className="bg-gray-200 hover:bg-gray-300 text-gray-700 px-3 py-1.5 rounded-lg text-xs font-bold">Bỏ qua (ESC)</button>
  </div>
  </div>
 
- <div id="print-invoice-area-pos" className="p-6 bg-white print-container text-gray-900 font-sans">
+ <div id="print-invoice-area-pos" className="p-6 bg-white text-gray-900 font-sans border rounded-xl shadow-sm">
  {printType === 'bill' ? (
  <div>
  <div className="text-center mb-4 border-b pb-3">
- {storeConfig?.logo && (<img src={storeConfig.logo} alt="Logo" className="max-h-12 mx-auto mb-1 object-contain grayscale print:grayscale-0" />)}
- <h2 className="text-base font-bold">{storeConfig?.name || 'SmartPOS Pro'}</h2>
- <p className="text-xs text-gray-600">ĐC: {storeConfig?.address || '...'}</p>
- <p className="text-xs text-gray-600">SĐT: {storeConfig?.phone || '...'}</p>
- <h1 className="text-sm font-bold mt-2 uppercase tracking-wide">HÓA ĐƠN BÁN HÀNG</h1>
- <p className="text-[10px] text-gray-500">Mã: #{completedOrder.id.slice(0,6).toUpperCase()} | Ngày: {formatDate(completedOrder.date)}</p>
+ {storeConfig?.logo && (<img src={storeConfig.logo} alt="Logo" className="max-h-12 mx-auto mb-2 object-contain block" />)}
+ <h2 className="text-base font-bold text-center w-full">{storeConfig?.name || 'SmartPOS Pro'}</h2>
+ <p className="text-xs text-gray-600 text-center w-full">ĐC: {storeConfig?.address || '...'}</p>
+ <p className="text-xs text-gray-600 text-center w-full">SĐT: {storeConfig?.phone || '...'}</p>
+ <h1 className="text-sm font-bold mt-3 uppercase tracking-wide text-center w-full">HÓA ĐƠN BÁN HÀNG</h1>
+ <p className="text-[10px] text-gray-500 text-center w-full mt-1">Mã: #{completedOrder.id.slice(0,6).toUpperCase()} | Ngày: {formatDate(completedOrder.date)}</p>
  </div>
  <div className="mb-3 text-xs">
  <p><strong>Khách hàng:</strong> {completedOrder.customerName}</p>
@@ -2067,20 +2186,13 @@ let batch = writeBatch(db);
  </div>
  ) : (
  <div className={printType === 'a4' ? 'max-w-[210mm] mx-auto p-4' : 'max-w-[148mm] mx-auto p-2'}>
- <div className="flex justify-between items-start border-b-2 border-gray-800 pb-4 mb-4">
- <div className="flex items-center gap-3">
- {storeConfig?.logo && (<img src={storeConfig.logo} alt="Logo" className="max-h-16 object-contain" />)}
- <div>
- <h2 className="text-lg font-bold">{storeConfig?.name || 'SmartPOS Pro'}</h2>
- <p className="text-xs text-gray-600">Địa chỉ: {storeConfig?.address || '...'}</p>
- <p className="text-xs text-gray-600">Điện thoại: {storeConfig?.phone || '...'}</p>
- </div>
- </div>
- <div className="text-right">
- <h1 className="text-xl font-bold uppercase text-blue-800">PHIẾU BÁN HÀNG</h1>
- <p className="text-xs text-gray-500 mt-1">Mã HĐ: #{completedOrder.id.slice(0,6).toUpperCase()}</p>
- <p className="text-xs text-gray-500">Ngày: {formatDate(completedOrder.date)}</p>
- </div>
+ <div className="border-b-2 border-gray-800 pb-4 mb-4 text-center">
+ {storeConfig?.logo && (<img src={storeConfig.logo} alt="Logo" className="max-h-16 mx-auto mb-2 object-contain block" />)}
+ <h2 className="text-lg font-bold w-full">{storeConfig?.name || 'SmartPOS Pro'}</h2>
+ <p className="text-xs text-gray-600 w-full">Địa chỉ: {storeConfig?.address || '...'}</p>
+ <p className="text-xs text-gray-600 w-full">Điện thoại: {storeConfig?.phone || '...'}</p>
+ <h1 className="text-xl font-bold uppercase text-blue-800 mt-3 w-full">PHIẾU BÁN HÀNG</h1>
+ <p className="text-xs text-gray-500 mt-1 w-full">Mã HĐ: #{completedOrder.id.slice(0,6).toUpperCase()} | Ngày: {formatDate(completedOrder.date)}</p>
  </div>
 
  <div className="grid grid-cols-2 gap-4 bg-gray-50 p-3 rounded-lg border border-gray-200 text-xs mb-4">
@@ -2320,4 +2432,3 @@ setCart([]); setSupplierId(''); setIsDebt(false); showToast("Nhập hàng thành
  </div>
  );
 }
-
