@@ -1020,102 +1020,102 @@ const [editingOrder, setEditingOrder] = useState(null);
  <div>
  <div className="text-center mb-4 border-b pb-3">
  {storeConfig?.logo && (<img src={storeConfig.logo} alt="Logo" className="max-h-12 mx-auto mb-2 object-contain block" />)}
- <h2 className="text-base font-bold text-center w-full">{storeConfig?.name || 'SmartPOS Pro'}</h2>
- <p className="text-xs text-gray-600 text-center w-full">ĐC: {storeConfig?.address || '...'}</p>
- <p className="text-xs text-gray-600 text-center w-full">SĐT: {storeConfig?.phone || '...'}</p>
- <h1 className="text-sm font-bold mt-3 uppercase tracking-wide text-center w-full">HÓA ĐƠN BÁN HÀNG</h1>
- <p className="text-[10px] text-gray-500 text-center w-full mt-1">Mã: #{viewingOrderPrint.id.slice(0,6).toUpperCase()} | Ngày: {formatDate(viewingOrderPrint.date)}</p>
+ <h2 className="text-sm font-bold text-center w-full">{storeConfig?.name || 'SmartPOS Pro'}</h2>
+ <p className="text-[10px] text-gray-600 text-center w-full">ĐC: {storeConfig?.address || '...'}</p>
+ <p className="text-[10px] text-gray-600 text-center w-full">SĐT: {storeConfig?.phone || '...'}</p>
+ <h1 className="text-xs font-bold mt-3 uppercase tracking-wide text-center w-full">HÓA ĐƠN BÁN HÀNG</h1>
+ <p className="text-[9px] text-gray-500 text-center w-full mt-1">Mã: #{viewingOrderPrint.id.slice(0,6).toUpperCase()} | Ngày: {formatDate(viewingOrderPrint.date)}</p>
  </div>
- <div className="mb-3 text-xs">
+ <div className="mb-3 text-[10px]">
  <p><strong>Khách hàng:</strong> {viewingOrderPrint.customerName}</p>
  {viewingOrderPrint.phone && <p><strong>SĐT:</strong> {viewingOrderPrint.phone}</p>}
  </div>
- <table className="w-full text-[11px] mb-4">
- <thead className="border-b border-gray-800">
- <tr><th className="py-1.5 text-left">Sản phẩm</th><th className="py-1.5 text-center w-8">SL</th><th className="py-1.5 text-right w-20">Thành tiền</th></tr>
+ <table className="w-full text-[9px] mb-4 border-collapse border border-gray-400">
+ <thead className="border-b border-gray-800 bg-gray-100">
+ <tr><th className="py-1 px-1 border border-gray-400 text-left">Sản phẩm</th><th className="py-1 px-1 border border-gray-400 text-center w-6">SL</th><th className="py-1 px-1 border border-gray-400 text-right w-16">Thành tiền</th></tr>
  </thead>
  <tbody>
  {viewingOrderPrint.items.map((i, x) => (
- <tr key={x} className="border-b border-dashed border-gray-200">
- <td className="py-1.5">
+ <tr key={x} className="border-b border-gray-300">
+ <td className="py-1 px-1 border border-gray-300">
  <p className="font-bold">{i.name}</p>
  {(i.warrantyValue || i.note) && (
- <p className="text-[10px] text-gray-500">
+ <p className="text-[8px] text-gray-500">
  {i.warrantyValue ? `BH: ${i.warrantyValue} ${i.warrantyUnit} ` : ''}
  {i.note ? `| ${i.note}` : ''}
  </p>
  )}
  </td>
- <td className="py-1.5 text-center align-top">{i.quantity}</td>
- <td className="py-1.5 text-right align-top font-medium">{formatCurrency(i.price * i.quantity)}</td>
+ <td className="py-1 px-1 border border-gray-400 text-center align-top">{i.quantity}</td>
+ <td className="py-1 px-1 border border-gray-400 text-right align-top font-medium">{formatCurrency(i.price * i.quantity)}</td>
  </tr>
  ))}
  </tbody>
- <tfoot className="border-t border-gray-800 font-bold">
- <tr><td colSpan="2" className="py-2 text-right">TỔNG CỘNG:</td><td className="py-2 text-right text-sm">{formatCurrency(viewingOrderPrint.total)}</td></tr>
+ <tfoot className="border-t border-gray-800 font-bold bg-gray-50">
+ <tr><td colSpan="2" className="py-1.5 px-1 border border-gray-400 text-right">TỔNG CỘNG:</td><td className="py-1.5 px-1 border border-gray-400 text-right text-xs">{formatCurrency(viewingOrderPrint.total)}</td></tr>
  </tfoot>
  </table>
- <div className="text-center text-[10px] text-gray-500 mt-6 pt-2 border-t border-dashed">
+ <div className="text-center text-[9px] text-gray-500 mt-4 pt-2 border-t border-dashed">
  <p>Cảm ơn quý khách và hẹn gặp lại!</p>
  </div>
  </div>
  ) : (
- <div className={printType === 'a4' ? 'max-w-[210mm] mx-auto p-4' : 'max-w-[148mm] mx-auto p-2'}>
- <div className="border-b-2 border-gray-800 pb-4 mb-4 text-center">
- {storeConfig?.logo && (<img src={storeConfig.logo} alt="Logo" className="max-h-16 mx-auto mb-2 object-contain block" />)}
- <h2 className="text-lg font-bold w-full">{storeConfig?.name || 'SmartPOS Pro'}</h2>
- <p className="text-xs text-gray-600 w-full">Địa chỉ: {storeConfig?.address || '...'}</p>
- <p className="text-xs text-gray-600 w-full">Điện thoại: {storeConfig?.phone || '...'}</p>
- <h1 className="text-xl font-bold uppercase text-blue-800 mt-3 w-full">PHIẾU BÁN HÀNG</h1>
- <p className="text-xs text-gray-500 mt-1 w-full">Mã HĐ: #{viewingOrderPrint.id.slice(0,6).toUpperCase()} | Ngày: {formatDate(viewingOrderPrint.date)}</p>
+ <div className={printType === 'a4' ? 'max-w-[210mm] mx-auto p-4 text-[9px]' : 'max-w-[148mm] mx-auto p-2 text-[9px]'}>
+ <div className="border-b-2 border-gray-800 pb-3 mb-3 text-center">
+ {storeConfig?.logo && (<img src={storeConfig.logo} alt="Logo" className="max-h-12 mx-auto mb-1.5 object-contain block" />)}
+ <h2 className="text-sm font-bold w-full">{storeConfig?.name || 'SmartPOS Pro'}</h2>
+ <p className="text-[9px] text-gray-600 w-full">Địa chỉ: {storeConfig?.address || '...'}</p>
+ <p className="text-[9px] text-gray-600 w-full">Điện thoại: {storeConfig?.phone || '...'}</p>
+ <h1 className="text-sm font-bold uppercase text-blue-800 mt-2 w-full">PHIẾU BÁN HÀNG</h1>
+ <p className="text-[9px] text-gray-500 mt-0.5 w-full">Mã HĐ: #{viewingOrderPrint.id.slice(0,6).toUpperCase()} | Ngày: {formatDate(viewingOrderPrint.date)}</p>
  </div>
 
- <div className="grid grid-cols-2 gap-4 bg-gray-50 p-3 rounded-lg border border-gray-200 text-xs mb-4">
- <div><span className="text-gray-500">Khách hàng:</span> <strong className="text-gray-800 text-sm">{viewingOrderPrint.customerName}</strong></div>
+ <div className="grid grid-cols-2 gap-2 bg-gray-50 p-2 rounded border border-gray-200 text-[9px] mb-3">
+ <div><span className="text-gray-500">Khách hàng:</span> <strong className="text-gray-800 text-xs">{viewingOrderPrint.customerName}</strong></div>
  <div><span className="text-gray-500">Trạng thái:</span> <strong className="text-blue-600">{viewingOrderPrint.status === 'PAID' ? 'Đã thanh toán' : 'Ghi nợ'}</strong></div>
  </div>
 
- <table className="w-full text-[11px] mb-6 border-collapse border border-gray-400">
+ <table className="w-full text-[9px] mb-4 border-collapse border border-gray-400">
  <thead>
- <tr className="bg-gray-100 border-b-2 border-gray-400 text-gray-800">
- <th className="py-2 px-1 border border-gray-400 text-center">STT</th>
- <th className="py-2 px-2 border border-gray-400 text-left">Tên sản phẩm</th>
- <th className="py-2 px-1 border border-gray-400 text-center">SL</th>
- <th className="py-2 px-2 border border-gray-400 text-right">Đơn giá</th>
- <th className="py-2 px-2 border border-gray-400 text-right">Thành tiền</th>
- <th className="py-2 px-1 border border-gray-400 text-center">Bảo hành</th>
- <th className="py-2 px-2 border border-gray-400 text-left w-20">Ghi chú</th>
+ <tr className="bg-gray-100 border-b border-gray-400 text-gray-800">
+ <th className="py-1 px-1 border border-gray-400 text-center w-6">STT</th>
+ <th className="py-1 px-2 border border-gray-400 text-left">Tên sản phẩm</th>
+ <th className="py-1 px-1 border border-gray-400 text-center w-6">SL</th>
+ <th className="py-1 px-2 border border-gray-400 text-right">Đơn giá</th>
+ <th className="py-1 px-2 border border-gray-400 text-right">Thành tiền</th>
+ <th className="py-1 px-1 border border-gray-400 text-center">Bảo hành</th>
+ <th className="py-1 px-2 border border-gray-400 text-left w-16">Ghi chú</th>
  </tr>
  </thead>
  <tbody>
  {viewingOrderPrint.items.map((i, x) => (
  <tr key={x} className="border-b border-gray-300">
- <td className="py-1.5 px-1 border border-gray-300 text-center">{x + 1}</td>
- <td className="py-1.5 px-2 border border-gray-300 font-medium">{i.name}</td>
- <td className="py-1.5 px-1 border border-gray-300 text-center font-bold">{i.quantity}</td>
- <td className="py-1.5 px-2 border border-gray-300 text-right">{formatCurrency(i.price)}</td>
- <td className="py-1.5 px-2 border border-gray-300 text-right font-bold">{formatCurrency(i.price * i.quantity)}</td>
- <td className="py-1.5 px-1 border border-gray-300 text-center text-gray-600">{i.warrantyValue ? `${i.warrantyValue} ${i.warrantyUnit}` : ''}</td>
- <td className="py-1.5 px-2 border border-gray-300 text-gray-600">{i.note || ''}</td>
+ <td className="py-1 px-1 border border-gray-300 text-center">{x + 1}</td>
+ <td className="py-1 px-2 border border-gray-300 font-medium">{i.name}</td>
+ <td className="py-1 px-1 border border-gray-300 text-center font-bold">{i.quantity}</td>
+ <td className="py-1 px-2 border border-gray-300 text-right">{formatCurrency(i.price)}</td>
+ <td className="py-1 px-2 border border-gray-300 text-right font-bold">{formatCurrency(i.price * i.quantity)}</td>
+ <td className="py-1 px-1 border border-gray-300 text-center text-gray-600">{i.warrantyValue ? `${i.warrantyValue} ${i.warrantyUnit}` : ''}</td>
+ <td className="py-1 px-2 border border-gray-300 text-gray-600">{i.note || ''}</td>
  </tr>
  ))}
  </tbody>
  <tfoot>
- <tr className="border-t-2 border-gray-400 font-bold text-xs bg-gray-50">
- <td colSpan="4" className="py-2.5 px-2 border border-gray-400 text-right text-gray-800">TỔNG CỘNG THANH TOÁN:</td>
- <td colSpan="3" className="py-2.5 px-2 border border-gray-400 text-right text-blue-600 text-sm">{formatCurrency(viewingOrderPrint.total)}</td>
+ <tr className="border-t-2 border-gray-400 font-bold text-[9px] bg-gray-50">
+ <td colSpan="4" className="py-1.5 px-2 border border-gray-400 text-right text-gray-800">TỔNG CỘNG THANH TOÁN:</td>
+ <td colSpan="3" className="py-1.5 px-2 border border-gray-400 text-right text-blue-600 text-xs">{formatCurrency(viewingOrderPrint.total)}</td>
  </tr>
  </tfoot>
  </table>
 
- <div className="grid grid-cols-2 gap-8 text-center pt-8 text-xs">
+ <div className="grid grid-cols-2 gap-8 text-center pt-4 text-[9px]">
  <div>
  <p className="font-bold">Khách hàng ký nhận</p>
- <p className="text-gray-400 italic mt-1">(Ký, ghi rõ họ tên)</p>
+ <p className="text-gray-400 italic mt-0.5">(Ký, ghi rõ họ tên)</p>
  </div>
  <div>
  <p className="font-bold">Người bán hàng</p>
- <p className="text-gray-400 italic mt-1">(Ký, ghi rõ họ tên)</p>
+ <p className="text-gray-400 italic mt-0.5">(Ký, ghi rõ họ tên)</p>
  </div>
  </div>
  </div>
@@ -2162,102 +2162,102 @@ let batch = writeBatch(db);
  <div>
  <div className="text-center mb-4 border-b pb-3">
  {storeConfig?.logo && (<img src={storeConfig.logo} alt="Logo" className="max-h-12 mx-auto mb-2 object-contain block" />)}
- <h2 className="text-base font-bold text-center w-full">{storeConfig?.name || 'SmartPOS Pro'}</h2>
- <p className="text-xs text-gray-600 text-center w-full">ĐC: {storeConfig?.address || '...'}</p>
- <p className="text-xs text-gray-600 text-center w-full">SĐT: {storeConfig?.phone || '...'}</p>
- <h1 className="text-sm font-bold mt-3 uppercase tracking-wide text-center w-full">HÓA ĐƠN BÁN HÀNG</h1>
- <p className="text-[10px] text-gray-500 text-center w-full mt-1">Mã: #{completedOrder.id.slice(0,6).toUpperCase()} | Ngày: {formatDate(completedOrder.date)}</p>
+ <h2 className="text-sm font-bold text-center w-full">{storeConfig?.name || 'SmartPOS Pro'}</h2>
+ <p className="text-[10px] text-gray-600 text-center w-full">ĐC: {storeConfig?.address || '...'}</p>
+ <p className="text-[10px] text-gray-600 text-center w-full">SĐT: {storeConfig?.phone || '...'}</p>
+ <h1 className="text-xs font-bold mt-3 uppercase tracking-wide text-center w-full">HÓA ĐƠN BÁN HÀNG</h1>
+ <p className="text-[9px] text-gray-500 text-center w-full mt-1">Mã: #{completedOrder.id.slice(0,6).toUpperCase()} | Ngày: {formatDate(completedOrder.date)}</p>
  </div>
- <div className="mb-3 text-xs">
+ <div className="mb-3 text-[10px]">
  <p><strong>Khách hàng:</strong> {completedOrder.customerName}</p>
  {completedOrder.phone && <p><strong>SĐT:</strong> {completedOrder.phone}</p>}
  </div>
- <table className="w-full text-[11px] mb-4">
- <thead className="border-b border-gray-800">
- <tr><th className="py-1.5 text-left">Sản phẩm</th><th className="py-1.5 text-center w-8">SL</th><th className="py-1.5 text-right w-20">Thành tiền</th></tr>
+ <table className="w-full text-[9px] mb-4 border-collapse border border-gray-400">
+ <thead className="border-b border-gray-800 bg-gray-100">
+ <tr><th className="py-1 px-1 border border-gray-400 text-left">Sản phẩm</th><th className="py-1 px-1 border border-gray-400 text-center w-6">SL</th><th className="py-1 px-1 border border-gray-400 text-right w-16">Thành tiền</th></tr>
  </thead>
  <tbody>
  {completedOrder.items.map((i, x) => (
- <tr key={x} className="border-b border-dashed border-gray-200">
- <td className="py-1.5">
+ <tr key={x} className="border-b border-gray-300">
+ <td className="py-1 px-1 border border-gray-300">
  <p className="font-bold">{i.name}</p>
  {(i.warrantyValue || i.note) && (
- <p className="text-[10px] text-gray-500">
+ <p className="text-[8px] text-gray-500">
  {i.warrantyValue ? `BH: ${i.warrantyValue} ${i.warrantyUnit} ` : ''}
  {i.note ? `| ${i.note}` : ''}
  </p>
  )}
  </td>
- <td className="py-1.5 text-center align-top">{i.quantity}</td>
- <td className="py-1.5 text-right align-top font-medium">{formatCurrency(i.price * i.quantity)}</td>
+ <td className="py-1 px-1 border border-gray-400 text-center align-top">{i.quantity}</td>
+ <td className="py-1 px-1 border border-gray-400 text-right align-top font-medium">{formatCurrency(i.price * i.quantity)}</td>
  </tr>
  ))}
  </tbody>
- <tfoot className="border-t border-gray-800 font-bold">
- <tr><td colSpan="2" className="py-2 text-right">TỔNG CỘNG:</td><td className="py-2 text-right text-sm">{formatCurrency(completedOrder.total)}</td></tr>
+ <tfoot className="border-t border-gray-800 font-bold bg-gray-50">
+ <tr><td colSpan="2" className="py-1.5 px-1 border border-gray-400 text-right">TỔNG CỘNG:</td><td className="py-1.5 px-1 border border-gray-400 text-right text-xs">{formatCurrency(completedOrder.total)}</td></tr>
  </tfoot>
  </table>
- <div className="text-center text-[10px] text-gray-500 mt-6 pt-2 border-t border-dashed">
+ <div className="text-center text-[9px] text-gray-500 mt-4 pt-2 border-t border-dashed">
  <p>Cảm ơn quý khách và hẹn gặp lại!</p>
  </div>
  </div>
  ) : (
- <div className={printType === 'a4' ? 'max-w-[210mm] mx-auto p-4' : 'max-w-[148mm] mx-auto p-2'}>
- <div className="border-b-2 border-gray-800 pb-4 mb-4 text-center">
- {storeConfig?.logo && (<img src={storeConfig.logo} alt="Logo" className="max-h-16 mx-auto mb-2 object-contain block" />)}
- <h2 className="text-lg font-bold w-full">{storeConfig?.name || 'SmartPOS Pro'}</h2>
- <p className="text-xs text-gray-600 w-full">Địa chỉ: {storeConfig?.address || '...'}</p>
- <p className="text-xs text-gray-600 w-full">Điện thoại: {storeConfig?.phone || '...'}</p>
- <h1 className="text-xl font-bold uppercase text-blue-800 mt-3 w-full">PHIẾU BÁN HÀNG</h1>
- <p className="text-xs text-gray-500 mt-1 w-full">Mã HĐ: #{completedOrder.id.slice(0,6).toUpperCase()} | Ngày: {formatDate(completedOrder.date)}</p>
+ <div className={printType === 'a4' ? 'max-w-[210mm] mx-auto p-4 text-[9px]' : 'max-w-[148mm] mx-auto p-2 text-[9px]'}>
+ <div className="border-b-2 border-gray-800 pb-3 mb-3 text-center">
+ {storeConfig?.logo && (<img src={storeConfig.logo} alt="Logo" className="max-h-12 mx-auto mb-1.5 object-contain block" />)}
+ <h2 className="text-sm font-bold w-full">{storeConfig?.name || 'SmartPOS Pro'}</h2>
+ <p className="text-[9px] text-gray-600 w-full">Địa chỉ: {storeConfig?.address || '...'}</p>
+ <p className="text-[9px] text-gray-600 w-full">Điện thoại: {storeConfig?.phone || '...'}</p>
+ <h1 className="text-sm font-bold uppercase text-blue-800 mt-2 w-full">PHIẾU BÁN HÀNG</h1>
+ <p className="text-[9px] text-gray-500 mt-0.5 w-full">Mã HĐ: #{completedOrder.id.slice(0,6).toUpperCase()} | Ngày: {formatDate(completedOrder.date)}</p>
  </div>
 
- <div className="grid grid-cols-2 gap-4 bg-gray-50 p-3 rounded-lg border border-gray-200 text-xs mb-4">
- <div><span className="text-gray-500">Khách hàng:</span> <strong className="text-gray-800 text-sm">{completedOrder.customerName}</strong></div>
+ <div className="grid grid-cols-2 gap-2 bg-gray-50 p-2 rounded border border-gray-200 text-[9px] mb-3">
+ <div><span className="text-gray-500">Khách hàng:</span> <strong className="text-gray-800 text-xs">{completedOrder.customerName}</strong></div>
  <div><span className="text-gray-500">Trạng thái:</span> <strong className="text-blue-600">{completedOrder.status === 'PAID' ? 'Đã thanh toán' : 'Ghi nợ'}</strong></div>
  </div>
 
- <table className="w-full text-[11px] mb-6 border-collapse border border-gray-400">
+ <table className="w-full text-[9px] mb-4 border-collapse border border-gray-400">
  <thead>
- <tr className="bg-gray-100 border-b-2 border-gray-400 text-gray-800">
- <th className="py-2 px-1 border border-gray-400 text-center">STT</th>
- <th className="py-2 px-2 border border-gray-400 text-left">Tên sản phẩm</th>
- <th className="py-2 px-1 border border-gray-400 text-center">SL</th>
- <th className="py-2 px-2 border border-gray-400 text-right">Đơn giá</th>
- <th className="py-2 px-2 border border-gray-400 text-right">Thành tiền</th>
- <th className="py-2 px-1 border border-gray-400 text-center">Bảo hành</th>
- <th className="py-2 px-2 border border-gray-400 text-left w-20">Ghi chú</th>
+ <tr className="bg-gray-100 border-b border-gray-400 text-gray-800">
+ <th className="py-1 px-1 border border-gray-400 text-center w-6">STT</th>
+ <th className="py-1 px-2 border border-gray-400 text-left">Tên sản phẩm</th>
+ <th className="py-1 px-1 border border-gray-400 text-center w-6">SL</th>
+ <th className="py-1 px-2 border border-gray-400 text-right">Đơn giá</th>
+ <th className="py-1 px-2 border border-gray-400 text-right">Thành tiền</th>
+ <th className="py-1 px-1 border border-gray-400 text-center">Bảo hành</th>
+ <th className="py-1 px-2 border border-gray-400 text-left w-16">Ghi chú</th>
  </tr>
  </thead>
  <tbody>
  {completedOrder.items.map((i, x) => (
  <tr key={x} className="border-b border-gray-300">
- <td className="py-1.5 px-1 border border-gray-300 text-center">{x + 1}</td>
- <td className="py-1.5 px-2 border border-gray-300 font-medium">{i.name}</td>
- <td className="py-1.5 px-1 border border-gray-300 text-center font-bold">{i.quantity}</td>
- <td className="py-1.5 px-2 border border-gray-300 text-right">{formatCurrency(i.price)}</td>
- <td className="py-1.5 px-2 border border-gray-300 text-right font-bold">{formatCurrency(i.price * i.quantity)}</td>
- <td className="py-1.5 px-1 border border-gray-300 text-center text-gray-600">{i.warrantyValue ? `${i.warrantyValue} ${i.warrantyUnit}` : ''}</td>
- <td className="py-1.5 px-2 border border-gray-300 text-gray-600">{i.note || ''}</td>
+ <td className="py-1 px-1 border border-gray-300 text-center">{x + 1}</td>
+ <td className="py-1 px-2 border border-gray-300 font-medium">{i.name}</td>
+ <td className="py-1 px-1 border border-gray-300 text-center font-bold">{i.quantity}</td>
+ <td className="py-1 px-2 border border-gray-300 text-right">{formatCurrency(i.price)}</td>
+ <td className="py-1 px-2 border border-gray-300 text-right font-bold">{formatCurrency(i.price * i.quantity)}</td>
+ <td className="py-1 px-1 border border-gray-300 text-center text-gray-600">{i.warrantyValue ? `${i.warrantyValue} ${i.warrantyUnit}` : ''}</td>
+ <td className="py-1 px-2 border border-gray-300 text-gray-600">{i.note || ''}</td>
  </tr>
  ))}
  </tbody>
  <tfoot>
- <tr className="border-t-2 border-gray-400 font-bold text-xs bg-gray-50">
- <td colSpan="4" className="py-2.5 px-2 border border-gray-400 text-right text-gray-800">TỔNG CỘNG THANH TOÁN:</td>
- <td colSpan="3" className="py-2.5 px-2 border border-gray-400 text-right text-blue-600 text-sm">{formatCurrency(completedOrder.total)}</td>
+ <tr className="border-t-2 border-gray-400 font-bold text-[9px] bg-gray-50">
+ <td colSpan="4" className="py-1.5 px-2 border border-gray-400 text-right text-gray-800">TỔNG CỘNG THANH TOÁN:</td>
+ <td colSpan="3" className="py-1.5 px-2 border border-gray-400 text-right text-blue-600 text-xs">{formatCurrency(completedOrder.total)}</td>
  </tr>
  </tfoot>
  </table>
 
- <div className="grid grid-cols-2 gap-8 text-center pt-8 text-xs">
+ <div className="grid grid-cols-2 gap-8 text-center pt-4 text-[9px]">
  <div>
  <p className="font-bold">Khách hàng ký nhận</p>
- <p className="text-gray-400 italic mt-1">(Ký, ghi rõ họ tên)</p>
+ <p className="text-gray-400 italic mt-0.5">(Ký, ghi rõ họ tên)</p>
  </div>
  <div>
  <p className="font-bold">Người bán hàng</p>
- <p className="text-gray-400 italic mt-1">(Ký, ghi rõ họ tên)</p>
+ <p className="text-gray-400 italic mt-0.5">(Ký, ghi rõ họ tên)</p>
  </div>
  </div>
  </div>
