@@ -1590,3 +1590,224 @@ function StatCard({ icon, title, value, color, highlight }) {
     </div>
   );
 }
+function StaffManagerView({ db, showToast }) {
+  const [staffList, setStaffList] = React.useState([]);
+  
+  React.useEffect(() => {
+    import('firebase/firestore').then(({ collection, onSnapshot }) => {
+      const unsub = onSnapshot(collection(db, 'users_db'), (snap) => {
+        setStaffList(snap.docs.map(d => ({ id: d.id, ...d.data() })));
+      });
+      return () => unsub();
+    });
+  }, [db]);
+
+  return (
+    <div className="p-4 md:p-6 bg-gray-50 flex-1 overflow-auto">
+      <h2 className="text-2xl font-bold text-gray-800 mb-6">Quản trị Nhân viên</h2>
+      <div className="bg-white rounded-xl border shadow-sm overflow-auto">
+        <table className="w-full text-left text-sm">
+          <thead className="bg-gray-100 border-b">
+            <tr>
+              <th className="p-4 font-bold text-gray-600">Tên nhân viên</th>
+              <th className="p-4 font-bold text-gray-600">Tên đăng nhập / Email</th>
+              <th className="p-4 font-bold text-gray-600">Vai trò</th>
+            </tr>
+          </thead>
+          <tbody>
+            {staffList.map(staff => (
+              <tr key={staff.id} className="border-b hover:bg-gray-50">
+                <td className="p-4 font-medium text-gray-800">{staff.name || 'Chưa cập nhật'}</td>
+                <td className="p-4 text-gray-600">{staff.email || staff.username}</td>
+                <td className="p-4">
+                  <span className={`px-2 py-1 rounded text-xs font-bold ${staff.role === 'admin' ? 'bg-red-100 text-red-700' : 'bg-blue-100 text-blue-700'}`}>
+                    {staff.role === 'admin' ? 'Quản trị viên' : 'Nhân viên'}
+                  </span>
+                </td>
+              </tr>
+            ))}
+            {staffList.length === 0 && <tr><td colSpan="3" className="p-4 text-center text-gray-400">Chưa có dữ liệu nhân viên</td></tr>}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  );
+}
+
+function POSView({ products, customers, db, storeId, user, storeConfig, showToast }) {
+  const [cart, setCart] = React.useState([]);
+  const [searchTerm, setSearchTerm] = React.useState('');
+  const [selectedCustomer, setSelectedCustomer] = React.useState(null);
+  const [isProcessing, setIsProcessing] = React.useState(false);
+
+  const addToCart = (product) => {
+    setCart(prev => {
+      const existing = prev.find(item => item.id === product.id);
+      if (existing) return prev.map(item => item.id === product.id ? { ...item, quantity: item.quantity + 1 } : item);
+      return [...prev, { ...product, quantity: 1 }];
+    });
+  };
+
+  const removeFromCart = (productId) => {
+    setCart(prev => prev.filter(item => item.id !== productId));
+  };
+
+  const totalAmount = cart.reduce((sum, item) => sum + (item.price * item.quantity), 0);
+
+  const handleCheckout = async (status) => {
+    if (cart.length === 0) return showToast("Giỏ hàng trống", "error");
+    setIsProcessing(true);
+    try {
+      const { collection, addDoc, doc, updateDoc, writeBatch } = await import('firebase/firestore');
+      const orderData = {
+        date: new Date().toISOString(),
+        items: cart,
+        total: totalAmount,
+        status: status,
+        customerId: selectedCustomer ? selectedCustomer.id : null,
+        customerName: selectedCustomer ? selectedCustomer.name : 'Khách lẻ',
+        userId: user.uid
+      };
+      
+      const batch = writeBatch(db);
+      
+      // Update stock
+      cart.forEach(item => {
+        const prodRef = doc(db, 'stores', storeId, 'products', item.id);
+        batch.update(prodRef, { stock: item.stock - item.quantity });
+      });
+
+      // Save order
+      const orderRef = doc(collection(db, 'stores', storeId, 'orders'));
+      batch.set(orderRef, orderData);
+      
+      // Update customer debt if unpaid
+      if (status === 'DEBT' && selectedCustomer) {
+        const cusRef = doc(db, 'stores', storeId, 'customers', selectedCustomer.id);
+        batch.update(cusRef, { totalDebt: (selectedCustomer.totalDebt || 0) + totalAmount });
+      }
+
+      await batch.commit();
+      
+      // In hóa đơn (lưu PDF)
+      setTimeout(() => {
+        window.print();
+        setCart([]);
+        setSelectedCustomer(null);
+        showToast("Thanh toán thành công!");
+      }, 500);
+      
+    } catch (error) {
+      showToast("Lỗi thanh toán", "error");
+    } finally {
+      setIsProcessing(false);
+    }
+  };
+
+  const filteredProducts = products.filter(p => p.name && p.name.toLowerCase().includes(searchTerm.toLowerCase()));
+
+  return (
+    <div className="flex flex-col md:flex-row h-full overflow-hidden bg-gray-50 no-print">
+      {/* Cột Sản phẩm */}
+      <div className="flex-1 flex flex-col p-4 border-r overflow-hidden">
+        <input 
+          type="text" 
+          placeholder="Tìm sản phẩm..." 
+          value={searchTerm} 
+          onChange={e => setSearchTerm(e.target.value)} 
+          className="w-full p-3 mb-4 border rounded-lg outline-none shadow-sm"
+        />
+        <div className="flex-1 overflow-auto grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4 pb-4">
+          {filteredProducts.map(p => (
+            <div key={p.id} onClick={() => addToCart(p)} className="bg-white p-4 rounded-xl border shadow-sm cursor-pointer hover:border-blue-500 hover:shadow-md transition">
+              <p className="font-bold text-gray-800 text-sm mb-2 h-10 overflow-hidden">{p.name}</p>
+              <div className="flex justify-between items-center">
+                <span className="text-blue-600 font-bold">{new Intl.NumberFormat('vi-VN', { style: 'currency', currency: 'VND' }).format(p.price)}</span>
+                <span className="text-xs text-gray-500">Tồn: {p.stock}</span>
+              </div>
+            </div>
+          ))}
+        </div>
+      </div>
+
+      {/* Cột Giỏ hàng & Thanh toán */}
+      <div className="w-full md:w-96 flex flex-col bg-white border-l shadow-xl flex-shrink-0">
+        <div className="p-4 border-b bg-gray-50">
+          <h2 className="text-lg font-bold text-gray-800 mb-3">Đơn hàng hiện tại</h2>
+          <select 
+            className="w-full p-2 border rounded-lg outline-none text-sm"
+            onChange={e => setSelectedCustomer(customers.find(c => c.id === e.target.value) || null)}
+          >
+            <option value="">-- Khách lẻ --</option>
+            {customers.map(c => <option key={c.id} value={c.id}>{c.name} - {c.phone}</option>)}
+          </select>
+        </div>
+        
+        <div className="flex-1 overflow-auto p-4 space-y-3">
+          {cart.map(item => (
+            <div key={item.id} className="flex justify-between items-center border-b pb-2">
+              <div className="flex-1">
+                <p className="font-bold text-sm text-gray-800">{item.name}</p>
+                <p className="text-xs text-gray-500">{new Intl.NumberFormat('vi-VN', { style: 'currency', currency: 'VND' }).format(item.price)} x {item.quantity}</p>
+              </div>
+              <div className="flex items-center gap-3">
+                <span className="font-bold text-blue-600 text-sm">{new Intl.NumberFormat('vi-VN', { style: 'currency', currency: 'VND' }).format(item.price * item.quantity)}</span>
+                <button onClick={() => removeFromCart(item.id)} className="text-red-500 font-bold px-2 py-1 bg-red-50 rounded hover:bg-red-100">X</button>
+              </div>
+            </div>
+          ))}
+          {cart.length === 0 && <p className="text-center text-gray-400 mt-10">Giỏ hàng trống</p>}
+        </div>
+
+        <div className="p-4 border-t bg-gray-50">
+          <div className="flex justify-between items-center mb-4">
+            <span className="text-gray-600 font-bold uppercase text-sm">Tổng thanh toán:</span>
+            <span className="text-2xl font-black text-blue-600">{new Intl.NumberFormat('vi-VN', { style: 'currency', currency: 'VND' }).format(totalAmount)}</span>
+          </div>
+          <div className="flex gap-2">
+            <button 
+              disabled={isProcessing || cart.length === 0} 
+              onClick={() => handleCheckout('DEBT')} 
+              className="flex-1 bg-orange-100 text-orange-700 font-bold py-3 rounded-lg hover:bg-orange-200"
+            >
+              Ghi Nợ
+            </button>
+            <button 
+              disabled={isProcessing || cart.length === 0} 
+              onClick={() => handleCheckout('PAID')} 
+              className="flex-1 bg-blue-600 text-white font-bold py-3 rounded-lg hover:bg-blue-700 shadow-md"
+            >
+              Thanh Toán & In
+            </button>
+          </div>
+        </div>
+      </div>
+
+      {/* Khu vực CSS ẩn để phục vụ việc in ấn (Lưu PDF) */}
+      <div className="hidden print:block absolute inset-0 bg-white z-50 p-4">
+        <h2 className="text-center font-bold text-xl mb-4">{storeConfig?.name || 'Cửa hàng'}</h2>
+        <p className="text-center text-sm mb-6">HÓA ĐƠN BÁN HÀNG</p>
+        <p className="text-sm mb-2">Khách hàng: {selectedCustomer ? selectedCustomer.name : 'Khách lẻ'}</p>
+        <table className="w-full text-sm mb-4">
+          <thead className="border-b border-black">
+            <tr>
+              <th className="text-left py-2">Sản phẩm</th>
+              <th className="text-center py-2">SL</th>
+              <th className="text-right py-2">Thành tiền</th>
+            </tr>
+          </thead>
+          <tbody>
+            {cart.map(item => (
+              <tr key={item.id} className="border-b border-gray-200">
+                <td className="py-2">{item.name}</td>
+                <td className="py-2 text-center">{item.quantity}</td>
+                <td className="py-2 text-right">{new Intl.NumberFormat('vi-VN', { style: 'currency', currency: 'VND' }).format(item.price * item.quantity)}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+        <p className="text-right font-bold mt-4">Tổng cộng: {new Intl.NumberFormat('vi-VN', { style: 'currency', currency: 'VND' }).format(totalAmount)}</p>
+      </div>
+    </div>
+  );
+}
