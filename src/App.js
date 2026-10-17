@@ -124,8 +124,8 @@ function LoginView({ onLoginSuccess }) {
     <div className="min-h-screen bg-gray-100 flex items-center justify-center p-4">
       <div className="bg-white p-8 rounded-2xl shadow-xl w-full max-w-md">
         <div className="text-center mb-8">
-          <div className="bg-blue-100 text-blue-600 w-16 h-16 rounded-full flex items-center justify-center mx-auto mb-4"><Lock size={32} /></div>
-          <h1 className="text-2xl font-bold text-gray-800">SmartPOS Pro</h1>
+          <img src="/784.jpg" alt="Logo Âu Trung" className="h-24 w-24 mx-auto mb-4 object-cover rounded-full shadow-sm" />
+          <h1 className="text-2xl font-bold text-gray-800">QUẢN LÝ BÁN HÀNG</h1>
           <p className="text-gray-500 text-sm mt-2">{isForgot ? 'Khôi phục mật khẩu' : 'Đăng nhập hệ thống'}</p>
         </div>
         {error && <div className="bg-red-50 text-red-600 p-3 rounded-lg flex items-center gap-2 mb-4 text-sm"><ShieldAlert size={16} /> {error}</div>}
@@ -225,10 +225,29 @@ export default function EnhancedPOS() {
   const printStyle = `
     @media print {
       body > #root > div > .min-h-screen { display: none !important; }
+      
       .fixed { position: absolute !important; inset: 0 !important; background: transparent !important; }
       .overflow-hidden { overflow: visible !important; }
       .max-h-[90vh] { max-height: none !important; }
-      .no-print { display: none !important; }
+      
+      .hide-on-print { display: none !important; }
+      .modal-overlay { 
+        position: absolute !important; 
+        background: transparent !important; 
+        padding: 0 !important;
+      }
+      .modal-content {
+        box-shadow: none !important;
+        border: none !important;
+        width: 100% !important;
+        max-width: 100% !important;
+        max-height: none !important;
+        overflow: visible !important;
+      }
+      .print-area-wrapper {
+        overflow: visible !important;
+        padding: 0 !important;
+      }
       .print-container { 
         position: absolute; 
         left: 0; 
@@ -236,15 +255,17 @@ export default function EnhancedPOS() {
         width: 100%; 
         background: white !important; 
         color: black !important;
-        padding: 0 10px;
+        padding: 0 10px !important;
+        margin: 0 !important;
       }
+      .no-print { display: none !important; }
     }
   `;
 
   return (
     <>
       <style>{printStyle}</style>
-      <div className="min-h-screen bg-gray-50 flex flex-col md:flex-row font-sans text-sm md:text-base print:hidden">
+      <div className="min-h-screen bg-gray-50 flex flex-col md:flex-row font-sans text-sm md:text-base hide-on-print print:hidden">
         <aside className="w-full md:w-64 bg-white border-r border-gray-200 flex flex-col shadow-sm z-10 shrink-0">
           <div className="p-5 border-b border-gray-100 flex items-center gap-3">
             {storeConfig.logo ? <img src={storeConfig.logo} alt="Logo" className="w-10 h-10 object-contain rounded bg-white p-1 shadow-sm" /> : <div className="bg-blue-600 text-white p-2 rounded-lg"><ShoppingBag size={24} /></div>}
