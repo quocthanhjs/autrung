@@ -205,7 +205,6 @@ function LoginView({ onLoginSuccess }) {
     try {
       let cleanInput = loginInput.trim().toLowerCase();
 
-      // 1. ADMIN - Đăng nhập qua Firebase Auth
       if (cleanInput === 'admin' || cleanInput.includes('@')) {
         let loginEmail = cleanInput === 'admin' ? "admin@smartpos.com" : cleanInput;
         const userCredential = await signInWithEmailAndPassword(auth, loginEmail, password);
@@ -219,7 +218,6 @@ function LoginView({ onLoginSuccess }) {
         return;
       }
 
-      // 2. NHÂN VIÊN - Đăng nhập qua Database
       const q = query(collection(db, 'users_db'), where('username', '==', cleanInput));
       const querySnapshot = await getDocs(q);
       if (querySnapshot.empty) throw new Error("Không tìm thấy Tên đăng nhập này!");
