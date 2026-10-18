@@ -318,8 +318,6 @@ function DashboardView({ orders, imports, expenses, customers, suppliers, showTo
   const [suppSortOrder, setSuppSortOrder] = useState('desc');
   const [showAllCust, setShowAllCust] = useState(false);
   const [showAllSupp, setShowAllSupp] = useState(false);
-  
-  // Trạng thái bộ lọc riêng cho biểu đồ
   const [chartFilter, setChartFilter] = useState('7days'); 
 
   const stats = useMemo(() => {
@@ -337,7 +335,6 @@ function DashboardView({ orders, imports, expenses, customers, suppliers, showTo
     const overdueCust = orders.filter(o => o.status === 'DEBT').sort((a,b) => new Date(b.date) - new Date(a.date));
     const overdueCust1Week = overdueCust.filter(o => getDaysDifference(o.date) >= 7);
 
-    // Tính toán dữ liệu Biểu đồ (Khởi tạo trước các ngày/tháng để luôn có cột)
     let chartData = {};
     if (chartFilter === '7days') {
       for (let i = 6; i >= 0; i--) {
@@ -359,7 +356,6 @@ function DashboardView({ orders, imports, expenses, customers, suppliers, showTo
       monthNames.forEach((m) => { chartData[m] = 0; });
     }
 
-    // Nạp dữ liệu đơn hàng vào đúng cột
     orders.forEach(o => {
       const d = new Date(o.date);
       const oDay = d.getDate();
@@ -592,7 +588,7 @@ const StatCard = ({ icon, title, value, color, highlight = false }) => {
 };
 
 // =========================================================================
-// MẪU IN DÙNG CHUNG (K80 / A4 / A5 CHUẨN KIOTVIET) TÙY CHỈNH NÂNG CAO
+// MẪU IN DÙNG CHUNG
 // =========================================================================
 
 const ReceiptTemplate = ({ order, storeConfig, isA4A5, baseFontSize }) => {
@@ -604,12 +600,10 @@ const ReceiptTemplate = ({ order, storeConfig, isA4A5, baseFontSize }) => {
   const thStyle = { padding: `${padY}px ${padX}px`, fontSize: detailFontSize };
   const tdStyle = { padding: `${padY}px ${padX}px`, fontSize: detailFontSize };
 
-  // Dịch Bảo hành/Ghi chú về phía cuối (Sau SL và Đ.Giá, Trước Thành Tiền)
   const showBH = isA4A5 && storeConfig.printShowWarranty !== false;
   const showGC = isA4A5 && storeConfig.printShowNote !== false;
   const a4a5ColSpan = 4 + (showBH ? 1 : 0) + (showGC ? 1 : 0);
 
-  // Kích thước các cột (A4/A5 dùng Slider %, K80 dùng cố định)
   const wStt = isA4A5 ? `${storeConfig.colWidthStt ?? 5}%` : 'auto';
   const wProd = isA4A5 ? `${storeConfig.colWidthProduct ?? 35}%` : '45%';
   const wQty = isA4A5 ? `${storeConfig.colWidthQty ?? 8}%` : '10%';
@@ -625,9 +619,7 @@ const ReceiptTemplate = ({ order, storeConfig, isA4A5, baseFontSize }) => {
         {storeConfig.printShowStoreName && <h2 className="font-bold" style={{fontSize: `${baseFontSize + 2}px`}}>{storeConfig.name || 'SmartPOS Pro'}</h2>}
         {storeConfig.printShowStoreAddress && <p className="text-gray-600 mt-0.5">ĐC: {storeConfig.address}</p>}
         {storeConfig.printShowStorePhone && <p className="text-gray-600">SĐT: {storeConfig.phone}</p>}
-        
         <h1 className="font-bold uppercase mt-3" style={{fontSize: `${baseFontSize + 4}px`}}>{storeConfig.printInvoiceTitle || 'HÓA ĐƠN BÁN HÀNG'}</h1>
-        
         {storeConfig.printShowInvoiceId && <p className="text-gray-500 mt-1">Mã HĐ: #{order?.id?.slice(0,6).toUpperCase() || 'HD12345'}</p>}
         {storeConfig.printShowDate && <p className="text-gray-500">Ngày: {order?.date ? formatDate(order.date) : '20/10/2026 14:30'}</p>}
       </div>
@@ -643,15 +635,11 @@ const ReceiptTemplate = ({ order, storeConfig, isA4A5, baseFontSize }) => {
         <thead>
           <tr className="border-b border-gray-400 bg-gray-100/50">
             {isA4A5 && <th style={{...thStyle, width: wStt}} className="text-center border border-gray-300">STT</th>}
-            {/* Tăng độ rộng cột Sản phẩm */}
             <th style={{...thStyle, width: wProd}} className={`text-left ${isA4A5 ? 'border border-gray-300' : ''}`}>Sản phẩm</th>
             <th style={{...thStyle, width: wQty}} className={`text-center ${isA4A5 ? 'border border-gray-300' : ''}`}>SL</th>
             <th style={{...thStyle, width: wPrice}} className={`text-right ${isA4A5 ? 'border border-gray-300' : ''}`}>Đ.Giá</th>
-            
-            {/* Dời Bảo hành, Ghi chú về bên phải */}
             {showBH && <th style={{...thStyle, width: wWarranty}} className="text-center border border-gray-300">Bảo hành</th>}
             {showGC && <th style={{...thStyle, width: wNote}} className="text-left border border-gray-300">Ghi chú</th>}
-            
             <th style={{...thStyle, width: wTotal}} className={`text-right ${isA4A5 ? 'border border-gray-300' : ''}`}>Thành tiền</th>
           </tr>
         </thead>
@@ -661,8 +649,6 @@ const ReceiptTemplate = ({ order, storeConfig, isA4A5, baseFontSize }) => {
               {isA4A5 && <td style={tdStyle} className="text-center align-top border border-gray-300">{x + 1}</td>}
               <td style={tdStyle} className={`align-top ${isA4A5 ? 'border border-gray-300' : ''}`}>
                 <strong>{i.name}</strong>
-                
-                {/* Ở khổ K80: Gộp thông tin hiển thị bên dưới tên sản phẩm */}
                 {!isA4A5 && (
                   <div className="text-[0.85em] text-gray-700 mt-1 space-y-0.5">
                     {storeConfig.printShowWarranty !== false && i.warrantyValue && <div>- BH: {i.warrantyValue} {i.warrantyUnit}</div>}
@@ -670,41 +656,22 @@ const ReceiptTemplate = ({ order, storeConfig, isA4A5, baseFontSize }) => {
                   </div>
                 )}
               </td>
-              
               <td style={tdStyle} className={`text-center align-top ${isA4A5 ? 'border border-gray-300' : ''}`}>{i.quantity}</td>
               <td style={tdStyle} className={`text-right align-top ${isA4A5 ? 'border border-gray-300' : ''}`}>{formatCurrency(i.price)}</td>
-              
-              {/* Hiển thị cột riêng trên A4/A5 dời sang bên phải */}
-              {showBH && (
-                <td style={tdStyle} className="text-center align-top border border-gray-300">
-                  {i.warrantyValue ? `${i.warrantyValue} ${i.warrantyUnit}` : ''}
-                </td>
-              )}
-              {showGC && (
-                <td style={tdStyle} className="text-left align-top border border-gray-300">{i.note || ''}</td>
-              )}
-              
+              {showBH && <td style={tdStyle} className="text-center align-top border border-gray-300">{i.warrantyValue ? `${i.warrantyValue} ${i.warrantyUnit}` : ''}</td>}
+              {showGC && <td style={tdStyle} className="text-left align-top border border-gray-300">{i.note || ''}</td>}
               <td style={tdStyle} className={`text-right align-top font-bold ${isA4A5 ? 'border border-gray-300' : ''}`}>{formatCurrency(i.price * i.quantity)}</td>
             </tr>
           ))}
         </tbody>
         <tfoot>
           <tr className="border-t-2 border-gray-800 font-bold bg-gray-50">
-            <td colSpan={isA4A5 ? a4a5ColSpan : 3} className={`py-3 px-1 text-right uppercase ${isA4A5 ? 'border border-gray-300' : ''}`}>
-              TỔNG CỘNG:
-            </td>
-            <td className={`py-3 px-1 text-right ${isA4A5 ? 'border border-gray-300' : ''}`} style={{fontSize: `${baseFontSize + 2}px`}}>
-              {formatCurrency(order?.total || 8500000)}
-            </td>
+            <td colSpan={isA4A5 ? a4a5ColSpan : 3} className={`py-3 px-1 text-right uppercase ${isA4A5 ? 'border border-gray-300' : ''}`}>TỔNG CỘNG:</td>
+            <td className={`py-3 px-1 text-right ${isA4A5 ? 'border border-gray-300' : ''}`} style={{fontSize: `${baseFontSize + 2}px`}}>{formatCurrency(order?.total || 8500000)}</td>
           </tr>
         </tfoot>
       </table>
-
-      {storeConfig.printFooter && (
-        <div className="text-center mt-4 pt-3 border-t border-dashed border-gray-400">
-          <p className="italic font-medium">{storeConfig.printFooter}</p>
-        </div>
-      )}
+      {storeConfig.printFooter && <div className="text-center mt-4 pt-3 border-t border-dashed border-gray-400"><p className="italic font-medium">{storeConfig.printFooter}</p></div>}
     </>
   );
 };
@@ -713,44 +680,15 @@ const ReceiptTemplate = ({ order, storeConfig, isA4A5, baseFontSize }) => {
 // MÀN HÌNH CÀI ĐẶT
 // =========================================================================
 function SettingsView({ db, storeId, showToast, storeConfig }) {
-  const [activeSubTab, setActiveSubTab] = useState('general'); // general | print | data
-  
+  const [activeSubTab, setActiveSubTab] = useState('general');
   const [form, setForm] = useState({
-    name: storeConfig?.name || '',
-    address: storeConfig?.address || '',
-    phone: storeConfig?.phone || '',
-    logo: storeConfig?.logo || '',
-    
-    printPaperSize: storeConfig?.printPaperSize || 'K80',
-    printFontSize: storeConfig?.printFontSize || 12,
-    printTablePaddingX: storeConfig?.printTablePaddingX ?? 4,
-    printTablePaddingY: storeConfig?.printTablePaddingY ?? 6,
-    printDetailFontScale: storeConfig?.printDetailFontScale ?? 80,
-    
-    colWidthStt: storeConfig?.colWidthStt ?? 5,
-    colWidthProduct: storeConfig?.colWidthProduct ?? 35,
-    colWidthQty: storeConfig?.colWidthQty ?? 8,
-    colWidthPrice: storeConfig?.colWidthPrice ?? 12,
-    colWidthWarranty: storeConfig?.colWidthWarranty ?? 12,
-    colWidthNote: storeConfig?.colWidthNote ?? 13,
-    colWidthTotal: storeConfig?.colWidthTotal ?? 15,
-
-    printShowLogo: storeConfig?.printShowLogo ?? true,
-    printShowStoreName: storeConfig?.printShowStoreName ?? true,
-    printShowStoreAddress: storeConfig?.printShowStoreAddress ?? true,
-    printShowStorePhone: storeConfig?.printShowStorePhone ?? true,
-    printInvoiceTitle: storeConfig?.printInvoiceTitle || 'HÓA ĐƠN BÁN HÀNG',
-    printShowInvoiceId: storeConfig?.printShowInvoiceId ?? true,
-    printShowDate: storeConfig?.printShowDate ?? true,
-    printShowCashier: storeConfig?.printShowCashier ?? true,
-    printShowCustomer: storeConfig?.printShowCustomer ?? true,
-    printShowCustomerPhone: storeConfig?.printShowCustomerPhone ?? true,
-    printShowStatus: storeConfig?.printShowStatus ?? true,
-    printShowWarranty: storeConfig?.printShowWarranty ?? true,
-    printShowNote: storeConfig?.printShowNote ?? true,
-    printFooter: storeConfig?.printFooter || 'Cảm ơn quý khách và hẹn gặp lại!'
+    name: storeConfig?.name || '', address: storeConfig?.address || '', phone: storeConfig?.phone || '', logo: storeConfig?.logo || '',
+    printPaperSize: storeConfig?.printPaperSize || 'K80', printFontSize: storeConfig?.printFontSize || 12,
+    printTablePaddingX: storeConfig?.printTablePaddingX ?? 4, printTablePaddingY: storeConfig?.printTablePaddingY ?? 6, printDetailFontScale: storeConfig?.printDetailFontScale ?? 80,
+    colWidthStt: storeConfig?.colWidthStt ?? 5, colWidthProduct: storeConfig?.colWidthProduct ?? 35, colWidthQty: storeConfig?.colWidthQty ?? 8, colWidthPrice: storeConfig?.colWidthPrice ?? 12, colWidthWarranty: storeConfig?.colWidthWarranty ?? 12, colWidthNote: storeConfig?.colWidthNote ?? 13, colWidthTotal: storeConfig?.colWidthTotal ?? 15,
+    printShowLogo: storeConfig?.printShowLogo ?? true, printShowStoreName: storeConfig?.printShowStoreName ?? true, printShowStoreAddress: storeConfig?.printShowStoreAddress ?? true, printShowStorePhone: storeConfig?.printShowStorePhone ?? true,
+    printInvoiceTitle: storeConfig?.printInvoiceTitle || 'HÓA ĐƠN BÁN HÀNG', printShowInvoiceId: storeConfig?.printShowInvoiceId ?? true, printShowDate: storeConfig?.printShowDate ?? true, printShowCashier: storeConfig?.printShowCashier ?? true, printShowCustomer: storeConfig?.printShowCustomer ?? true, printShowCustomerPhone: storeConfig?.printShowCustomerPhone ?? true, printShowStatus: storeConfig?.printShowStatus ?? true, printShowWarranty: storeConfig?.printShowWarranty ?? true, printShowNote: storeConfig?.printShowNote ?? true, printFooter: storeConfig?.printFooter || 'Cảm ơn quý khách và hẹn gặp lại!'
   });
-
   const [loadingFile, setLoadingFile] = useState(false);
   const [saving, setSaving] = useState(false);
 
@@ -759,16 +697,9 @@ function SettingsView({ db, storeId, showToast, storeConfig }) {
   const handleLogo = (e) => { const f = e.target.files[0]; if (f) { const r = new FileReader(); r.onloadend = () => setForm({...form, logo: r.result}); r.readAsDataURL(f); } };
   
   const handleSaveConfig = async (e) => { 
-    if(e) e.preventDefault(); 
-    setSaving(true);
-    try {
-      await setDoc(doc(db, 'stores', storeId), form, { merge: true }); 
-      showToast("Đã lưu Cấu hình thành công!"); 
-    } catch(err) {
-      showToast("Lỗi khi lưu cài đặt", "error");
-    } finally {
-      setSaving(false);
-    }
+    if(e) e.preventDefault(); setSaving(true);
+    try { await setDoc(doc(db, 'stores', storeId), form, { merge: true }); showToast("Đã lưu Cấu hình thành công!"); } 
+    catch(err) { showToast("Lỗi khi lưu cài đặt", "error"); } finally { setSaving(false); }
   };
 
   const handleImport = async (e, type) => {
@@ -777,12 +708,10 @@ function SettingsView({ db, storeId, showToast, storeConfig }) {
       const reader = new FileReader();
       reader.onload = async (evt) => {
         try {
-          const wb = window.XLSX.read(evt.target.result, { type: 'binary' });
-          const data = window.XLSX.utils.sheet_to_json(wb.Sheets[wb.SheetNames[0]]);
+          const wb = window.XLSX.read(evt.target.result, { type: 'binary' }); const data = window.XLSX.utils.sheet_to_json(wb.Sheets[wb.SheetNames[0]]);
           let batch = writeBatch(db); let count = 0; let success = 0;
           for (let i = 0; i < data.length; i++) {
-            let p = null; const row = data[i];
-            const nowIso = new Date().toISOString();
+            let p = null; const row = data[i]; const nowIso = new Date().toISOString();
             if (type === 'products' && row['Tên hàng']) p = { name: String(row['Tên hàng']), category: row['Nhóm hàng'] || '', price: Number(row['Giá bán']) || 0, cost: Number(row['Giá vốn']) || 0, stock: Number(row['Tồn kho']) || 0, createdAt: nowIso };
             else if (type === 'customers' && row['Tên khách hàng']) { const rawPhone = row['Điện thoại'] ? String(row['Điện thoại']) : ''; p = { name: String(row['Tên khách hàng']), phone: rawPhone.replace('.0', ''), totalDebt: Number(row['Nợ cần thu hiện tại']) || 0, createdAt: nowIso }; }
             else if (type === 'suppliers' && row['Tên nhà cung cấp']) { const rawPhone = row['Điện thoại'] ? String(row['Điện thoại']) : ''; p = { name: String(row['Tên nhà cung cấp']), phone: rawPhone.replace('.0', ''), totalDebt: Number(row['Nợ cần trả hiện tại']) || 0, createdAt: nowIso }; }
@@ -798,11 +727,9 @@ function SettingsView({ db, storeId, showToast, storeConfig }) {
   };
 
   const handleExport = async (type) => {
-    if (!window.XLSX) return showToast("Hệ thống chưa sẵn sàng", "error");
-    setLoadingFile(true);
+    if (!window.XLSX) return showToast("Hệ thống chưa sẵn sàng", "error"); setLoadingFile(true);
     try {
-      const snap = await getDocs(collection(db, 'stores', storeId, type));
-      let exportData = [];
+      const snap = await getDocs(collection(db, 'stores', storeId, type)); let exportData = [];
       snap.docs.forEach(d => {
         const item = d.data();
         if (type === 'products') exportData.push({ 'Tên hàng': item.name, 'Nhóm hàng': item.category || '', 'Giá bán': item.price, 'Giá vốn': item.cost, 'Tồn kho': item.stock });
@@ -810,13 +737,10 @@ function SettingsView({ db, storeId, showToast, storeConfig }) {
         if (type === 'suppliers') exportData.push({ 'Tên nhà cung cấp': item.name, 'Điện thoại': item.phone, 'Nợ cần trả hiện tại': item.totalDebt });
         if (type === 'expenses') exportData.push({ 'Ngày': formatDate(item.date), 'Nội dung': item.note, 'Số tiền': item.amount });
       });
-      const ws = window.XLSX.utils.json_to_sheet(exportData);
-      const wb = window.XLSX.utils.book_new();
-      window.XLSX.utils.book_append_sheet(wb, ws, "Data");
-      window.XLSX.writeFile(wb, "Xuat_Du_Lieu_" + type + ".xlsx");
+      const ws = window.XLSX.utils.json_to_sheet(exportData); const wb = window.XLSX.utils.book_new();
+      window.XLSX.utils.book_append_sheet(wb, ws, "Data"); window.XLSX.writeFile(wb, "Xuat_Du_Lieu_" + type + ".xlsx");
       showToast("Đã XUẤT file Excel thành công!");
-    } catch(e) { showToast("Lỗi xuất file", "error"); }
-    setLoadingFile(false);
+    } catch(e) { showToast("Lỗi xuất file", "error"); } setLoadingFile(false);
   };
 
   const menuItems = [{ id: 'customers', label: 'Khách hàng (Nợ phải thu)' }, { id: 'suppliers', label: 'Nhà cung cấp (Nợ phải trả)' }, { id: 'products', label: 'Hàng hóa & Kho' }, { id: 'expenses', label: 'Lịch sử Chi phí' }];
@@ -855,14 +779,9 @@ function SettingsView({ db, storeId, showToast, storeConfig }) {
               <div className="flex gap-4 items-center">
                 <div className="w-20 h-20 bg-gray-50 border-2 border-dashed border-gray-300 rounded-xl flex items-center justify-center overflow-hidden relative group">
                   {form.logo ? <img src={form.logo} className="w-full h-full object-contain" alt="Logo" /> : <span className="text-xs text-gray-400 font-bold">Thêm Logo</span>}
-                  <div className="absolute inset-0 bg-black/50 hidden group-hover:flex items-center justify-center">
-                    <button type="button" onClick={() => setForm({...form, logo:''})} className="text-white text-xs font-bold hover:underline">Xóa</button>
-                  </div>
+                  <div className="absolute inset-0 bg-black/50 hidden group-hover:flex items-center justify-center"><button type="button" onClick={() => setForm({...form, logo:''})} className="text-white text-xs font-bold hover:underline">Xóa</button></div>
                 </div>
-                <div className="flex-1">
-                  <label className="block text-sm font-bold text-gray-700 mb-1">Ảnh Logo cửa hàng</label>
-                  <input type="file" accept="image/*" onChange={handleLogo} className="text-sm file:mr-4 file:py-2 file:px-4 file:rounded-full file:border-0 file:text-sm file:font-semibold file:bg-blue-50 file:text-blue-700 hover:file:bg-blue-100 cursor-pointer" />
-                </div>
+                <div className="flex-1"><label className="block text-sm font-bold text-gray-700 mb-1">Ảnh Logo cửa hàng</label><input type="file" accept="image/*" onChange={handleLogo} className="text-sm file:mr-4 file:py-2 file:px-4 file:rounded-full file:border-0 file:text-sm file:font-semibold file:bg-blue-50 file:text-blue-700 hover:file:bg-blue-100 cursor-pointer" /></div>
               </div>
               <div><label className="block text-sm font-bold text-gray-700 mb-1">Tên cửa hàng *</label><input required placeholder="Nhập tên cửa hàng..." value={form.name} onChange={e=>setForm({...form,name:e.target.value})} className="w-full p-3 border border-gray-300 rounded-xl outline-none focus:ring-2 focus:ring-blue-500 font-bold text-blue-800 bg-gray-50 focus:bg-white transition-all"/></div>
               <div><label className="block text-sm font-bold text-gray-700 mb-1">Địa chỉ</label><input placeholder="Nhập địa chỉ..." value={form.address} onChange={e=>setForm({...form,address:e.target.value})} className="w-full p-3 border border-gray-300 rounded-xl outline-none focus:ring-2 focus:ring-blue-500 bg-gray-50 focus:bg-white transition-all"/></div>
@@ -886,70 +805,33 @@ function SettingsView({ db, storeId, showToast, storeConfig }) {
                   <h4 className="text-xs font-black text-gray-400 uppercase tracking-wider mb-2">Cơ bản (Cấu hình mặc định)</h4>
                   <div>
                     <label className="block text-sm font-bold text-gray-700 mb-1">Khổ giấy in mặc định</label>
-                    <div className="flex gap-2">
-                      {['K80', 'A4', 'A5'].map(size => (
-                        <button key={size} onClick={() => setForm({...form, printPaperSize: size})} className={`flex-1 py-2 text-sm font-bold rounded-lg border transition-all ${form.printPaperSize === size ? 'bg-blue-50 border-blue-600 text-blue-700 shadow-sm' : 'bg-white border-gray-300 text-gray-600 hover:bg-gray-50'}`}>{size}</button>
-                      ))}
-                    </div>
+                    <div className="flex gap-2">{['K80', 'A4', 'A5'].map(size => (<button key={size} onClick={() => setForm({...form, printPaperSize: size})} className={`flex-1 py-2 text-sm font-bold rounded-lg border transition-all ${form.printPaperSize === size ? 'bg-blue-50 border-blue-600 text-blue-700 shadow-sm' : 'bg-white border-gray-300 text-gray-600 hover:bg-gray-50'}`}>{size}</button>))}</div>
                   </div>
                   <div>
                     <label className="block text-sm font-bold text-gray-700 mb-1">Cỡ chữ tổng thể (px)</label>
-                    <div className="flex items-center gap-3">
-                      <input type="range" min="8" max="24" step="0.5" value={form.printFontSize} onChange={(e) => setForm({...form, printFontSize: Number(e.target.value)})} className="flex-1 accent-blue-600" />
-                      <input type="number" step="0.5" value={form.printFontSize} onChange={(e) => setForm({...form, printFontSize: Number(e.target.value)})} className="w-16 p-1.5 border rounded-lg text-center font-bold text-sm outline-none" />
-                    </div>
+                    <div className="flex items-center gap-3"><input type="range" min="8" max="24" step="0.5" value={form.printFontSize} onChange={(e) => setForm({...form, printFontSize: Number(e.target.value)})} className="flex-1 accent-blue-600" /><input type="number" step="0.5" value={form.printFontSize} onChange={(e) => setForm({...form, printFontSize: Number(e.target.value)})} className="w-16 p-1.5 border rounded-lg text-center font-bold text-sm outline-none" /></div>
                   </div>
                 </div>
 
                 <hr className="border-gray-100" />
                 <div className="space-y-4 mt-6">
                   <h4 className="text-xs font-black text-gray-400 uppercase tracking-wider mb-2">Tùy chỉnh Kích thước, Chiều ngang/Dọc</h4>
-                  <div>
-                    <label className="block text-sm font-bold text-gray-700 mb-1">Tỷ lệ Cỡ chữ phần Chi tiết ({form.printDetailFontScale ?? 80}%)</label>
-                    <input type="range" min="50" max="150" step="5" value={form.printDetailFontScale ?? 80} onChange={(e) => setForm({...form, printDetailFontScale: Number(e.target.value)})} className="w-full accent-blue-600" />
-                  </div>
-                  <div>
-                    <label className="block text-sm font-bold text-gray-700 mb-1">Chiều ngang (Padding X: {form.printTablePaddingX ?? 4}px)</label>
-                    <input type="range" min="0" max="20" step="1" value={form.printTablePaddingX ?? 4} onChange={(e) => setForm({...form, printTablePaddingX: Number(e.target.value)})} className="w-full accent-blue-600" />
-                  </div>
-                  <div>
-                    <label className="block text-sm font-bold text-gray-700 mb-1">Chiều dọc (Padding Y: {form.printTablePaddingY ?? 6}px)</label>
-                    <input type="range" min="0" max="20" step="1" value={form.printTablePaddingY ?? 6} onChange={(e) => setForm({...form, printTablePaddingY: Number(e.target.value)})} className="w-full accent-blue-600" />
-                  </div>
+                  <div><label className="block text-sm font-bold text-gray-700 mb-1">Tỷ lệ Cỡ chữ phần Chi tiết ({form.printDetailFontScale ?? 80}%)</label><input type="range" min="50" max="150" step="5" value={form.printDetailFontScale ?? 80} onChange={(e) => setForm({...form, printDetailFontScale: Number(e.target.value)})} className="w-full accent-blue-600" /></div>
+                  <div><label className="block text-sm font-bold text-gray-700 mb-1">Chiều ngang (Padding X: {form.printTablePaddingX ?? 4}px)</label><input type="range" min="0" max="20" step="1" value={form.printTablePaddingX ?? 4} onChange={(e) => setForm({...form, printTablePaddingX: Number(e.target.value)})} className="w-full accent-blue-600" /></div>
+                  <div><label className="block text-sm font-bold text-gray-700 mb-1">Chiều dọc (Padding Y: {form.printTablePaddingY ?? 6}px)</label><input type="range" min="0" max="20" step="1" value={form.printTablePaddingY ?? 6} onChange={(e) => setForm({...form, printTablePaddingY: Number(e.target.value)})} className="w-full accent-blue-600" /></div>
                 </div>
 
                 <hr className="border-gray-100" />
                 <div className="space-y-4 mt-6">
                   <h4 className="text-xs font-black text-gray-400 uppercase tracking-wider mb-2">Độ rộng từng Cột (Tính theo % cho khổ A4/A5)</h4>
                   <div className="grid grid-cols-2 gap-4 bg-gray-50 p-4 rounded-xl border border-gray-100">
-                    <div>
-                      <label className="text-[10px] font-bold text-gray-600 uppercase">Cột STT ({form.colWidthStt}%)</label>
-                      <input type="range" min="1" max="20" value={form.colWidthStt} onChange={e=>setForm({...form, colWidthStt: Number(e.target.value)})} className="w-full accent-blue-600"/>
-                    </div>
-                    <div>
-                      <label className="text-[10px] font-bold text-gray-600 uppercase">Cột Sản phẩm ({form.colWidthProduct}%)</label>
-                      <input type="range" min="10" max="80" value={form.colWidthProduct} onChange={e=>setForm({...form, colWidthProduct: Number(e.target.value)})} className="w-full accent-blue-600"/>
-                    </div>
-                    <div>
-                      <label className="text-[10px] font-bold text-gray-600 uppercase">Cột Số lượng ({form.colWidthQty}%)</label>
-                      <input type="range" min="1" max="20" value={form.colWidthQty} onChange={e=>setForm({...form, colWidthQty: Number(e.target.value)})} className="w-full accent-blue-600"/>
-                    </div>
-                    <div>
-                      <label className="text-[10px] font-bold text-gray-600 uppercase">Cột Đơn giá ({form.colWidthPrice}%)</label>
-                      <input type="range" min="5" max="40" value={form.colWidthPrice} onChange={e=>setForm({...form, colWidthPrice: Number(e.target.value)})} className="w-full accent-blue-600"/>
-                    </div>
-                    <div>
-                      <label className="text-[10px] font-bold text-gray-600 uppercase">Cột Bảo hành ({form.colWidthWarranty}%)</label>
-                      <input type="range" min="5" max="40" value={form.colWidthWarranty} onChange={e=>setForm({...form, colWidthWarranty: Number(e.target.value)})} className="w-full accent-blue-600"/>
-                    </div>
-                    <div>
-                      <label className="text-[10px] font-bold text-gray-600 uppercase">Cột Ghi chú ({form.colWidthNote}%)</label>
-                      <input type="range" min="5" max="40" value={form.colWidthNote} onChange={e=>setForm({...form, colWidthNote: Number(e.target.value)})} className="w-full accent-blue-600"/>
-                    </div>
-                    <div className="col-span-2">
-                      <label className="text-[10px] font-bold text-gray-600 uppercase">Cột Thành tiền ({form.colWidthTotal}%)</label>
-                      <input type="range" min="5" max="40" value={form.colWidthTotal} onChange={e=>setForm({...form, colWidthTotal: Number(e.target.value)})} className="w-full accent-blue-600"/>
-                    </div>
+                    <div><label className="text-[10px] font-bold text-gray-600 uppercase">Cột STT ({form.colWidthStt}%)</label><input type="range" min="1" max="20" value={form.colWidthStt} onChange={e=>setForm({...form, colWidthStt: Number(e.target.value)})} className="w-full accent-blue-600"/></div>
+                    <div><label className="text-[10px] font-bold text-gray-600 uppercase">Cột Sản phẩm ({form.colWidthProduct}%)</label><input type="range" min="10" max="80" value={form.colWidthProduct} onChange={e=>setForm({...form, colWidthProduct: Number(e.target.value)})} className="w-full accent-blue-600"/></div>
+                    <div><label className="text-[10px] font-bold text-gray-600 uppercase">Cột Số lượng ({form.colWidthQty}%)</label><input type="range" min="1" max="20" value={form.colWidthQty} onChange={e=>setForm({...form, colWidthQty: Number(e.target.value)})} className="w-full accent-blue-600"/></div>
+                    <div><label className="text-[10px] font-bold text-gray-600 uppercase">Cột Đơn giá ({form.colWidthPrice}%)</label><input type="range" min="5" max="40" value={form.colWidthPrice} onChange={e=>setForm({...form, colWidthPrice: Number(e.target.value)})} className="w-full accent-blue-600"/></div>
+                    <div><label className="text-[10px] font-bold text-gray-600 uppercase">Cột Bảo hành ({form.colWidthWarranty}%)</label><input type="range" min="5" max="40" value={form.colWidthWarranty} onChange={e=>setForm({...form, colWidthWarranty: Number(e.target.value)})} className="w-full accent-blue-600"/></div>
+                    <div><label className="text-[10px] font-bold text-gray-600 uppercase">Cột Ghi chú ({form.colWidthNote}%)</label><input type="range" min="5" max="40" value={form.colWidthNote} onChange={e=>setForm({...form, colWidthNote: Number(e.target.value)})} className="w-full accent-blue-600"/></div>
+                    <div className="col-span-2"><label className="text-[10px] font-bold text-gray-600 uppercase">Cột Thành tiền ({form.colWidthTotal}%)</label><input type="range" min="5" max="40" value={form.colWidthTotal} onChange={e=>setForm({...form, colWidthTotal: Number(e.target.value)})} className="w-full accent-blue-600"/></div>
                   </div>
                 </div>
 
@@ -962,10 +844,7 @@ function SettingsView({ db, storeId, showToast, storeConfig }) {
                     <ToggleSwitch label="In Địa chỉ cửa hàng" checked={form.printShowStoreAddress} onChange={(val) => setForm({...form, printShowStoreAddress: val})} />
                     <ToggleSwitch label="In Số điện thoại" checked={form.printShowStorePhone} onChange={(val) => setForm({...form, printShowStorePhone: val})} />
                   </div>
-                  <div>
-                    <label className="block text-sm font-bold text-gray-700 mb-1">Tiêu đề hóa đơn</label>
-                    <input value={form.printInvoiceTitle} onChange={e=>setForm({...form, printInvoiceTitle: e.target.value})} className="w-full p-2.5 border border-gray-300 rounded-xl outline-none focus:ring-2 focus:ring-blue-500 font-bold uppercase text-gray-800"/>
-                  </div>
+                  <div><label className="block text-sm font-bold text-gray-700 mb-1">Tiêu đề hóa đơn</label><input value={form.printInvoiceTitle} onChange={e=>setForm({...form, printInvoiceTitle: e.target.value})} className="w-full p-2.5 border border-gray-300 rounded-xl outline-none focus:ring-2 focus:ring-blue-500 font-bold uppercase text-gray-800"/></div>
                 </div>
 
                 <hr className="border-gray-100" />
@@ -978,7 +857,6 @@ function SettingsView({ db, storeId, showToast, storeConfig }) {
                     <ToggleSwitch label="In Tên Khách hàng" checked={form.printShowCustomer} onChange={(val) => setForm({...form, printShowCustomer: val})} />
                     <ToggleSwitch label="In SĐT Khách hàng" checked={form.printShowCustomerPhone} onChange={(val) => setForm({...form, printShowCustomerPhone: val})} />
                     <ToggleSwitch label="In Trạng thái (Đã thu/Ghi nợ)" checked={form.printShowStatus} onChange={(val) => setForm({...form, printShowStatus: val})} />
-                    
                     <div className="h-px bg-gray-200 my-2"></div>
                     <ToggleSwitch label="Hiển thị thông tin Bảo hành" checked={form.printShowWarranty ?? true} onChange={(val) => setForm({...form, printShowWarranty: val})} />
                     <ToggleSwitch label="Hiển thị Ghi chú từng món" checked={form.printShowNote ?? true} onChange={(val) => setForm({...form, printShowNote: val})} />
@@ -988,10 +866,7 @@ function SettingsView({ db, storeId, showToast, storeConfig }) {
                 <hr className="border-gray-100" />
                 <div className="space-y-4">
                   <h4 className="text-xs font-black text-gray-400 uppercase tracking-wider mb-2">Chân trang</h4>
-                  <div>
-                    <label className="block text-sm font-bold text-gray-700 mb-1">Lời cảm ơn / Ghi chú</label>
-                    <textarea value={form.printFooter} onChange={e=>setForm({...form, printFooter: e.target.value})} className="w-full p-2.5 border border-gray-300 rounded-xl outline-none focus:ring-2 focus:ring-blue-500 text-sm h-20 resize-none"/>
-                  </div>
+                  <div><label className="block text-sm font-bold text-gray-700 mb-1">Lời cảm ơn / Ghi chú</label><textarea value={form.printFooter} onChange={e=>setForm({...form, printFooter: e.target.value})} className="w-full p-2.5 border border-gray-300 rounded-xl outline-none focus:ring-2 focus:ring-blue-500 text-sm h-20 resize-none"/></div>
                 </div>
               </div>
             </div>
@@ -1018,8 +893,7 @@ function SettingsView({ db, storeId, showToast, storeConfig }) {
                         const collections = ['products', 'orders', 'imports', 'customers', 'suppliers', 'expenses'];
                         for (let col of collections) {
                           const snap = await getDocs(collection(db, 'stores', storeId, col));
-                          let batch = writeBatch(db);
-                          let count = 0;
+                          let batch = writeBatch(db); let count = 0;
                           snap.docs.forEach((d) => { batch.delete(d.ref); count++; if (count >= 400) { batch.commit(); batch = writeBatch(db); count = 0; } });
                           if (count > 0) await batch.commit();
                         }
@@ -1074,12 +948,9 @@ function POSView({ products, customers, db, storeId, user, storeConfig, showToas
   const [showAddCusModal, setShowAddCusModal] = useState(false);
   const [newCusForm, setNewCusForm] = useState({ name: '', phone: '', address: '' });
   
-  // Tùy chọn khổ in cục bộ lúc bán hàng
   const [localPrintSize, setLocalPrintSize] = useState(storeConfig.printPaperSize || 'K80');
 
-  useEffect(() => {
-    setLocalPrintSize(storeConfig.printPaperSize || 'K80');
-  }, [storeConfig.printPaperSize]);
+  useEffect(() => { setLocalPrintSize(storeConfig.printPaperSize || 'K80'); }, [storeConfig.printPaperSize]);
 
   useEffect(() => {
     const handleKeyDown = (e) => { if (e.key === 'Escape') { setShowModal(false); } };
@@ -1177,9 +1048,10 @@ function POSView({ products, customers, db, storeId, user, storeConfig, showToas
           {cart.length === 0 && <div className="text-center text-gray-400 py-10 text-sm font-medium">Chưa có sản phẩm nào trong giỏ</div>}
         </div>
         <div className="p-4 border-t bg-white space-y-3 shadow-[0_-4px_6px_-1px_rgba(0,0,0,0.05)]">
+          {/* Nút Thêm Khách hàng được hiển thị to rõ trên di động bằng class whitespace-nowrap */}
           <div className="flex gap-2">
             <select value={customerId} onChange={e=>setCustomerId(e.target.value)} className="flex-1 p-2.5 border border-gray-300 rounded-xl outline-none text-sm bg-gray-50 focus:bg-white font-medium focus:ring-2 focus:ring-blue-500 transition-all"><option value="">-- Khách lẻ (Tiền mặt) --</option>{customers.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}</select>
-            <button onClick={() => setShowAddCusModal(true)} className="bg-blue-50 hover:bg-blue-100 text-blue-600 border border-blue-200 px-3 rounded-xl font-bold text-xs flex items-center gap-1 shrink-0 transition-colors"><Plus size={16}/> Thêm</button>
+            <button onClick={() => setShowAddCusModal(true)} className="bg-blue-50 hover:bg-blue-100 text-blue-600 border border-blue-200 px-3 py-2.5 rounded-xl font-bold text-xs flex items-center gap-1 shrink-0 whitespace-nowrap transition-colors"><Plus size={16}/> Thêm KH</button>
           </div>
           <textarea value={orderNote} onChange={e=>setOrderNote(e.target.value)} placeholder="Ghi chú đơn hàng..." className="w-full p-2.5 border border-gray-300 rounded-xl outline-none text-sm resize-none h-12 bg-gray-50 focus:bg-white focus:ring-2 focus:ring-blue-500 transition-all"></textarea>
           <div className="flex gap-2"><button onClick={() => setIsDebt(false)} className={"flex-1 py-2.5 rounded-xl border-2 font-bold transition-all " + (!isDebt ? 'bg-blue-600 text-white border-blue-600 shadow-md' : 'bg-white text-gray-500 border-gray-200 hover:bg-gray-50')}>Tiền mặt</button><button onClick={() => setIsDebt(true)} className={"flex-1 py-2.5 rounded-xl border-2 font-bold transition-all " + (isDebt ? 'bg-orange-500 text-white border-orange-500 shadow-md' : 'bg-white text-gray-500 border-gray-200 hover:bg-gray-50')}>Ghi nợ</button></div>
@@ -1187,11 +1059,7 @@ function POSView({ products, customers, db, storeId, user, storeConfig, showToas
             <label className="flex items-center gap-2 text-sm font-bold text-gray-700 cursor-pointer select-none"><input type="checkbox" checked={printInvoice} onChange={e => setPrintInvoice(e.target.checked)} className="w-5 h-5 text-blue-600 rounded border-gray-300 focus:ring-blue-500"/> In hóa đơn</label>
             <div className="flex items-center gap-2">
               <span className="text-xs text-gray-500 font-bold">Khổ:</span>
-              <select value={localPrintSize} onChange={e => setLocalPrintSize(e.target.value)} className="text-xs bg-gray-100 px-2 py-1.5 rounded text-blue-700 font-bold border outline-none">
-                <option value="K80">Bill (K80)</option>
-                <option value="A4">Giấy A4</option>
-                <option value="A5">Giấy A5</option>
-              </select>
+              <select value={localPrintSize} onChange={e => setLocalPrintSize(e.target.value)} className="text-xs bg-gray-100 px-2 py-1.5 rounded text-blue-700 font-bold border outline-none"><option value="K80">Bill (K80)</option><option value="A4">Giấy A4</option><option value="A5">Giấy A5</option></select>
             </div>
           </div>
           <div className="flex justify-between items-end py-1"><span className="font-bold text-gray-500 text-sm uppercase tracking-wide">Cần thanh toán</span><span className="text-3xl font-black text-blue-600">{formatCurrency(cartTotal)}</span></div>
@@ -1213,11 +1081,8 @@ function POSView({ products, customers, db, storeId, user, storeConfig, showToas
           <div className="space-y-4">
             <div className="flex justify-between items-center bg-emerald-50 border border-emerald-100 p-3 rounded-xl shadow-sm">
               <span className="text-sm font-bold text-emerald-800 flex items-center gap-1"><CheckCircle2 size={16}/> Thanh toán thành công!</span>
-              <div className="flex gap-2">
-                <button onClick={handlePrintAsImage} className="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg text-xs font-bold flex items-center gap-1.5 shadow-md transition-colors"><Printer size={16}/> In Hóa Đơn</button>
-              </div>
+              <div className="flex gap-2"><button onClick={handlePrintAsImage} className="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg text-xs font-bold flex items-center gap-1.5 shadow-md transition-colors"><Printer size={16}/> In Hóa Đơn</button></div>
             </div>
-
             <div id="print-invoice-area-pos" className={`bg-white shadow-xl border border-gray-200 mx-auto transition-all ${paperWidthClass}`} style={{ fontSize: `${baseFontSize}px`, padding: isA4A5 ? '20px' : '15px', color: '#000', fontFamily: 'sans-serif' }}>
               <ReceiptTemplate order={completedOrder} storeConfig={{...storeConfig, printPaperSize: localPrintSize}} isA4A5={isA4A5} baseFontSize={baseFontSize} />
             </div>
@@ -1238,13 +1103,13 @@ function SalesHistoryView({ orders, products, customers, storeConfig, db, storeI
   
   const [editingOrder, setEditingOrder] = useState(null);
   const [viewingOrderPrint, setViewingOrderPrint] = useState(null);
-  
-  // Tùy chọn khổ in cục bộ
   const [localPrintSize, setLocalPrintSize] = useState(storeConfig.printPaperSize || 'K80');
 
-  useEffect(() => {
-    setLocalPrintSize(storeConfig.printPaperSize || 'K80');
-  }, [storeConfig.printPaperSize]);
+  // --- THÊM TÍNH NĂNG TẠO ĐƠN HÀNG LÀM TRỰC TIẾP QUA POPUP ---
+  const [showCreateOrderModal, setShowCreateOrderModal] = useState(false);
+  const [newOrderForm, setNewOrderForm] = useState({ customerId: '', status: 'PAID', note: '', items: [] });
+
+  useEffect(() => { setLocalPrintSize(storeConfig.printPaperSize || 'K80'); }, [storeConfig.printPaperSize]);
 
   useEffect(() => {
     const handleKeyDown = (e) => { if (e.key === 'Escape') setViewingOrderPrint(null); };
@@ -1308,6 +1173,51 @@ function SalesHistoryView({ orders, products, customers, storeConfig, db, storeI
     } catch (err) { showToast("Lỗi cập nhật hóa đơn", "error"); }
   };
 
+  // Hàm lưu tạo đơn hàng mới qua Popup (Modal)
+  const handleSaveNewOrder = async (e) => {
+    e.preventDefault();
+    if (newOrderForm.items.length === 0) return showToast("Vui lòng thêm ít nhất 1 sản phẩm vào đơn", "error");
+    try {
+      let total = 0; let totalCost = 0;
+      const itemsToSave = newOrderForm.items.map(it => {
+        const qty = Number(it.quantity) || 0; const price = Number(it.price) || 0; const cost = Number(it.cost) || 0;
+        total += (qty * price); totalCost += (qty * cost);
+        return { ...it, quantity: qty, price, cost };
+      });
+      
+      const c = customers.find(cust => cust.id === newOrderForm.customerId);
+      const orderData = {
+        customerId: newOrderForm.customerId || null,
+        customerName: c ? c.name : 'Khách lẻ',
+        sellerUid: user.uid,
+        note: newOrderForm.note,
+        items: itemsToSave,
+        total: total,
+        totalCost: totalCost,
+        status: newOrderForm.status,
+        date: new Date().toISOString()
+      };
+
+      await addDoc(collection(db, 'stores', storeId, 'orders'), orderData);
+
+      let batch = writeBatch(db);
+      itemsToSave.forEach(item => {
+        const p = products.find(prod => prod.id === item.id);
+        if (p) { batch.update(doc(db, 'stores', storeId, 'products', p.id), { stock: p.stock - item.quantity }); }
+      });
+      if (newOrderForm.status === 'DEBT' && c) {
+        batch.update(doc(db, 'stores', storeId, 'customers', newOrderForm.customerId), { totalDebt: (c.totalDebt || 0) + total });
+      }
+      await batch.commit();
+
+      setShowCreateOrderModal(false); showToast("Tạo đơn hàng mới thành công!");
+    } catch (err) { showToast("Lỗi khi tạo đơn hàng", "error"); }
+  };
+
+  const handleAddNewItemToForm = () => {
+    setNewOrderForm(prev => ({ ...prev, items: [...prev.items, { id: '', name: '', price: 0, cost: 0, quantity: 1, warrantyValue: '', warrantyUnit: 'tháng', note: '' }] }));
+  };
+
   const isA4A5 = localPrintSize === 'A4' || localPrintSize === 'A5';
   const paperWidthClass = localPrintSize === 'K80' ? 'max-w-[300px]' : (localPrintSize === 'A4' ? 'max-w-[210mm]' : 'max-w-[148mm]');
   const baseFontSize = Number(storeConfig?.printFontSize) || 12;
@@ -1319,9 +1229,15 @@ function SalesHistoryView({ orders, products, customers, storeConfig, db, storeI
           <h2 className="text-2xl font-bold text-gray-800 flex items-center gap-2"><Receipt className="text-blue-600"/> Quản lý Bán Hàng</h2>
           <p className="text-sm text-gray-500 mt-0.5">Theo dõi lịch sử giao dịch và in lại hóa đơn (Theo cấu hình mẫu in)</p>
         </div>
-        <div className="relative flex-1 sm:w-72">
-          <Search size={16} className="absolute left-3 top-3.5 text-gray-400"/>
-          <input placeholder="Tìm mã HĐ hoặc tên khách..." value={searchTerm} onChange={e=>setSearchTerm(e.target.value)} className="w-full pl-9 pr-3 py-2.5 border rounded-xl bg-white outline-none shadow-sm focus:ring-2 focus:ring-blue-500 transition-all"/>
+        <div className="flex items-center gap-2 w-full sm:w-auto">
+          {/* NÚT TẠO ĐƠN HIỂN THỊ RÕ RÀNG TRÊN CẢ DI ĐỘNG */}
+          <button onClick={() => { setNewOrderForm({ customerId: '', status: 'PAID', note: '', items: [] }); setShowCreateOrderModal(true); }} className="bg-blue-600 text-white px-3 py-2.5 rounded-xl font-bold flex gap-2 shrink-0 items-center shadow-sm whitespace-nowrap">
+            <Plus size={16}/> <span className="sm:inline">Tạo đơn</span>
+          </button>
+          <div className="relative flex-1 sm:w-72">
+            <Search size={16} className="absolute left-3 top-3.5 text-gray-400"/>
+            <input placeholder="Tìm mã HĐ hoặc tên khách..." value={searchTerm} onChange={e=>setSearchTerm(e.target.value)} className="w-full pl-9 pr-3 py-2.5 border rounded-xl bg-white outline-none shadow-sm focus:ring-2 focus:ring-blue-500 transition-all"/>
+          </div>
         </div>
       </div>
 
@@ -1420,6 +1336,77 @@ function SalesHistoryView({ orders, products, customers, storeConfig, db, storeI
         </table>
       </div>
 
+      {/* POPUP: TẠO ĐƠN HÀNG LÀM TRỰC TIẾP */}
+      <Modal isOpen={showCreateOrderModal} onClose={() => setShowCreateOrderModal(false)} title="Tạo Đơn Hàng Mới (Trực tiếp)" maxWidth="max-w-3xl">
+        <form onSubmit={handleSaveNewOrder} className="space-y-4">
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <div>
+              <label className="block text-sm font-bold text-gray-700 mb-1">Khách hàng</label>
+              <select value={newOrderForm.customerId} onChange={e=>setNewOrderForm({...newOrderForm, customerId: e.target.value})} className="w-full p-3 border rounded-xl outline-none text-sm font-bold bg-gray-50 focus:bg-white">
+                <option value="">-- Khách lẻ (Tiền mặt) --</option>
+                {customers.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
+              </select>
+            </div>
+            <div>
+              <label className="block text-sm font-bold text-gray-700 mb-1">Trạng thái thanh toán</label>
+              <select value={newOrderForm.status} onChange={e=>setNewOrderForm({...newOrderForm, status: e.target.value})} className="w-full p-3 border rounded-xl outline-none text-sm font-bold bg-gray-50 focus:bg-white">
+                <option value="PAID">Đã thanh toán (Tiền mặt)</option>
+                <option value="DEBT">Ghi nợ</option>
+              </select>
+            </div>
+          </div>
+          <div>
+            <label className="block text-sm font-bold text-gray-700 mb-1">Ghi chú chung đơn hàng</label>
+            <textarea value={newOrderForm.note} onChange={e=>setNewOrderForm({...newOrderForm, note: e.target.value})} className="w-full p-3 border rounded-xl outline-none text-sm resize-none h-16 bg-gray-50 focus:bg-white"></textarea>
+          </div>
+          
+          <div className="border rounded-xl bg-gray-50 p-4 shadow-inner">
+            <div className="flex justify-between items-center mb-3">
+              <label className="block text-sm font-bold text-gray-700">Chi tiết sản phẩm</label>
+              <button type="button" onClick={handleAddNewItemToForm} className="bg-blue-100 hover:bg-blue-200 text-blue-700 px-3 py-1.5 rounded-lg text-xs font-bold flex items-center gap-1 transition-colors"><Plus size={14}/> Thêm SP</button>
+            </div>
+            
+            <div className="max-h-[40vh] overflow-y-auto space-y-3">
+              {newOrderForm.items.map((it, idx) => (
+                <div key={idx} className="flex flex-col gap-2 p-3 border rounded-xl bg-white shadow-sm relative pr-10">
+                  <button type="button" onClick={() => setNewOrderForm(prev => ({...prev, items: prev.items.filter((_, i) => i !== idx)}))} className="absolute top-3 right-3 text-red-400 hover:text-red-600"><X size={18}/></button>
+                  
+                  <div>
+                    <label className="text-[10px] text-gray-500 font-bold uppercase">Chọn sản phẩm</label>
+                    <select required value={it.id} onChange={e => {
+                      const p = products.find(x => x.id === e.target.value);
+                      const newItems = [...newOrderForm.items];
+                      newItems[idx] = { ...newItems[idx], id: p.id, name: p.name, price: p.price, cost: p.cost };
+                      setNewOrderForm({...newOrderForm, items: newItems});
+                    }} className="w-full p-2 border rounded-lg text-sm font-bold bg-gray-50">
+                      <option value="">-- Chọn sản phẩm có sẵn --</option>
+                      {products.map(p => <option key={p.id} value={p.id}>{p.name} - {formatCurrency(p.price)}</option>)}
+                    </select>
+                  </div>
+                  
+                  <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+                    <div><label className="text-[10px] text-gray-500 font-bold uppercase">Số lượng</label><input type="number" min="1" required value={it.quantity} onChange={e => { const newItems = [...newOrderForm.items]; newItems[idx].quantity = e.target.value; setNewOrderForm({...newOrderForm, items: newItems}); }} className="w-full p-2 border rounded-lg text-sm font-bold text-center bg-gray-50" /></div>
+                    <div><label className="text-[10px] text-gray-500 font-bold uppercase">Giá bán (đ)</label><input type="number" required value={it.price} onChange={e => { const newItems = [...newOrderForm.items]; newItems[idx].price = e.target.value; setNewOrderForm({...newOrderForm, items: newItems}); }} className="w-full p-2 border rounded-lg text-sm font-bold text-blue-600 text-center bg-gray-50" /></div>
+                    <div><label className="text-[10px] text-gray-500 font-bold uppercase">Bảo hành</label><input type="number" placeholder="Số" value={it.warrantyValue} onChange={e => { const newItems = [...newOrderForm.items]; newItems[idx].warrantyValue = e.target.value; setNewOrderForm({...newOrderForm, items: newItems}); }} className="w-full p-2 border rounded-lg text-sm text-center bg-gray-50" /></div>
+                    <div><label className="text-[10px] text-gray-500 font-bold uppercase">Đơn vị BH</label><select value={it.warrantyUnit} onChange={e => { const newItems = [...newOrderForm.items]; newItems[idx].warrantyUnit = e.target.value; setNewOrderForm({...newOrderForm, items: newItems}); }} className="w-full p-2 border rounded-lg text-sm bg-gray-50"><option value="ngày">Ngày</option><option value="tuần">Tuần</option><option value="tháng">Tháng</option><option value="năm">Năm</option></select></div>
+                  </div>
+                  <div><label className="text-[10px] text-gray-500 font-bold uppercase">Ghi chú riêng (IMEI, Serial...)</label><input type="text" placeholder="Nhập IMEI, Màu sắc..." value={it.note} onChange={e => { const newItems = [...newOrderForm.items]; newItems[idx].note = e.target.value; setNewOrderForm({...newOrderForm, items: newItems}); }} className="w-full p-2 border rounded-lg text-sm bg-gray-50" /></div>
+                </div>
+              ))}
+              {newOrderForm.items.length === 0 && <div className="text-center text-gray-400 py-4 text-sm font-medium">Bạn chưa chọn sản phẩm nào</div>}
+            </div>
+            
+            <div className="mt-4 pt-3 border-t flex justify-between items-center">
+              <span className="font-bold text-gray-700">Tổng cộng:</span>
+              <span className="font-black text-blue-600 text-lg">
+                {formatCurrency(newOrderForm.items.reduce((s, it) => s + (Number(it.quantity)||0) * (Number(it.price)||0), 0))}
+              </span>
+            </div>
+          </div>
+          <button type="submit" className="w-full bg-blue-600 hover:bg-blue-700 text-white font-bold p-4 rounded-xl shadow-lg transition-all text-lg uppercase tracking-wider">Hoàn tất Tạo Đơn Hàng</button>
+        </form>
+      </Modal>
+
       <Modal isOpen={!!editingOrder} onClose={() => setEditingOrder(null)} title="Chỉnh sửa Hóa đơn" maxWidth="max-w-2xl">
         {editingOrder && (
           <form onSubmit={handleSaveEditOrder} className="space-y-5">
@@ -1453,11 +1440,7 @@ function SalesHistoryView({ orders, products, customers, storeConfig, db, storeI
             <div className="flex justify-between items-center bg-gray-100 p-3 rounded-xl border">
               <div className="flex items-center gap-2">
                 <span className="text-xs font-bold text-gray-600">Khổ in:</span>
-                <select value={localPrintSize} onChange={e => setLocalPrintSize(e.target.value)} className="text-xs font-bold text-blue-700 bg-white px-2 py-1.5 rounded shadow-sm border outline-none">
-                  <option value="K80">Bill (K80)</option>
-                  <option value="A4">Giấy A4</option>
-                  <option value="A5">Giấy A5</option>
-                </select>
+                <select value={localPrintSize} onChange={e => setLocalPrintSize(e.target.value)} className="text-xs font-bold text-blue-700 bg-white px-2 py-1.5 rounded shadow-sm border outline-none"><option value="K80">Bill (K80)</option><option value="A4">Giấy A4</option><option value="A5">Giấy A5</option></select>
               </div>
               <div className="flex gap-2">
                 <button onClick={handlePrintAsImage} className="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg text-sm font-bold flex items-center gap-1.5 shadow-md"><Printer size={16}/> In Ảnh Trực Tiếp</button>
@@ -1561,9 +1544,7 @@ function StaffManagerView({ db, showToast }) {
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4 bg-blue-50 p-4 rounded-xl border border-blue-100 mb-4">
             <div className="col-span-2"><input required placeholder="Tên nhân viên *" value={form.name} onChange={e=>setForm({...form, name:e.target.value})} className="w-full p-2.5 border rounded outline-none text-sm bg-white"/></div>
             <div><input required placeholder="Username đăng nhập *" value={form.username} onChange={e=>setForm({...form, username:e.target.value})} disabled={!!form.id} className="w-full p-2.5 border rounded outline-none text-sm bg-white disabled:bg-gray-100"/></div>
-            <div>
-              <input type="text" placeholder={form.id ? "Mật khẩu mới (Bỏ trống nếu không đổi)" : "Mật khẩu *"} required={!form.id} value={form.password} onChange={e=>setForm({...form, password:e.target.value})} className="w-full p-2.5 border rounded outline-none text-sm bg-white font-medium" />
-            </div>
+            <div><input type="text" placeholder={form.id ? "Mật khẩu mới (Bỏ trống nếu không đổi)" : "Mật khẩu *"} required={!form.id} value={form.password} onChange={e=>setForm({...form, password:e.target.value})} className="w-full p-2.5 border rounded outline-none text-sm bg-white font-medium" /></div>
           </div>
           <div>
             <label className="block text-xs font-bold text-gray-500 mb-1">Vai trò tài khoản</label>
