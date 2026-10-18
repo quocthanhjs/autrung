@@ -150,12 +150,12 @@ const ReceiptTemplate = ({ order, storeConfig, isA4A5, baseFontSize }) => {
         <thead>
           <tr className="border-b border-gray-400 bg-gray-100/50">
             {isA4A5 && <th style={{...thStyle, width: wStt}} className="border border-gray-300">STT</th>}
-            <th style={{...thStyle, width: wProd}} className={`border border-gray-300`}>Sản phẩm</th>
-            <th style={{...thStyle, width: wQty}} className={`border border-gray-300`}>SL</th>
-            <th style={{...thStyle, width: wPrice}} className={`border border-gray-300`}>Đơn giá</th>
+            <th style={{...thStyle, width: wProd}} className="border border-gray-300">Sản phẩm</th>
+            <th style={{...thStyle, width: wQty}} className="border border-gray-300">SL</th>
+            <th style={{...thStyle, width: wPrice}} className="border border-gray-300">Đơn giá</th>
             {showBH && <th style={{...thStyle, width: wWarranty}} className="border border-gray-300">Bảo hành</th>}
             {showGC && <th style={{...thStyle, width: wNote}} className="border border-gray-300">Ghi chú</th>}
-            <th style={{...thStyle, width: wTotal}} className={`border border-gray-300`}>Thành tiền</th>
+            <th style={{...thStyle, width: wTotal}} className="border border-gray-300">Thành tiền</th>
           </tr>
         </thead>
         <tbody>
