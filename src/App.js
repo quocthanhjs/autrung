@@ -146,23 +146,23 @@ const ReceiptTemplate = ({ order, storeConfig, isA4A5, baseFontSize }) => {
         {storeConfig.printShowStatus && <p><strong>Trạng thái:</strong> {order?.status === 'PAID' ? 'Đã thanh toán' : (order?.status === 'DEBT' ? 'Ghi nợ' : 'Đã thanh toán')}</p>}
       </div>
 
-      <table className="w-full mb-3 border-collapse table-fixed break-words">
+      <table className="w-full mb-3 border-collapse">
         <thead>
           <tr className="border-b border-gray-400 bg-gray-100/50">
             {isA4A5 && <th style={{...thStyle, width: wStt}} className="border border-gray-300">STT</th>}
-            <th style={{...thStyle, width: wProd}} className="border border-gray-300">Sản phẩm</th>
-            <th style={{...thStyle, width: wQty}} className="border border-gray-300">SL</th>
-            <th style={{...thStyle, width: wPrice}} className="border border-gray-300">Đơn giá</th>
+            <th style={{...thStyle, width: wProd}} className={`border border-gray-300`}>Sản phẩm</th>
+            <th style={{...thStyle, width: wQty}} className={`border border-gray-300`}>SL</th>
+            <th style={{...thStyle, width: wPrice}} className={`border border-gray-300`}>Đ.Giá</th>
             {showBH && <th style={{...thStyle, width: wWarranty}} className="border border-gray-300">Bảo hành</th>}
             {showGC && <th style={{...thStyle, width: wNote}} className="border border-gray-300">Ghi chú</th>}
-            <th style={{...thStyle, width: wTotal}} className="border border-gray-300">Thành tiền</th>
+            <th style={{...thStyle, width: wTotal}} className={`border border-gray-300`}>Thành tiền</th>
           </tr>
         </thead>
         <tbody>
           {(order?.items || [{name: 'Điện thoại Demo', price: 8500000, quantity: 1, warrantyValue: '12', warrantyUnit: 'tháng', note: 'Màu đen'}]).map((i, x) => (
             <tr key={x} className="border-b border-gray-200 border-dashed">
-              {isA4A5 && <td style={{...tdStyle, width: wStt}} className="text-center align-top border border-gray-300">{x + 1}</td>}
-              <td style={{...tdStyle, width: wProd}} className={`align-top ${isA4A5 ? 'border border-gray-300' : ''}`}>
+              {isA4A5 && <td style={tdStyle} className="text-center align-top border border-gray-300">{x + 1}</td>}
+              <td style={tdStyle} className={`align-top ${isA4A5 ? 'border border-gray-300' : ''}`}>
                 <strong>{i.name}</strong>
                 {!isA4A5 && (
                   <div className="text-[0.85em] text-gray-700 mt-1 space-y-0.5">
@@ -171,11 +171,11 @@ const ReceiptTemplate = ({ order, storeConfig, isA4A5, baseFontSize }) => {
                   </div>
                 )}
               </td>
-              <td style={{...tdStyle, width: wQty}} className={`text-center align-top ${isA4A5 ? 'border border-gray-300' : ''}`}>{i.quantity}</td>
-              <td style={{...tdStyle, width: wPrice}} className={`text-right align-top ${isA4A5 ? 'border border-gray-300' : ''}`}>{formatCurrency(i.price)}</td>
-              {showBH && <td style={{...tdStyle, width: wWarranty}} className="text-center align-top border border-gray-300">{i.warrantyValue ? `${i.warrantyValue} ${i.warrantyUnit}` : ''}</td>}
-              {showGC && <td style={{...tdStyle, width: wNote}} className="text-left align-top border border-gray-300">{i.note || ''}</td>}
-              <td style={{...tdStyle, width: wTotal}} className={`text-right align-top font-bold ${isA4A5 ? 'border border-gray-300' : ''}`}>{formatCurrency(i.price * i.quantity)}</td>
+              <td style={tdStyle} className={`text-center align-top ${isA4A5 ? 'border border-gray-300' : ''}`}>{i.quantity}</td>
+              <td style={tdStyle} className={`text-right align-top ${isA4A5 ? 'border border-gray-300' : ''}`}>{formatCurrency(i.price)}</td>
+              {showBH && <td style={tdStyle} className="text-center align-top border border-gray-300">{i.warrantyValue ? `${i.warrantyValue} ${i.warrantyUnit}` : ''}</td>}
+              {showGC && <td style={tdStyle} className="text-left align-top border border-gray-300">{i.note || ''}</td>}
+              <td style={tdStyle} className={`text-right align-top font-bold ${isA4A5 ? 'border border-gray-300' : ''}`}>{formatCurrency(i.price * i.quantity)}</td>
             </tr>
           ))}
         </tbody>
@@ -205,6 +205,7 @@ function LoginView({ onLoginSuccess }) {
     try {
       let cleanInput = loginInput.trim().toLowerCase();
 
+      // 1. ADMIN - Đăng nhập qua Firebase Auth
       if (cleanInput === 'admin' || cleanInput.includes('@')) {
         let loginEmail = cleanInput === 'admin' ? "admin@smartpos.com" : cleanInput;
         const userCredential = await signInWithEmailAndPassword(auth, loginEmail, password);
@@ -218,6 +219,7 @@ function LoginView({ onLoginSuccess }) {
         return;
       }
 
+      // 2. NHÂN VIÊN - Đăng nhập qua Database
       const q = query(collection(db, 'users_db'), where('username', '==', cleanInput));
       const querySnapshot = await getDocs(q);
       if (querySnapshot.empty) throw new Error("Không tìm thấy Tên đăng nhập này!");
@@ -2090,7 +2092,7 @@ function ExpenseView({ expenses, db, storeId, showToast }) {
         <div className="flex items-center gap-2 bg-gray-50 p-2 rounded-xl border">
           <select value={filterMonth} onChange={e=>setFilterMonth(e.target.value)} className="bg-transparent text-sm font-medium outline-none"><option value="ALL">Cả năm</option>{Array.from({length: 12}, (_, i) => <option key={i+1} value={i+1}>Tháng {i+1}</option>)}</select>
           <div className="w-px h-4 bg-gray-300"></div>
-          <select value={filterYear} onChange={e=>setFilterYear(e.target.value)} className="bg-transparent text-sm font-medium outline-none">{Array.from({length: 5}, (_, i) => new Date().getFullYear() - i).map(y => <option key={y} value={y}>Năm {y}</option>)}</select>
+          <select value={filterYear} onChange={e=>setFilterYear(e.target.value)} className="bg-transparent text-sm font-medium outline-none">{Array.from({length: 5}, (_, i) => new Date().getFullYear() - i).map(y => <option key={y} value={y}>{y}</option>)}</select>
         </div>
       </div>
       <form onSubmit={handleSave} className="bg-white p-4 rounded-xl border shadow-sm mb-4 flex flex-col md:flex-row gap-4 shrink-0">
@@ -2115,7 +2117,7 @@ function ExpenseView({ expenses, db, storeId, showToast }) {
           <tbody>
             {filteredExpenses.map(e => (
               <tr key={e.id} className="border-b hover:bg-gray-50 cursor-pointer" onClick={() => setDetailExpense(e)}>
-                <td className="p-4" onClick={evt=>evt.stopPropagation()}><input type="checkbox" checked={selectedIds.includes(e.id)} onChange={() => setSelectedIds(prev => prev.includes(e.id) ? prev.filter(x=>x!==e.id) : [...prev, e.id]} className="w-4 h-4"/></td>
+                <td className="p-4" onClick={evt=>evt.stopPropagation()}><input type="checkbox" checked={selectedIds.includes(e.id)} onChange={() => setSelectedIds(prev => prev.includes(e.id) ? prev.filter(x=>x!==e.id) : [...prev, e.id])} className="w-4 h-4"/></td>
                 <td className="p-4 text-gray-500">{formatDate(e.date)}</td><td className="p-4 font-medium text-blue-600 underline">{e.note}</td><td className="p-4 font-bold text-orange-600">{formatCurrency(e.amount)}</td>
                 <td className="p-4 text-right" onClick={evt=>evt.stopPropagation()}><button onClick={() => handleDelete(e.id)} className="text-red-500 bg-red-50 p-2 rounded-lg hover:bg-red-100"><Trash2 size={16}/></button></td>
               </tr>
@@ -2565,4 +2567,3 @@ function SettingsView({ db, storeId, showToast, storeConfig }) {
     </div>
   );
 }
-
