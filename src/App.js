@@ -183,6 +183,7 @@ export default function EnhancedPOS() {
   const [storeConfig, setStoreConfig] = useState({ 
     name: 'SmartPOS Pro', address: '', phone: '', logo: '',
     printPaperSize: 'K80', printFontSize: 12,
+    printTablePaddingX: 4, printTablePaddingY: 6, printDetailFontScale: 80,
     printShowLogo: true, printShowStoreName: true, printShowStoreAddress: true, printShowStorePhone: true,
     printInvoiceTitle: 'HÓA ĐƠN BÁN HÀNG', 
     printShowInvoiceId: true, printShowDate: true, printShowCashier: true,
@@ -541,10 +542,23 @@ const StatCard = ({ icon, title, value, color, highlight = false }) => {
 };
 
 // =========================================================================
-// MẪU IN DÙNG CHUNG (K80 / A4 / A5 CHUẨN KIOTVIET)
+// MẪU IN DÙNG CHUNG (K80 / A4 / A5 CHUẨN KIOTVIET) TÙY CHỈNH NÂNG CAO
 // =========================================================================
 
 const ReceiptTemplate = ({ order, storeConfig, isA4A5, baseFontSize }) => {
+  const padX = storeConfig.printTablePaddingX ?? 4;
+  const padY = storeConfig.printTablePaddingY ?? 6;
+  const detailFontScale = (storeConfig.printDetailFontScale ?? 80) / 100;
+  const detailFontSize = `${baseFontSize * detailFontScale}px`;
+  
+  const thStyle = { padding: `${padY}px ${padX}px`, fontSize: detailFontSize };
+  const tdStyle = { padding: `${padY}px ${padX}px`, fontSize: detailFontSize };
+
+  // Dịch Bảo hành/Ghi chú về phía cuối (Sau SL và Đ.Giá, Trước Thành Tiền)
+  const showBH = isA4A5 && storeConfig.printShowWarranty !== false;
+  const showGC = isA4A5 && storeConfig.printShowNote !== false;
+  const a4a5ColSpan = 4 + (showBH ? 1 : 0) + (showGC ? 1 : 0);
+
   return (
     <>
       <div className="text-center border-b border-dashed border-gray-400 pb-3 mb-3">
@@ -569,23 +583,24 @@ const ReceiptTemplate = ({ order, storeConfig, isA4A5, baseFontSize }) => {
       <table className="w-full mb-3 border-collapse">
         <thead>
           <tr className="border-b border-gray-400 bg-gray-100/50">
-            {isA4A5 && <th className="py-1 px-1 text-center w-8 border border-gray-300">STT</th>}
-            <th className={`py-1 px-1 text-left ${isA4A5 ? 'border border-gray-300' : ''}`}>Sản phẩm</th>
+            {isA4A5 && <th style={thStyle} className="text-center w-8 border border-gray-300">STT</th>}
+            {/* Tăng độ rộng cột Sản phẩm */}
+            <th style={thStyle} className={`text-left ${isA4A5 ? 'border border-gray-300 w-[35%]' : 'w-[45%]'}`}>Sản phẩm</th>
+            <th style={thStyle} className={`text-center w-10 ${isA4A5 ? 'border border-gray-300' : ''}`}>SL</th>
+            <th style={thStyle} className={`text-right w-20 ${isA4A5 ? 'border border-gray-300' : ''}`}>Đ.Giá</th>
             
-            {/* Tách cột Bảo hành & Ghi chú riêng biệt cho khổ A4/A5 */}
-            {isA4A5 && storeConfig.printShowWarranty !== false && <th className="py-1 px-1 text-center border border-gray-300">Bảo hành</th>}
-            {isA4A5 && storeConfig.printShowNote !== false && <th className="py-1 px-1 text-left border border-gray-300">Ghi chú</th>}
+            {/* Dời Bảo hành, Ghi chú về bên phải */}
+            {showBH && <th style={thStyle} className="text-center border border-gray-300">Bảo hành</th>}
+            {showGC && <th style={thStyle} className="text-left border border-gray-300">Ghi chú</th>}
             
-            <th className={`py-1 px-1 text-center w-8 ${isA4A5 ? 'border border-gray-300' : ''}`}>SL</th>
-            <th className={`py-1 px-1 text-right w-20 ${isA4A5 ? 'border border-gray-300' : ''}`}>Đ.Giá</th>
-            <th className={`py-1 px-1 text-right w-24 ${isA4A5 ? 'border border-gray-300' : ''}`}>Thành tiền</th>
+            <th style={thStyle} className={`text-right w-24 ${isA4A5 ? 'border border-gray-300' : ''}`}>Thành tiền</th>
           </tr>
         </thead>
         <tbody>
           {(order?.items || [{name: 'Điện thoại Demo', price: 8500000, quantity: 1, warrantyValue: '12', warrantyUnit: 'tháng', note: 'Màu đen'}]).map((i, x) => (
             <tr key={x} className="border-b border-gray-200 border-dashed">
-              {isA4A5 && <td className="py-2 px-1 text-center border border-gray-300">{x + 1}</td>}
-              <td className={`py-2 px-1 ${isA4A5 ? 'border border-gray-300' : ''}`}>
+              {isA4A5 && <td style={tdStyle} className="text-center align-top border border-gray-300">{x + 1}</td>}
+              <td style={tdStyle} className={`align-top ${isA4A5 ? 'border border-gray-300' : ''}`}>
                 <strong>{i.name}</strong>
                 
                 {/* Ở khổ K80: Gộp thông tin hiển thị bên dưới tên sản phẩm */}
@@ -597,25 +612,26 @@ const ReceiptTemplate = ({ order, storeConfig, isA4A5, baseFontSize }) => {
                 )}
               </td>
               
-              {/* Hiển thị cột riêng trên A4/A5 */}
-              {isA4A5 && storeConfig.printShowWarranty !== false && (
-                <td className="py-2 px-1 text-center border border-gray-300">
+              <td style={tdStyle} className={`text-center align-top ${isA4A5 ? 'border border-gray-300' : ''}`}>{i.quantity}</td>
+              <td style={tdStyle} className={`text-right align-top ${isA4A5 ? 'border border-gray-300' : ''}`}>{formatCurrency(i.price)}</td>
+              
+              {/* Hiển thị cột riêng trên A4/A5 dời sang bên phải */}
+              {showBH && (
+                <td style={tdStyle} className="text-center align-top border border-gray-300">
                   {i.warrantyValue ? `${i.warrantyValue} ${i.warrantyUnit}` : ''}
                 </td>
               )}
-              {isA4A5 && storeConfig.printShowNote !== false && (
-                <td className="py-2 px-1 text-left border border-gray-300">{i.note || ''}</td>
+              {showGC && (
+                <td style={tdStyle} className="text-left align-top border border-gray-300">{i.note || ''}</td>
               )}
               
-              <td className={`py-2 px-1 text-center align-top ${isA4A5 ? 'border border-gray-300' : ''}`}>{i.quantity}</td>
-              <td className={`py-2 px-1 text-right align-top ${isA4A5 ? 'border border-gray-300' : ''}`}>{formatCurrency(i.price)}</td>
-              <td className={`py-2 px-1 text-right align-top font-bold ${isA4A5 ? 'border border-gray-300' : ''}`}>{formatCurrency(i.price * i.quantity)}</td>
+              <td style={tdStyle} className={`text-right align-top font-bold ${isA4A5 ? 'border border-gray-300' : ''}`}>{formatCurrency(i.price * i.quantity)}</td>
             </tr>
           ))}
         </tbody>
         <tfoot>
           <tr className="border-t-2 border-gray-800 font-bold bg-gray-50">
-            <td colSpan={isA4A5 ? (3 + (storeConfig.printShowWarranty !== false ? 1 : 0) + (storeConfig.printShowNote !== false ? 1 : 0)) : 3} className={`py-3 px-1 text-right uppercase ${isA4A5 ? 'border border-gray-300' : ''}`}>
+            <td colSpan={isA4A5 ? a4a5ColSpan : 3} className={`py-3 px-1 text-right uppercase ${isA4A5 ? 'border border-gray-300' : ''}`}>
               TỔNG CỘNG:
             </td>
             <td className={`py-3 px-1 text-right ${isA4A5 ? 'border border-gray-300' : ''}`} style={{fontSize: `${baseFontSize + 2}px`}}>
@@ -648,6 +664,10 @@ function SettingsView({ db, storeId, showToast, storeConfig }) {
     
     printPaperSize: storeConfig?.printPaperSize || 'K80',
     printFontSize: storeConfig?.printFontSize || 12,
+    printTablePaddingX: storeConfig?.printTablePaddingX ?? 4,
+    printTablePaddingY: storeConfig?.printTablePaddingY ?? 6,
+    printDetailFontScale: storeConfig?.printDetailFontScale ?? 80,
+    
     printShowLogo: storeConfig?.printShowLogo ?? true,
     printShowStoreName: storeConfig?.printShowStoreName ?? true,
     printShowStoreAddress: storeConfig?.printShowStoreAddress ?? true,
@@ -806,11 +826,28 @@ function SettingsView({ db, storeId, showToast, storeConfig }) {
                     </div>
                   </div>
                   <div>
-                    <label className="block text-sm font-bold text-gray-700 mb-1">Cỡ chữ (px)</label>
+                    <label className="block text-sm font-bold text-gray-700 mb-1">Cỡ chữ tổng thể (px)</label>
                     <div className="flex items-center gap-3">
                       <input type="range" min="8" max="24" step="0.5" value={form.printFontSize} onChange={(e) => setForm({...form, printFontSize: Number(e.target.value)})} className="flex-1 accent-blue-600" />
                       <input type="number" step="0.5" value={form.printFontSize} onChange={(e) => setForm({...form, printFontSize: Number(e.target.value)})} className="w-16 p-1.5 border rounded-lg text-center font-bold text-sm outline-none" />
                     </div>
+                  </div>
+                </div>
+
+                <hr className="border-gray-100" />
+                <div className="space-y-4 mt-6">
+                  <h4 className="text-xs font-black text-gray-400 uppercase tracking-wider mb-2">Tùy chỉnh Bảng chi tiết</h4>
+                  <div>
+                    <label className="block text-sm font-bold text-gray-700 mb-1">Tỷ lệ Cỡ chữ chi tiết (Hiện tại: {form.printDetailFontScale ?? 80}%)</label>
+                    <input type="range" min="50" max="150" step="5" value={form.printDetailFontScale ?? 80} onChange={(e) => setForm({...form, printDetailFontScale: Number(e.target.value)})} className="w-full accent-blue-600" />
+                  </div>
+                  <div>
+                    <label className="block text-sm font-bold text-gray-700 mb-1">Độ rộng Cột ngang (Padding X: {form.printTablePaddingX ?? 4}px)</label>
+                    <input type="range" min="0" max="20" step="1" value={form.printTablePaddingX ?? 4} onChange={(e) => setForm({...form, printTablePaddingX: Number(e.target.value)})} className="w-full accent-blue-600" />
+                  </div>
+                  <div>
+                    <label className="block text-sm font-bold text-gray-700 mb-1">Độ rộng Cột dọc (Padding Y: {form.printTablePaddingY ?? 6}px)</label>
+                    <input type="range" min="0" max="20" step="1" value={form.printTablePaddingY ?? 6} onChange={(e) => setForm({...form, printTablePaddingY: Number(e.target.value)})} className="w-full accent-blue-600" />
                   </div>
                 </div>
 
