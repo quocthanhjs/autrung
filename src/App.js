@@ -312,6 +312,10 @@ function DashboardView({ orders, imports, expenses, customers, suppliers, showTo
   const currentDate = new Date();
   const [filterMonth, setFilterMonth] = useState((currentDate.getMonth() + 1).toString());
   const [filterYear, setFilterYear] = useState(currentDate.getFullYear().toString());
+  const [custSortOrder, setCustSortOrder] = useState('desc');
+  const [suppSortOrder, setSuppSortOrder] = useState('desc');
+  const [showAllCust, setShowAllCust] = useState(false);
+  const [showAllSupp, setShowAllSupp] = useState(false);
 
   const stats = useMemo(() => {
     const fOrders = orders.filter(o => { const d = new Date(o.date); return (filterMonth === 'ALL' || (d.getMonth() + 1).toString() === filterMonth) && d.getFullYear().toString() === filterYear; });
@@ -322,6 +326,11 @@ function DashboardView({ orders, imports, expenses, customers, suppliers, showTo
     const totalCost = fOrders.reduce((s, o) => s + (o.totalCost || 0), 0);
     const totalExp = fExpenses.reduce((s, e) => s + (Number(e.amount) || 0), 0);
     const netProfit = totalRev - totalCost - totalExp;
+
+    const filteredCustDebt = (customers || []).filter(c => { if (!c.createdAt) return filterMonth === 'ALL'; const d = new Date(c.createdAt); return (filterMonth === 'ALL' || (d.getMonth() + 1).toString() === filterMonth) && d.getFullYear().toString() === filterYear; }).sort((a, b) => { const timeA = new Date(a.createdAt || 0); const timeB = new Date(b.createdAt || 0); if (custSortOrder === 'desc') { return timeA - timeB; } else { return timeB - timeA; } });
+    const filteredSuppDebt = (suppliers || []).filter(s => { if (!s.createdAt) return filterMonth === 'ALL'; const d = new Date(s.createdAt); return (filterMonth === 'ALL' || (d.getMonth() + 1).toString() === filterMonth) && d.getFullYear().toString() === filterYear; }).sort((a, b) => { const timeA = new Date(a.createdAt || 0); const timeB = new Date(b.createdAt || 0); if (suppSortOrder === 'desc') { return timeA - timeB; } else { return timeB - timeA; } });
+    const overdueCust = orders.filter(o => o.status === 'DEBT').sort((a,b) => new Date(b.date) - new Date(a.date));
+    const overdueCust1Week = overdueCust.filter(o => getDaysDifference(o.date) >= 7);
 
     let chartData = {};
     if (filterMonth !== 'ALL') {
@@ -352,15 +361,15 @@ function DashboardView({ orders, imports, expenses, customers, suppliers, showTo
     });
     const topProducts = Object.values(productSalesMap).sort((a, b) => b.totalQty - a.totalQty).slice(0, 5);
 
-    return { totalRev, totalCost, totalExp, netProfit, chartData, topProducts };
-  }, [orders, imports, expenses, filterMonth, filterYear]);
+    return { totalRev, totalCost, totalExp, netProfit, overdueCust, overdueCust1Week, chartData, topProducts, filteredCustDebt, filteredSuppDebt };
+  }, [orders, imports, expenses, customers, suppliers, filterMonth, filterYear, custSortOrder, suppSortOrder]);
 
   const years = Array.from({length: 5}, (_, i) => currentDate.getFullYear() - i);
 
   return (
     <div className="flex-1 overflow-y-auto p-4 md:p-6 bg-gray-50/50 space-y-6">
       <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
-        <h2 className="text-2xl font-bold text-gray-800">Báo cáo Kinh doanh</h2>
+        <h2 className="text-2xl font-bold text-gray-800">Báo cáo Kinh doanh & Biểu đồ Nhắc nợ</h2>
         <div className="flex items-center gap-3 bg-white p-2 rounded-xl shadow-sm border border-gray-200">
           <select value={filterMonth} onChange={e=>setFilterMonth(e.target.value)} className="bg-transparent font-medium outline-none">
             <option value="ALL">Cả năm</option>{Array.from({length: 12}, (_, i) => (<option key={i+1} value={i+1}>Tháng {i+1}</option>))}
@@ -371,7 +380,101 @@ function DashboardView({ orders, imports, expenses, customers, suppliers, showTo
           </select>
         </div>
       </div>
-      
+
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+        <div className="bg-white p-5 rounded-2xl shadow-sm border border-gray-200 flex flex-col">
+          <div className="flex justify-between items-center mb-3">
+            <h3 className="font-bold text-gray-800 flex items-center gap-2 text-blue-600"> <Users size={18}/> Nhắc nợ Khách hàng ({filterMonth === 'ALL' ? `Năm ${filterYear}` : `Tháng ${filterMonth}/${filterYear}`}) </h3>
+            <button onClick={() => setCustSortOrder(prev => prev === 'desc' ? 'asc' : 'desc')} className="text-xs bg-gray-100 hover:bg-gray-200 text-gray-700 px-2.5 py-1 rounded-lg font-medium flex items-center gap-1 transition" >
+              <ArrowUpDown size={12}/> {custSortOrder === 'desc' ? 'Lâu nhất trước' : 'Gần nhất trước'}
+            </button>
+          </div>
+          <div className="overflow-y-auto border rounded-xl flex-1 max-h-72">
+            <table className="w-full text-left text-xs">
+              <thead className="bg-blue-50 sticky top-0 border-b">
+                <tr><th className="p-2.5">Khách hàng</th><th className="p-2.5">Thời gian chưa trả</th><th className="p-2.5 text-right">Tổng Nợ</th></tr>
+              </thead>
+              <tbody>
+                {(showAllCust ? stats.filteredCustDebt : stats.filteredCustDebt.slice(0, 10)).map(c => {
+                  const daysAgo = c.createdAt ? getDaysDifference(c.createdAt) : 0;
+                  return (
+                    <tr key={c.id} className="border-b hover:bg-gray-50">
+                      <td className="p-2.5 font-bold text-gray-800">{c.name}<p className="text-[10px] text-gray-400 font-normal">{c.phone || 'Không có SĐT'}</p></td>
+                      <td className="p-2.5 font-semibold text-orange-600">{daysAgo} ngày trước</td>
+                      <td className="p-2.5 text-right font-bold text-red-600">{formatCurrency(c.totalDebt)}</td>
+                    </tr>
+                  );
+                })}
+                {stats.filteredCustDebt.length === 0 && ( <tr><td colSpan="3" className="p-4 text-center text-gray-400">Không có khách hàng nợ trong kỳ này</td></tr> )}
+              </tbody>
+            </table>
+          </div>
+          {stats.filteredCustDebt.length > 10 && (
+            <button onClick={() => setShowAllCust(!showAllCust)} className="mt-3 text-xs text-blue-600 font-bold hover:underline flex items-center justify-center gap-1 py-1" >
+              {showAllCust ? <><ChevronUp size={14}/> Thu gọn</> : <><ChevronDown size={14}/> Xem thêm ({stats.filteredCustDebt.length - 10} khách hàng khác)</>}
+            </button>
+          )}
+        </div>
+        <div className="bg-white p-5 rounded-2xl shadow-sm border border-gray-200 flex flex-col">
+          <div className="flex justify-between items-center mb-3">
+            <h3 className="font-bold text-gray-800 flex items-center gap-2 text-orange-600"> <Truck size={18}/> Nhắc nợ Nhà cung cấp ({filterMonth === 'ALL' ? `Năm ${filterYear}` : `Tháng ${filterMonth}/${filterYear}`}) </h3>
+            <button onClick={() => setSuppSortOrder(prev => prev === 'desc' ? 'asc' : 'desc')} className="text-xs bg-gray-100 hover:bg-gray-200 text-gray-700 px-2.5 py-1 rounded-lg font-medium flex items-center gap-1 transition" >
+              <ArrowUpDown size={12}/> {suppSortOrder === 'desc' ? 'Lâu nhất trước' : 'Gần nhất trước'}
+            </button>
+          </div>
+          <div className="overflow-y-auto border rounded-xl flex-1 max-h-72">
+            <table className="w-full text-left text-xs">
+              <thead className="bg-orange-50 sticky top-0 border-b">
+                <tr><th className="p-2.5">Nhà cung cấp</th><th className="p-2.5">Thời gian chưa trả</th><th className="p-2.5 text-right">Cần trả</th></tr>
+              </thead>
+              <tbody>
+                {(showAllSupp ? stats.filteredSuppDebt : stats.filteredSuppDebt.slice(0, 10)).map(s => {
+                  const daysAgo = s.createdAt ? getDaysDifference(s.createdAt) : 0;
+                  return (
+                    <tr key={s.id} className="border-b hover:bg-gray-50">
+                      <td className="p-2.5 font-bold text-gray-800">{s.name}<p className="text-[10px] text-gray-400 font-normal">{s.phone || 'Không có SĐT'}</p></td>
+                      <td className="p-2.5 font-semibold text-orange-600">{daysAgo} ngày trước</td>
+                      <td className="p-2.5 text-right font-bold text-orange-600">{formatCurrency(s.totalDebt)}</td>
+                    </tr>
+                  );
+                })}
+                {stats.filteredSuppDebt.length === 0 && ( <tr><td colSpan="3" className="p-4 text-center text-gray-400">Không có nhà cung cấp nợ trong kỳ này</td></tr> )}
+              </tbody>
+            </table>
+          </div>
+          {stats.filteredSuppDebt.length > 10 && (
+            <button onClick={() => setShowAllSupp(!showAllSupp)} className="mt-3 text-xs text-orange-600 font-bold hover:underline flex items-center justify-center gap-1 py-1" >
+              {showAllSupp ? <><ChevronUp size={14}/> Thu gọn</> : <><ChevronDown size={14}/> Xem thêm ({stats.filteredSuppDebt.length - 10} nhà cung cấp khác)</>}
+            </button>
+          )}
+        </div>
+      </div>
+
+      {stats.overdueCust1Week.length > 0 && (
+        <div className="bg-red-50 border-2 border-red-500 rounded-2xl shadow-sm overflow-hidden">
+          <div className="p-4 bg-red-600 flex justify-between items-center text-white">
+            <h3 className="font-bold flex items-center gap-2 text-lg"><Bell size={24}/> CẢNH BÁO: KHÁCH HÀNG NỢ QUÁ HẠN 1 TUẦN ({stats.overdueCust1Week.length})</h3>
+          </div>
+          <div className="max-h-60 overflow-y-auto">
+            <table className="w-full text-left text-sm bg-white">
+              <thead className="bg-red-50 sticky top-0 border-b border-red-200">
+                <tr><th className="p-3 text-red-800">Khách hàng</th><th className="p-3 text-red-800">Ngày mua</th><th className="p-3 text-red-800">Số ngày nợ</th><th className="p-3 text-red-800">Số tiền</th></tr>
+              </thead>
+              <tbody>
+                {stats.overdueCust1Week.map(o => (
+                  <tr key={o.id} className="border-b hover:bg-red-50/50">
+                    <td className="p-3 font-bold text-gray-800">{o.customerName}</td>
+                    <td className="p-3 text-gray-600">{formatDate(o.date)}</td>
+                    <td className="p-3 font-bold text-red-600">{getDaysDifference(o.date)} ngày</td>
+                    <td className="p-3 font-bold text-red-600 text-lg">{formatCurrency(o.total)}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      )}
+
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
         <StatCard icon={<TrendingUp />} title={"Doanh Thu (T" + (filterMonth==='ALL'?'ổng':filterMonth) + ")"} value={formatCurrency(stats.totalRev)} color="bg-blue-100 text-blue-600" />
         <StatCard icon={<Package />} title="Tổng Giá Vốn" value={formatCurrency(stats.totalCost)} color="bg-gray-200 text-gray-700" />
@@ -1204,8 +1307,786 @@ function SalesHistoryView({ orders, products, customers, storeConfig, db, storeI
   );
 }
 
-function StaffManagerView({ db, showToast }) { return (<div className="flex-1 flex flex-col p-4 md:p-6 bg-gray-50 overflow-auto h-full"><div className="flex justify-between items-center mb-6"><h2 className="text-2xl font-bold flex items-center gap-2"><UserCog/> Quản trị Nhân viên</h2></div><div className="text-center text-gray-500 py-10">(Tính năng quản trị nhân viên)</div></div>); }
-function ExpenseView({ expenses, db, storeId, showToast }) { return (<div className="flex-1 flex flex-col p-4 md:p-6 bg-gray-50 overflow-auto h-full"><div className="flex justify-between items-center mb-6"><h2 className="text-2xl font-bold flex items-center gap-2"><CreditCard/> Quản lý Chi Phí</h2></div><div className="text-center text-gray-500 py-10">(Tính năng quản lý chi phí)</div></div>); }
-function InventoryView({ products, orders, imports, db, storeId, showToast }) { return (<div className="flex-1 flex flex-col p-4 md:p-6 bg-gray-50 overflow-auto h-full"><div className="flex justify-between items-center mb-6"><h2 className="text-2xl font-bold flex items-center gap-2"><Package/> Quản lý Kho Hàng</h2></div><div className="text-center text-gray-500 py-10">(Tính năng quản lý kho)</div></div>); }
-function ContactManager({ type, data, orders, db, storeId, showToast }) { return (<div className="flex-1 flex flex-col p-4 md:p-6 bg-gray-50 overflow-auto h-full"><div className="flex justify-between items-center mb-6"><h2 className="text-2xl font-bold flex items-center gap-2"><Users/> Đối Tác</h2></div><div className="text-center text-gray-500 py-10">(Tính năng quản lý đối tác)</div></div>); }
-function ImportView({ products, suppliers, db, storeId, user, showToast }) { return (<div className="flex-1 flex flex-col p-4 md:p-6 bg-gray-50 overflow-auto h-full"><div className="flex justify-between items-center mb-6"><h2 className="text-2xl font-bold flex items-center gap-2"><ArrowDownToLine/> Nhập Hàng</h2></div><div className="text-center text-gray-500 py-10">(Tính năng nhập hàng)</div></div>); }
+function StaffManagerView({ db, showToast }) {
+  const [staff, setStaff] = useState([]);
+  const [logs, setLogs] = useState([]);
+  const [isModalOpen, setIsModalOpen] = useState(false);
+  const [form, setForm] = useState({ id: '', name: '', username: '', password: '', role: 'seller', perms: {} });
+  const [loading, setLoading] = useState(false);
+
+  useEffect(() => {
+    const unsubStaff = onSnapshot(collection(db, 'users_db'), (s) => setStaff(s.docs.map(d => ({ id: d.id, ...d.data() }))));
+    const qLogs = query(collection(db, 'login_logs'), orderBy('loginTime', 'desc'));
+    const unsubLogs = onSnapshot(qLogs, (s) => setLogs(s.docs.map(d => ({ id: d.id, ...d.data() })).slice(0, 50)));
+    return () => { unsubStaff(); unsubLogs(); };
+  }, []);
+
+  const handleSave = async (e) => {
+    e.preventDefault(); setLoading(true);
+    try {
+      if (form.id) {
+        await updateDoc(doc(db, 'users_db', form.id), { role: form.role, permissions: form.perms, ...(form.password ? { password: form.password } : {}) });
+        showToast("Đã cập nhật thông tin & mật khẩu nhân viên thành công!");
+        setIsModalOpen(false);
+      } else {
+        const cleanUsername = form.username.toLowerCase().trim();
+        const q = query(collection(db, 'users_db'), where('username', '==', cleanUsername));
+        const checkExist = await getDocs(q);
+        if (!checkExist.empty) { throw new Error("Tên đăng nhập (username) này đã tồn tại!"); }
+        await addDoc(collection(db, 'users_db'), { username: cleanUsername, password: form.password, name: form.name.trim(), role: form.role, permissions: form.perms || {}, createdAt: new Date().toISOString() });
+        showToast("Tạo tài khoản nhân viên mới thành công!");
+        setIsModalOpen(false);
+      }
+    } catch (err) { showToast("Lỗi: " + (err.message || "Không thể lưu nhân viên"), "error"); } finally { setLoading(false); }
+  };
+
+  const handleDeleteStaff = async (staffMember) => {
+    if (window.confirm(`CẢNH BÁO: Bạn có chắc chắn muốn xóa tài khoản nhân viên "${staffMember.name}" khỏi hệ thống không?`)) {
+      try { await deleteDoc(doc(db, 'users_db', staffMember.id)); showToast("Đã xóa nhân viên thành công!"); } catch (err) { showToast("Lỗi khi xóa nhân viên", "error"); }
+    }
+  };
+
+  const openAddModal = () => { setForm({ id: '', name: '', username: '', password: '', role: 'seller', perms: {} }); setIsModalOpen(true); };
+  const openEditModal = (s) => { setForm({ id: s.id, name: s.name, username: s.username, password: '', role: s.role, perms: s.permissions || {} }); setIsModalOpen(true); };
+
+  const modalTitle = form.id ? "Sửa quyền & Reset mật khẩu: " + form.name : "Thêm Nhân Viên Mới";
+
+  return (
+    <div className="flex-1 flex flex-col p-4 md:p-6 bg-gray-50 overflow-auto h-full">
+      <div className="flex justify-between items-center mb-6">
+        <h2 className="text-2xl font-bold flex items-center gap-2"><UserCog/> Quản trị Nhân viên</h2>
+        <button onClick={openAddModal} className="bg-blue-600 text-white px-4 py-2 rounded-lg font-bold flex items-center gap-2"><Plus size={18}/> Thêm Nhân viên</button>
+      </div>
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 h-full min-h-[500px]">
+        <div className="bg-white border rounded-xl overflow-auto shadow-sm">
+          <div className="p-3 bg-gray-100 font-bold sticky top-0 border-b">Danh sách Tài khoản</div>
+          <table className="w-full text-sm text-left">
+            <thead className="bg-gray-50 border-b">
+              <tr><th className="p-3">Tên & Username</th><th className="p-3">Quyền</th><th className="p-3 text-right">Thao tác</th></tr>
+            </thead>
+            <tbody>
+              {staff.map(s => {
+                const roleClass = s.role === 'admin' ? 'bg-red-100 text-red-700' : 'bg-blue-100 text-blue-700';
+                return (
+                  <tr key={s.id} className="border-b hover:bg-gray-50">
+                    <td className="p-3"><p className="font-bold text-gray-800">{s.name}</p><p className="text-xs text-gray-500">@{s.username}</p></td>
+                    <td className="p-3"><span className={"px-2 py-1 rounded text-xs font-bold " + roleClass}>{s.role.toUpperCase()}</span></td>
+                    <td className="p-3 text-right flex justify-end gap-1.5">
+                      <button onClick={() => openEditModal(s)} className="text-blue-600 bg-blue-50 px-3 py-1.5 rounded-lg font-medium text-xs">Sửa quyền / Đổi MK</button>
+                      <button onClick={() => handleDeleteStaff(s)} className="text-red-600 bg-red-50 p-1.5 rounded-lg hover:bg-red-100" title="Xóa nhân viên"><Trash2 size={16}/></button>
+                    </td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        </div>
+        <div className="bg-white border rounded-xl overflow-auto shadow-sm">
+          <div className="p-3 bg-gray-100 font-bold sticky top-0 border-b">Lịch sử Đăng nhập (Giám sát)</div>
+          <table className="w-full text-xs text-left">
+            <thead className="bg-gray-50 border-b"><tr><th className="p-3">Thời gian</th><th className="p-3">Username</th><th className="p-3">Thiết bị & IP</th></tr></thead>
+            <tbody>{logs.map(l => (<tr key={l.id} className="border-b hover:bg-gray-50"><td className="p-3 text-gray-500">{formatDate(l.loginTime)}</td><td className="p-3 font-bold text-blue-600">{l.username}</td><td className="p-3"><p>{l.device}</p><p className="text-gray-400 font-mono">{l.ip}</p></td></tr>))}</tbody>
+          </table>
+        </div>
+      </div>
+      <Modal isOpen={isModalOpen} onClose={() => setIsModalOpen(false)} title={modalTitle} maxWidth="max-w-2xl">
+        <form onSubmit={handleSave} className="space-y-4">
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4 bg-blue-50 p-4 rounded-xl border border-blue-100 mb-4">
+            <div className="col-span-2"><input required placeholder="Tên nhân viên *" value={form.name} onChange={e=>setForm({...form, name:e.target.value})} className="w-full p-2.5 border rounded outline-none text-sm bg-white"/></div>
+            <div><input required placeholder="Username đăng nhập *" value={form.username} onChange={e=>setForm({...form, username:e.target.value})} disabled={!!form.id} className="w-full p-2.5 border rounded outline-none text-sm bg-white disabled:bg-gray-100"/></div>
+            <div>
+              <input type="text" placeholder={form.id ? "Mật khẩu mới (Bỏ trống nếu không đổi)" : "Mật khẩu *"} required={!form.id} value={form.password} onChange={e=>setForm({...form, password:e.target.value})} className="w-full p-2.5 border rounded outline-none text-sm bg-white font-medium" />
+            </div>
+          </div>
+          <div>
+            <label className="block text-xs font-bold text-gray-500 mb-1">Vai trò tài khoản</label>
+            <select value={form.role} onChange={e=>setForm({...form, role: e.target.value})} className="w-full p-2.5 border rounded font-bold outline-none text-sm bg-white">
+              <option value="seller">Nhân viên (Theo check-box phân quyền bên dưới)</option>
+              <option value="admin">Quản trị viên (Toàn quyền)</option>
+            </select>
+          </div>
+          {form.role === 'seller' && (
+            <div>
+              <label className="block text-xs font-bold text-gray-500 mb-1">Phân quyền chức năng</label>
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4 max-h-[40vh] overflow-y-auto p-4 border rounded bg-gray-50">
+                {PERMISSION_TREE.map(g => (<div key={g.module} className="border-b pb-2"><p className="font-bold text-blue-800 text-sm mb-2 uppercase">{g.module}</p>{g.perms.map(p => (<label key={p.id} className="flex items-center gap-2 text-sm mb-1.5 cursor-pointer hover:bg-gray-200 p-1 rounded"><input type="checkbox" checked={!!form.perms[p.id]} onChange={() => setForm({...form, perms: {...form.perms, [p.id]: !form.perms[p.id]}})} className="w-4 h-4 text-blue-600"/> {p.label}</label>))}</div>))}
+              </div>
+            </div>
+          )}
+          <button type="submit" disabled={loading} className="w-full bg-blue-600 text-white font-bold p-3 rounded-lg">{loading ? 'Đang xử lý...' : 'Lưu Dữ Liệu'}</button>
+        </form>
+      </Modal>
+    </div>
+  );
+}
+
+function ContactManager({ type, data, orders, db, storeId, showToast }) {
+  const isCus = type === 'customers';
+  const title = isCus ? "Khách Hàng" : "Nhà Cung Cấp";
+  const [isModalOpen, setIsModalOpen] = useState(false);
+  const [form, setForm] = useState({});
+  const [sortOrder, setSortOrder] = useState('none');
+  const [selectedIds, setSelectedIds] = useState([]);
+  const [searchTerm, setSearchTerm] = useState('');
+  const [detailTarget, setDetailTarget] = useState(null);
+  const currentDate = new Date();
+  const [filterMonth, setFilterMonth] = useState((currentDate.getMonth() + 1).toString());
+  const [filterYear, setFilterYear] = useState(currentDate.getFullYear().toString());
+
+  const handleSave = async (e) => {
+    e.preventDefault();
+    try {
+      const nowIso = new Date().toISOString();
+      const p = { name: form.name, phone: form.phone || '', address: form.address || '', totalDebt: Number(form.totalDebt || 0), createdAt: form.createdAt || nowIso };
+      if (form.id) { await updateDoc(doc(db, 'stores', storeId, type, form.id), p); } 
+      else { await addDoc(collection(db, 'stores', storeId, type), p); }
+      setIsModalOpen(false); showToast("Đã lưu thành công");
+    } catch (e) { showToast("Lỗi", "error"); }
+  };
+
+  const handleDelete = async (id) => {
+    if (window.confirm("Bạn có chắc chắn muốn xóa?")) {
+      await deleteDoc(doc(db, 'stores', storeId, type, id)); showToast("Đã xóa thành công");
+    }
+  };
+
+  const handleBatchDelete = async () => {
+    if (selectedIds.length === 0) return;
+    if (window.confirm("Xác nhận xóa " + selectedIds.length + " mục đã chọn?")) {
+      let batch = writeBatch(db);
+      selectedIds.forEach(id => { batch.delete(doc(db, 'stores', storeId, type, id)); });
+      await batch.commit(); setSelectedIds([]); showToast("Đã xóa các mục đã chọn");
+    }
+  };
+
+  const bannerStats = useMemo(() => {
+    const filteredOrders = (orders || []).filter(o => {
+      const d = new Date(o.date);
+      return (filterMonth === 'ALL' || (d.getMonth() + 1).toString() === filterMonth) && d.getFullYear().toString() === filterYear;
+    });
+    const totalDebt = data.reduce((s, i) => s + (Number(i.totalDebt) || 0), 0);
+    const totalTraded = filteredOrders.reduce((s, o) => s + (Number(o.total) || 0), 0);
+    const totalPaid = filteredOrders.filter(o => o.status === 'PAID').reduce((s, o) => s + (Number(o.total) || 0), 0);
+    return { totalDebt, totalTraded, totalPaid, balance: totalTraded - totalPaid };
+  }, [data, orders, filterMonth, filterYear]);
+
+  const filteredData = useMemo(() => {
+    return data.filter(i => {
+      const matchName = i.name && i.name.toLowerCase().includes(searchTerm.toLowerCase());
+      const matchPhone = i.phone && i.phone.includes(searchTerm);
+      return matchName || matchPhone;
+    });
+  }, [data, searchTerm]);
+
+  const sortedData = useMemo(() => {
+    if (sortOrder === 'none') return filteredData;
+    return [...filteredData].sort((a, b) => { return sortOrder === 'asc' ? a.totalDebt - b.totalDebt : b.totalDebt - a.totalDebt; });
+  }, [filteredData, sortOrder]);
+
+  const detailData = useMemo(() => {
+    if (!detailTarget) return { list: [], totalAmount: 0, totalPaid: 0, totalDebtRemain: 0 };
+    const matched = (orders || []).filter(o => {
+      const matchTarget = isCus ? o.customerId === detailTarget.id : o.supplierId === detailTarget.id;
+      const d = new Date(o.date);
+      const matchTime = (filterMonth === 'ALL' || (d.getMonth() + 1).toString() === filterMonth) && d.getFullYear().toString() === filterYear;
+      return matchTarget && matchTime;
+    }).sort((a,b) => new Date(b.date) - new Date(a.date));
+    
+    let totalAmount = matched.reduce((s, o) => s + (Number(o.total) || 0), 0);
+    let totalPaid = matched.filter(o => o.status === 'PAID').reduce((s, o) => s + (Number(o.total) || 0), 0);
+    let totalDebtRemain = matched.filter(o => o.status === 'DEBT').reduce((s, o) => s + (Number(o.total) || 0), 0);
+    return { list: matched, totalAmount, totalPaid, totalDebtRemain };
+  }, [detailTarget, orders, filterMonth, filterYear, isCus]);
+
+  return (
+    <div className="flex-1 flex flex-col p-4 md:p-6 bg-gray-50 overflow-hidden h-full">
+      <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center mb-4 gap-3">
+        <h2 className="text-2xl font-bold text-gray-800">Quản lý {title}</h2>
+        <div className="flex items-center gap-3 w-full sm:w-auto">
+          <div className="relative flex-1 sm:w-64"><Search size={16} className="absolute left-3 top-3 text-gray-400"/><input placeholder={`Tìm kiếm ${title.toLowerCase()}...`} value={searchTerm} onChange={e=>setSearchTerm(e.target.value)} className="w-full pl-9 pr-3 py-2 border rounded-lg bg-white outline-none text-sm"/></div>
+          <button onClick={() => { setForm({}); setIsModalOpen(true); }} className="bg-blue-600 text-white px-4 py-2 rounded-lg font-bold flex gap-2 shrink-0"><Plus size={18}/> Thêm</button>
+        </div>
+      </div>
+      <div className="bg-white p-4 rounded-2xl border shadow-sm mb-4 flex flex-col lg:flex-row justify-between items-start lg:items-center gap-4">
+        <div className="grid grid-cols-2 sm:grid-cols-4 gap-4 flex-1 w-full">
+          <div className="bg-blue-50 p-3 rounded-xl border border-blue-100"><p className="text-xs text-blue-600 font-bold uppercase">Tổng Nợ</p><p className="text-lg font-bold text-blue-800">{formatCurrency(bannerStats.totalDebt)}</p></div>
+          <div className="bg-gray-50 p-3 rounded-xl border border-gray-200"><p className="text-xs text-gray-500 font-bold uppercase">Tổng Giao Dịch</p><p className="text-lg font-bold text-gray-800">{formatCurrency(bannerStats.totalTraded)}</p></div>
+          <div className="bg-green-50 p-3 rounded-xl border border-green-100"><p className="text-xs text-green-600 font-bold uppercase">Đã Thanh Toán</p><p className="text-lg font-bold text-green-700">{formatCurrency(bannerStats.totalPaid)}</p></div>
+          <div className="bg-orange-50 p-3 rounded-xl border border-orange-100"><p className="text-xs text-orange-600 font-bold uppercase">Số Dư Còn Lại</p><p className="text-lg font-bold text-orange-700">{formatCurrency(bannerStats.balance)}</p></div>
+        </div>
+        <div className="flex items-center gap-2 bg-gray-50 p-2 rounded-xl border shrink-0">
+          <select value={filterMonth} onChange={e=>setFilterMonth(e.target.value)} className="bg-transparent text-sm font-medium outline-none"><option value="ALL">Cả năm</option>{Array.from({length: 12}, (_, i) => (<option key={i+1} value={i+1}>Tháng {i+1}</option>))}</select>
+          <div className="w-px h-4 bg-gray-300"></div>
+          <select value={filterYear} onChange={e=>setFilterYear(e.target.value)} className="bg-transparent text-sm font-medium outline-none">{Array.from({length: 5}, (_, i) => new Date().getFullYear() - i).map(y => (<option key={y} value={y}>Năm {y}</option>))}</select>
+        </div>
+      </div>
+      {selectedIds.length > 0 && (
+        <div className="bg-red-50 border border-red-200 p-2.5 rounded-xl mb-3 flex justify-between items-center">
+          <span className="text-xs font-bold text-red-700">Đã chọn {selectedIds.length} mục</span>
+          <button onClick={handleBatchDelete} className="bg-red-600 hover:bg-red-700 text-white px-3 py-1 rounded-lg text-xs font-bold flex items-center gap-1"><Trash2 size={14}/> Xóa đã chọn</button>
+        </div>
+      )}
+      <div className="flex-1 bg-white rounded-xl border shadow-sm overflow-auto">
+        <table className="w-full text-left text-sm">
+          <thead className="bg-gray-100 sticky top-0 border-b">
+            <tr>
+              <th className="p-4 w-10"><input type="checkbox" onChange={() => setSelectedIds(selectedIds.length === data.length ? [] : data.map(i=>i.id))} checked={data.length > 0 && selectedIds.length === data.length} className="w-4 h-4"/></th>
+              <th className="p-4 font-bold text-gray-600">Tên {title}</th><th className="p-4 font-bold text-gray-600">SĐT</th>
+              <th className="p-4 font-bold text-gray-600 cursor-pointer hover:bg-gray-200 flex items-center gap-1 select-none" onClick={() => setSortOrder(p => p === 'none' ? 'desc' : p === 'desc' ? 'asc' : 'none')}> Tổng Nợ {sortOrder !== 'none' && <ArrowUpDown size={14} className={sortOrder==='desc' ? 'text-red-500' : 'text-green-500'} />} </th>
+              <th className="p-4 font-bold text-gray-600 text-right">Thao tác</th>
+            </tr>
+          </thead>
+          <tbody>
+            {sortedData.map(i => {
+              const textDebtClass = i.totalDebt > 0 ? (isCus ? 'text-red-600' : 'text-orange-600') : 'text-gray-400';
+              return (
+                <tr key={i.id} className="border-b hover:bg-blue-50/50 cursor-pointer" onClick={() => setDetailTarget(i)}>
+                  <td className="p-4" onClick={e=>e.stopPropagation()}><input type="checkbox" checked={selectedIds.includes(i.id)} onChange={() => setSelectedIds(prev => prev.includes(i.id) ? prev.filter(x=>x!==i.id) : [...prev, i.id])} className="w-4 h-4"/></td>
+                  <td className="p-4 font-medium text-blue-600 underline">{i.name}</td><td className="p-4 text-gray-600">{i.phone}</td><td className={"p-4 font-bold " + textDebtClass}>{formatCurrency(i.totalDebt)}</td>
+                  <td className="p-4 text-right flex justify-end gap-1" onClick={e=>e.stopPropagation()}><button onClick={() => setDetailTarget(i)} title="Xem chi tiết giao dịch" className="text-gray-600 bg-gray-100 p-2 rounded-lg hover:bg-gray-200"><Eye size={16}/></button><button onClick={() => {setForm(i);setIsModalOpen(true);}} className="text-blue-600 bg-blue-50 p-2 rounded-lg hover:bg-blue-100"><Edit size={16}/></button><button onClick={() => handleDelete(i.id)} className="text-red-600 bg-red-50 p-2 rounded-lg hover:bg-red-100"><Trash2 size={16}/></button></td>
+                </tr>
+              );
+            })}
+          </tbody>
+        </table>
+      </div>
+      <Modal isOpen={!!detailTarget} onClose={() => setDetailTarget(null)} title={`Chi tiết: ${detailTarget?.name || ''}`} maxWidth="max-w-4xl">
+        {detailTarget && (
+          <div className="space-y-4">
+            <div className="flex justify-between items-center bg-gray-50 p-3 rounded-xl border">
+              <div><p className="text-xs text-gray-500">SĐT:</p><p className="font-bold">{detailTarget.phone || 'Trống'}</p></div>
+              <div><p className="text-xs text-gray-500">Tổng Nợ Gốc:</p><p className="font-bold text-red-600">{formatCurrency(detailTarget.totalDebt)}</p></div>
+              <div className="flex items-center gap-1 bg-white p-1 rounded border">
+                <select value={filterMonth} onChange={e=>setFilterMonth(e.target.value)} className="bg-transparent text-xs outline-none"><option value="ALL">Cả năm</option>{Array.from({length: 12}, (_, i) => <option key={i+1} value={i+1}>Tháng {i+1}</option>)}</select>
+                <select value={filterYear} onChange={e=>setFilterYear(e.target.value)} className="bg-transparent text-xs outline-none">{Array.from({length: 5}, (_, i) => new Date().getFullYear() - i).map(y => <option key={y} value={y}>{y}</option>)}</select>
+              </div>
+            </div>
+            <div className="grid grid-cols-3 gap-3 text-center">
+              <div className="bg-blue-50 p-2.5 rounded-lg border border-blue-100"><p className="text-[10px] text-blue-600 font-bold uppercase">Tổng Giao Dịch</p><p className="text-sm font-bold text-blue-800">{formatCurrency(detailData.totalAmount)}</p></div>
+              <div className="bg-green-50 p-2.5 rounded-lg border border-green-100"><p className="text-[10px] text-green-600 font-bold uppercase">Đã Thanh Toán</p><p className="text-sm font-bold text-green-700">{formatCurrency(detailData.totalPaid)}</p></div>
+              <div className="bg-orange-50 p-2.5 rounded-lg border border-orange-100"><p className="text-[10px] text-orange-600 font-bold uppercase">Đang Nợ</p><p className="text-sm font-bold text-orange-700">{formatCurrency(detailData.totalDebtRemain)}</p></div>
+            </div>
+            <div>
+              <h4 className="font-bold text-sm text-gray-800 mb-2">Chi tiết sản phẩm đã {isCus ? "mua" : "cung cấp"}:</h4>
+              <div className="max-h-80 overflow-y-auto border rounded-xl">
+                <table className="w-full text-xs text-left">
+                  <thead className="bg-gray-100 sticky top-0 border-b">
+                    <tr><th className="p-2.5">Thời gian</th><th className="p-2.5">Mặt hàng & Ghi chú/BH</th><th className="p-2.5">Giá trị đơn</th><th className="p-2.5">Trạng thái nợ</th></tr>
+                  </thead>
+                  <tbody>
+                    {detailData.list.map(ord => {
+                      const statusClass = ord.status === 'PAID' ? 'bg-green-100 text-green-700' : 'bg-orange-100 text-orange-700';
+                      return (
+                        <tr key={ord.id} className="border-b hover:bg-gray-50">
+                          <td className="p-2.5 whitespace-nowrap">{formatDate(ord.date)}</td>
+                          <td className="p-2.5">
+                            <ul className="space-y-1.5">
+                              {ord.items?.map((it, idx) => {
+                                const qty = it.quantity || it.qty || 1;
+                                const itemPrice = it.price || it.importCost || 0;
+                                return (
+                                  <li key={idx} className="bg-gray-50 p-1.5 rounded border border-gray-100">
+                                    <div className="flex justify-between font-medium text-gray-800">
+                                      <span><strong className="text-blue-600">{it.name}</strong> x {qty}</span>
+                                      <span>{formatCurrency(itemPrice * qty)}</span>
+                                    </div>
+                                    {(it.warrantyValue || it.note) && (
+                                      <div className="text-[10px] text-gray-500 mt-0.5 flex gap-2">
+                                        {it.warrantyValue && <span>🛡️ BH: {it.warrantyValue} {it.warrantyUnit}</span>}
+                                        {it.note && <span>📝 {it.note}</span>}
+                                      </div>
+                                    )}
+                                  </li>
+                                );
+                              })}
+                            </ul>
+                          </td>
+                          <td className="p-2.5 font-bold text-gray-800 align-top">{formatCurrency(ord.total)}</td>
+                          <td className="p-2.5 align-top"><span className={"px-2 py-0.5 rounded text-[10px] font-bold " + statusClass}>{ord.status === 'PAID' ? 'Đã trả' : 'Đang nợ'}</span></td>
+                        </tr>
+                      );
+                    })}
+                    {detailData.list.length === 0 && (<tr><td colSpan="4" className="p-4 text-center text-gray-400">Không có phát sinh giao dịch</td></tr>)}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          </div>
+        )}
+      </Modal>
+      <Modal isOpen={isModalOpen} onClose={() => setIsModalOpen(false)} title={form.id ? `Cập nhật ${title}` : `Thêm ${title}`}>
+        <form onSubmit={handleSave} className="space-y-4">
+          <input required placeholder="Tên *" value={form.name||''} onChange={e=>setForm({...form,name:e.target.value})} className="w-full p-2.5 border rounded-lg outline-none"/>
+          <input placeholder="SĐT" value={form.phone||''} onChange={e=>setForm({...form,phone:e.target.value})} className="w-full p-2.5 border rounded-lg outline-none"/>
+          <input placeholder="Địa chỉ" value={form.address||''} onChange={e=>setForm({...form,address:e.target.value})} className="w-full p-2.5 border rounded-lg outline-none"/>
+          <div><label className="text-xs font-bold text-gray-500">Nợ hiện tại</label><input type="number" placeholder="Nợ hiện tại" value={form.totalDebt||0} onChange={e=>setForm({...form,totalDebt:e.target.value})} className={"w-full p-2.5 border rounded-lg outline-none font-bold " + (isCus ? 'text-red-600' : 'text-orange-600')}/></div>
+          <button className="w-full bg-blue-600 text-white font-bold p-3 rounded-lg">Lưu thông tin</button>
+        </form>
+      </Modal>
+    </div>
+  );
+}
+
+function InventoryView({ products, orders, imports, db, storeId, showToast }) {
+  const [isModalOpen, setIsModalOpen] = useState(false);
+  const [form, setForm] = useState({ name: '', category: '', price: '', cost: '', stock: '' });
+  const [selectedIds, setSelectedIds] = useState([]);
+  const [searchTerm, setSearchTerm] = useState('');
+  const [sortConfig, setSortConfig] = useState({ field: null, direction: 'none' });
+  const [detailProduct, setDetailProduct] = useState(null);
+  const currentDate = new Date();
+  const [filterMonth, setFilterMonth] = useState((currentDate.getMonth() + 1).toString());
+  const [filterYear, setFilterYear] = useState(currentDate.getFullYear().toString());
+
+  const handleSave = async (e) => {
+    e.preventDefault();
+    try {
+      const nowIso = new Date().toISOString();
+      const d = { name: form.name, category: form.category || '', price: Number(form.price), cost: Number(form.cost || 0), stock: Number(form.stock), createdAt: form.createdAt || nowIso };
+      if (form.id) { await updateDoc(doc(db, 'stores', storeId, 'products', form.id), d); } 
+      else { await addDoc(collection(db, 'stores', storeId, 'products'), d); }
+      setIsModalOpen(false); showToast("Đã lưu Hàng hóa");
+    } catch (e) { showToast("Lỗi", "error"); }
+  };
+
+  const handleDelete = async (id) => {
+    if (window.confirm("Xác nhận xóa sản phẩm này?")) {
+      await deleteDoc(doc(db, 'stores', storeId, 'products', id)); showToast("Đã xóa sản phẩm");
+    }
+  };
+
+  const handleBatchDelete = async () => {
+    if (selectedIds.length === 0) return;
+    if (window.confirm("Xác nhận xóa " + selectedIds.length + " sản phẩm đã chọn?")) {
+      let batch = writeBatch(db);
+      selectedIds.forEach(id => { batch.delete(doc(db, 'stores', storeId, 'products', id)); });
+      await batch.commit(); setSelectedIds([]); showToast("Đã xóa các sản phẩm đã chọn");
+    }
+  };
+
+  const bannerStats = useMemo(() => {
+    const totalStock = products.reduce((s, p) => s + (Number(p.stock) || 0), 0);
+    const totalValue = products.reduce((s, p) => s + (Number(p.cost || p.price) * (Number(p.stock) || 0)), 0);
+    return { totalStock, totalValue, count: products.length };
+  }, [products]);
+
+  const handleSort = (field) => {
+    setSortConfig(prev => {
+      if (prev.field === field) {
+        if (prev.direction === 'none') return { field, direction: 'desc' };
+        if (prev.direction === 'desc') return { field, direction: 'asc' };
+        return { field: null, direction: 'none' };
+      }
+      return { field, direction: 'desc' };
+    });
+  };
+
+  const filteredProducts = useMemo(() => {
+    let list = products.filter(p => p.name && p.name.toLowerCase().includes(searchTerm.toLowerCase()));
+    if (sortConfig.field && sortConfig.direction !== 'none') {
+      list.sort((a, b) => {
+        let aVal = a[sortConfig.field] || 0; let bVal = b[sortConfig.field] || 0;
+        if (sortConfig.field === 'name') {
+          aVal = (a.name || '').toLowerCase(); bVal = (b.name || '').toLowerCase();
+          if (aVal < bVal) return sortConfig.direction === 'asc' ? -1 : 1;
+          if (aVal > bVal) return sortConfig.direction === 'asc' ? 1 : -1;
+          return 0;
+        } else {
+          return sortConfig.direction === 'asc' ? aVal - bVal : bVal - aVal;
+        }
+      });
+    }
+    return list;
+  }, [products, searchTerm, sortConfig]);
+
+  const productHistory = useMemo(() => {
+    if (!detailProduct) return { sales: [], imports: [], totalSoldQty: 0, totalImportQty: 0, totalSoldAmount: 0, totalImportAmount: 0, totalPaid: 0, totalDebtRemain: 0 };
+    const matchTime = (dateStr) => {
+      const d = new Date(dateStr);
+      return (filterMonth === 'ALL' || (d.getMonth() + 1).toString() === filterMonth) && d.getFullYear().toString() === filterYear;
+    };
+    const sales = (orders || [])
+      .filter(o => matchTime(o.date))
+      .flatMap(o => (o.items || []).filter(item => item.id === detailProduct.id).map(it => ({ ...it, date: o.date, status: o.status, customerName: o.customerName || 'Khách lẻ' })))
+      .sort((a,b) => new Date(b.date) - new Date(a.date));
+    const imp = (imports || [])
+      .filter(i => matchTime(i.date))
+      .flatMap(i => (i.items || []).filter(item => item.id === detailProduct.id).map(it => ({ ...it, date: i.date, status: i.status, supplierName: i.supplierName || 'NCC Ẩn' })))
+      .sort((a,b) => new Date(b.date) - new Date(a.date));
+    
+    let totalSoldQty = sales.reduce((s, x) => s + (Number(x.quantity) || 0), 0);
+    let totalImportQty = imp.reduce((s, x) => s + (Number(x.qty) || 0), 0);
+    let totalSoldAmount = sales.reduce((s, x) => s + ((Number(x.quantity) || 0) * (Number(x.price) || 0)), 0);
+    let totalImportAmount = imp.reduce((s, x) => s + ((Number(x.qty) || 0) * (Number(x.importCost) || 0)), 0);
+    let totalPaid = sales.filter(s => s.status === 'PAID').reduce((sum, x) => sum + (x.quantity * x.price), 0);
+    let totalDebtRemain = sales.filter(s => s.status === 'DEBT').reduce((sum, x) => sum + (x.quantity * x.price), 0);
+    return { sales, imports: imp, totalSoldQty, totalImportQty, totalSoldAmount, totalImportAmount, totalPaid, totalDebtRemain };
+  }, [detailProduct, orders, imports, filterMonth, filterYear]);
+
+  return (
+    <div className="flex-1 flex flex-col p-4 md:p-6 bg-gray-50 overflow-hidden h-full">
+      <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center mb-4 gap-3">
+        <h2 className="text-2xl font-bold text-gray-800">Kho Hàng</h2>
+        <div className="flex items-center gap-3 w-full sm:w-auto">
+          <div className="relative flex-1 sm:w-64"><Search size={16} className="absolute left-3 top-3 text-gray-400"/><input placeholder="Tìm kiếm trực tiếp sản phẩm..." value={searchTerm} onChange={e=>setSearchTerm(e.target.value)} className="w-full pl-9 pr-3 py-2 border rounded-lg bg-white outline-none text-sm"/></div>
+          <button onClick={() => {setForm({name:'', category:'', price:'', cost:'', stock:''}); setIsModalOpen(true);}} className="bg-blue-600 text-white px-4 py-2 rounded-lg font-bold flex items-center gap-2 shrink-0"><Plus size={18}/> Thêm mới</button>
+        </div>
+      </div>
+      <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 mb-4">
+        <div className="bg-white p-4 rounded-2xl border shadow-sm"><p className="text-xs text-gray-500 font-bold uppercase">Tổng Số Sản Phẩm</p><p className="text-xl font-bold text-gray-800">{bannerStats.count}</p></div>
+        <div className="bg-white p-4 rounded-2xl border shadow-sm"><p className="text-xs text-blue-600 font-bold uppercase">Tổng Tồn Kho</p><p className="text-xl font-bold text-blue-600">{bannerStats.totalStock}</p></div>
+        <div className="bg-white p-4 rounded-2xl border shadow-sm"><p className="text-xs text-green-600 font-bold uppercase">Tổng Giá Vốn Tồn Kho</p><p className="text-xl font-bold text-green-600">{formatCurrency(bannerStats.totalValue)}</p></div>
+      </div>
+      {selectedIds.length > 0 && (
+        <div className="bg-red-50 border border-red-200 p-2.5 rounded-xl mb-3 flex justify-between items-center">
+          <span className="text-xs font-bold text-red-700">Đã chọn {selectedIds.length} mục</span>
+          <button onClick={handleBatchDelete} className="bg-red-600 hover:bg-red-700 text-white px-3 py-1 rounded-lg text-xs font-bold flex items-center gap-1"><Trash2 size={14}/> Xóa đã chọn</button>
+        </div>
+      )}
+      <div className="flex-1 bg-white rounded-xl border shadow-sm overflow-auto">
+        <table className="w-full text-left text-sm">
+          <thead className="bg-gray-100 sticky top-0 border-b select-none">
+            <tr>
+              <th className="p-4 w-10"><input type="checkbox" onChange={() => setSelectedIds(selectedIds.length === products.length ? [] : products.map(p=>p.id))} checked={products.length > 0 && selectedIds.length === products.length} className="w-4 h-4"/></th>
+              <th className="p-4 font-bold text-gray-600 cursor-pointer hover:bg-gray-200" onClick={() => handleSort('name')}> <div className="flex items-center gap-1">Sản phẩm {sortConfig.field === 'name' && sortConfig.direction !== 'none' && <ArrowUpDown size={14} className={sortConfig.direction==='desc' ? 'text-red-500' : 'text-green-500'} />}</div> </th>
+              <th className="p-4 font-bold text-gray-600">Nhóm & Nguồn Gốc</th>
+              <th className="p-4 font-bold text-gray-600 cursor-pointer hover:bg-gray-200" onClick={() => handleSort('cost')}> <div className="flex items-center gap-1">Giá vốn {sortConfig.field === 'cost' && sortConfig.direction !== 'none' && <ArrowUpDown size={14} className={sortConfig.direction==='desc' ? 'text-red-500' : 'text-green-500'} />}</div> </th>
+              <th className="p-4 font-bold text-gray-600 cursor-pointer hover:bg-gray-200" onClick={() => handleSort('price')}> <div className="flex items-center gap-1">Giá bán {sortConfig.field === 'price' && sortConfig.direction !== 'none' && <ArrowUpDown size={14} className={sortConfig.direction==='desc' ? 'text-red-500' : 'text-green-500'} />}</div> </th>
+              <th className="p-4 font-bold text-gray-600 cursor-pointer hover:bg-gray-200" onClick={() => handleSort('stock')}> <div className="flex items-center gap-1">Tồn {sortConfig.field === 'stock' && sortConfig.direction !== 'none' && <ArrowUpDown size={14} className={sortConfig.direction==='desc' ? 'text-red-500' : 'text-green-500'} />}</div> </th>
+              <th className="p-4 font-bold text-gray-600 text-right">Thao tác</th>
+            </tr>
+          </thead>
+          <tbody>
+            {filteredProducts.map(p => {
+              const stockClass = p.stock < 0 ? 'text-red-600' : 'text-gray-800';
+              return (
+                <tr key={p.id} className="border-b hover:bg-blue-50/50 cursor-pointer" onClick={() => setDetailProduct(p)}>
+                  <td className="p-4" onClick={e=>e.stopPropagation()}><input type="checkbox" checked={selectedIds.includes(p.id)} onChange={() => setSelectedIds(prev => prev.includes(p.id) ? prev.filter(x=>x!==p.id) : [...prev, p.id])} className="w-4 h-4"/></td>
+                  <td className="p-4 font-medium text-blue-600 underline">{p.name}</td>
+                  <td className="p-4"><p className="text-[11px] bg-gray-100 border inline-block px-1.5 py-0.5 rounded text-gray-600">{p.category || 'Chưa phân nhóm'}</p>{p.lastSupplierName && <p className="text-[10px] text-gray-400 mt-1">Từ: {p.lastSupplierName}</p>}</td>
+                  <td className="p-4 text-gray-600">{formatCurrency(p.cost)}</td><td className="p-4 font-bold text-blue-600">{formatCurrency(p.price)}</td><td className={"p-4 font-bold " + stockClass}>{p.stock}</td>
+                  <td className="p-4 text-right flex justify-end gap-1" onClick={e=>e.stopPropagation()}><button onClick={() => setDetailProduct(p)} title="Xem chi tiết nhập/bán" className="text-gray-600 bg-gray-100 p-2 rounded-lg hover:bg-gray-200"><Eye size={16}/></button><button onClick={() => {setForm(p); setIsModalOpen(true);}} className="text-blue-600 bg-blue-50 p-2 rounded-lg hover:bg-blue-100"><Edit size={16}/></button><button onClick={() => handleDelete(p.id)} className="text-red-600 bg-red-50 p-2 rounded-lg hover:bg-red-100"><Trash2 size={16}/></button></td>
+                </tr>
+              );
+            })}
+          </tbody>
+        </table>
+      </div>
+      <Modal isOpen={!!detailProduct} onClose={() => setDetailProduct(null)} title={`Lịch sử: ${detailProduct?.name || ''}`} maxWidth="max-w-4xl">
+        {detailProduct && (
+          <div className="space-y-4">
+            <div className="flex justify-between items-center bg-gray-50 p-3 rounded-xl border">
+              <div><p className="text-xs text-gray-500">Giá bán:</p><p className="font-bold text-blue-600">{formatCurrency(detailProduct.price)}</p></div>
+              <div><p className="text-xs text-gray-500">Tồn kho:</p><p className={"font-bold " + (detailProduct.stock < 0 ? 'text-red-600' : 'text-gray-800')}>{detailProduct.stock}</p></div>
+              <div className="flex items-center gap-1 bg-white p-1 rounded border">
+                <select value={filterMonth} onChange={e=>setFilterMonth(e.target.value)} className="bg-transparent text-xs outline-none"><option value="ALL">Cả năm</option>{Array.from({length: 12}, (_, i) => <option key={i+1} value={i+1}>Tháng {i+1}</option>)}</select>
+                <select value={filterYear} onChange={e=>setFilterYear(e.target.value)} className="bg-transparent text-xs outline-none">{Array.from({length: 5}, (_, i) => new Date().getFullYear() - i).map(y => <option key={y} value={y}>{y}</option>)}</select>
+              </div>
+            </div>
+            <div className="grid grid-cols-4 gap-2 text-center">
+              <div className="bg-blue-50 p-2 rounded-lg border border-blue-100"><p className="text-[10px] text-blue-600 font-bold uppercase">Tổng Bán</p><p className="text-xs font-bold text-blue-800">{formatCurrency(productHistory.totalSoldAmount)}</p></div>
+              <div className="bg-green-50 p-2 rounded-lg border border-green-100"><p className="text-[10px] text-green-600 font-bold uppercase">Đã Thanh Toán</p><p className="text-xs font-bold text-green-700">{formatCurrency(productHistory.totalPaid)}</p></div>
+              <div className="bg-orange-50 p-2 rounded-lg border border-orange-100"><p className="text-[10px] text-orange-600 font-bold uppercase">Đang Nợ</p><p className="text-xs font-bold text-orange-700">{formatCurrency(productHistory.totalDebtRemain)}</p></div>
+              <div className="bg-purple-50 p-2 rounded-lg border border-purple-100"><p className="text-[10px] text-purple-700 font-bold uppercase">Tổng Nhập</p><p className="text-xs font-bold text-purple-700">{formatCurrency(productHistory.totalImportAmount)}</p></div>
+            </div>
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <div>
+                <h4 className="font-bold text-sm text-green-700 mb-2 border-b pb-1">Lịch sử Bán hàng:</h4>
+                <div className="max-h-64 overflow-y-auto border rounded-xl shadow-sm">
+                  <table className="w-full text-left text-xs bg-white">
+                    <thead className="bg-green-50 sticky top-0 border-b border-green-100">
+                      <tr><th className="p-2.5 text-green-800">Khách mua</th><th className="p-2.5 text-green-800">Thời gian</th><th className="p-2.5 text-green-800">Số lượng</th></tr>
+                    </thead>
+                    <tbody>
+                      {productHistory.sales.map((s, idx) => (
+                        <tr key={idx} className="border-b hover:bg-gray-50">
+                          <td className="p-2.5 font-bold text-blue-700">{s.customerName}</td>
+                          <td className="p-2.5 text-gray-500 whitespace-nowrap">{formatDate(s.date)}</td>
+                          <td className="p-2.5 font-bold text-green-600">Bán ra {s.quantity}</td>
+                        </tr>
+                      ))}
+                      {productHistory.sales.length === 0 && (<tr><td colSpan="3" className="p-4 text-center text-gray-400">Không có phát sinh bán</td></tr>)}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+              <div>
+                <h4 className="font-bold text-sm text-purple-700 mb-2 border-b pb-1">Lịch sử Nhập hàng:</h4>
+                <div className="max-h-64 overflow-y-auto border rounded-xl shadow-sm">
+                  <table className="w-full text-left text-xs bg-white">
+                    <thead className="bg-purple-50 sticky top-0 border-b border-purple-100">
+                      <tr><th className="p-2.5 text-purple-800">Nhà cung cấp</th><th className="p-2.5 text-purple-800">Thời gian</th><th className="p-2.5 text-purple-800">Số lượng</th></tr>
+                    </thead>
+                    <tbody>
+                      {productHistory.imports.map((im, idx) => (
+                        <tr key={idx} className="border-b hover:bg-gray-50">
+                          <td className="p-2.5 font-bold text-orange-700">{im.supplierName}</td>
+                          <td className="p-2.5 text-gray-500 whitespace-nowrap">{formatDate(im.date)}</td>
+                          <td className="p-2.5 font-bold text-purple-600">Nhập vào {im.qty}</td>
+                        </tr>
+                      ))}
+                      {productHistory.imports.length === 0 && (<tr><td colSpan="3" className="p-4 text-center text-gray-400">Không có phát sinh nhập</td></tr>)}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            </div>
+          </div>
+        )}
+      </Modal>
+      <Modal isOpen={isModalOpen} onClose={() => setIsModalOpen(false)} title={form.id ? "Sửa thông tin Hàng hóa" : "Thêm Hàng hóa mới"}>
+        <form onSubmit={handleSave} className="space-y-4">
+          <input required placeholder="Tên sản phẩm *" value={form.name||''} onChange={e=>setForm({...form,name:e.target.value})} className="w-full p-2.5 border rounded-lg outline-none"/>
+          <input placeholder="Nhóm hàng (VD: Ốp lưng, Điện thoại...)" value={form.category||''} onChange={e=>setForm({...form,category:e.target.value})} className="w-full p-2.5 border rounded-lg outline-none"/>
+          <div className="grid grid-cols-2 gap-4">
+            <input required type="number" placeholder="Giá vốn *" value={form.cost||''} onChange={e=>setForm({...form,cost:e.target.value})} className="p-2.5 border rounded-lg outline-none"/>
+            <input required type="number" placeholder="Giá bán *" value={form.price||''} onChange={e=>setForm({...form,price:e.target.value})} className="p-2.5 border rounded-lg outline-none"/>
+          </div>
+          <input required type="number" placeholder="Tồn kho *" value={form.stock||''} onChange={e=>setForm({...form,stock:e.target.value})} className="w-full p-2.5 border rounded-lg outline-none"/>
+          <button className="w-full bg-blue-600 text-white font-bold p-3 rounded-lg">Lưu lại</button>
+        </form>
+      </Modal>
+    </div>
+  );
+}
+
+function ExpenseView({ expenses, db, storeId, showToast }) {
+  const [form, setForm] = useState({ amount: '', note: '' });
+  const [selectedIds, setSelectedIds] = useState([]);
+  const [searchTerm, setSearchTerm] = useState('');
+  const [detailExpense, setDetailExpense] = useState(null);
+  const currentDate = new Date();
+  const [filterMonth, setFilterMonth] = useState((currentDate.getMonth() + 1).toString());
+  const [filterYear, setFilterYear] = useState(currentDate.getFullYear().toString());
+
+  const handleSave = async (e) => {
+    e.preventDefault();
+    await addDoc(collection(db, 'stores', storeId, 'expenses'), { amount: Number(form.amount), note: form.note, date: new Date().toISOString() });
+    setForm({ amount: '', note: '' }); showToast("Đã thêm chi phí");
+  };
+
+  const handleDelete = async (id) => {
+    if (window.confirm("Xác nhận xóa chi phí này?")) {
+      await deleteDoc(doc(db, 'stores', storeId, 'expenses', id)); showToast("Đã xóa chi phí");
+    }
+  };
+
+  const handleBatchDelete = async () => {
+    if (selectedIds.length === 0) return;
+    if (window.confirm("Xác nhận xóa " + selectedIds.length + " mục đã chọn?")) {
+      let batch = writeBatch(db);
+      selectedIds.forEach(id => { batch.delete(doc(db, 'stores', storeId, 'expenses', id)); });
+      await batch.commit(); setSelectedIds([]); showToast("Đã xóa các chi phí đã chọn");
+    }
+  };
+
+  const filteredExpenses = useMemo(() => {
+    return expenses.filter(e => {
+      const d = new Date(e.date);
+      const matchTime = (filterMonth === 'ALL' || (d.getMonth() + 1).toString() === filterMonth) && d.getFullYear().toString() === filterYear;
+      const matchSearch = e.note && e.note.toLowerCase().includes(searchTerm.toLowerCase());
+      return matchTime && matchSearch;
+    }).sort((a,b) => new Date(b.date) - new Date(a.date));
+  }, [expenses, filterMonth, filterYear, searchTerm]);
+
+  const totalExpense = useMemo(() => {
+    return filteredExpenses.reduce((s, e) => s + (Number(e.amount) || 0), 0);
+  }, [filteredExpenses]);
+
+  return (
+    <div className="flex-1 p-4 md:p-6 bg-gray-50 overflow-auto h-full flex flex-col">
+      <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center mb-4 gap-3">
+        <h2 className="text-2xl font-bold text-gray-800">Quản lý Chi phí</h2>
+        <div className="relative w-full sm:w-64"><Search size={16} className="absolute left-3 top-3 text-gray-400"/><input placeholder="Tìm kiếm nội dung chi..." value={searchTerm} onChange={e=>setSearchTerm(e.target.value)} className="w-full pl-9 pr-3 py-2 border rounded-lg bg-white outline-none text-sm"/></div>
+      </div>
+      <div className="bg-white p-4 rounded-2xl border shadow-sm mb-4 flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
+        <div><p className="text-xs text-orange-600 font-bold uppercase">Tổng Chi Phí Kỳ Này</p><p className="text-2xl font-bold text-orange-700">{formatCurrency(totalExpense)}</p></div>
+        <div className="flex items-center gap-2 bg-gray-50 p-2 rounded-xl border">
+          <select value={filterMonth} onChange={e=>setFilterMonth(e.target.value)} className="bg-transparent text-sm font-medium outline-none"><option value="ALL">Cả năm</option>{Array.from({length: 12}, (_, i) => <option key={i+1} value={i+1}>Tháng {i+1}</option>)}</select>
+          <div className="w-px h-4 bg-gray-300"></div>
+          <select value={filterYear} onChange={e=>setFilterYear(e.target.value)} className="bg-transparent text-sm font-medium outline-none">{Array.from({length: 5}, (_, i) => new Date().getFullYear() - i).map(y => <option key={y} value={y}>{y}</option>)}</select>
+        </div>
+      </div>
+      <form onSubmit={handleSave} className="bg-white p-4 rounded-xl border shadow-sm mb-4 flex flex-col md:flex-row gap-4 shrink-0">
+        <input required type="number" placeholder="Số tiền chi *" value={form.amount} onChange={e=>setForm({...form,amount:e.target.value})} className="p-2.5 border rounded-lg outline-none flex-1"/>
+        <input required placeholder="Nội dung chi (VD: Trả tiền điện) *" value={form.note} onChange={e=>setForm({...form,note:e.target.value})} className="p-2.5 border rounded-lg outline-none flex-1 md:flex-[2]"/>
+        <button className="bg-orange-600 text-white px-8 rounded-lg font-bold py-2.5">Ghi Nhận</button>
+      </form>
+      {selectedIds.length > 0 && (
+        <div className="bg-red-50 border border-red-200 p-2.5 rounded-xl mb-3 flex justify-between items-center">
+          <span className="text-xs font-bold text-red-700">Đã chọn {selectedIds.length} mục</span>
+          <button onClick={handleBatchDelete} className="bg-red-600 hover:bg-red-700 text-white px-3 py-1 rounded-lg text-xs font-bold flex items-center gap-1"><Trash2 size={14}/> Xóa đã chọn</button>
+        </div>
+      )}
+      <div className="bg-white rounded-xl border shadow-sm flex-1 overflow-auto">
+        <table className="w-full text-left text-sm">
+          <thead className="bg-gray-100 sticky top-0 border-b">
+            <tr>
+              <th className="p-4 w-10"><input type="checkbox" onChange={() => setSelectedIds(selectedIds.length === filteredExpenses.length ? [] : filteredExpenses.map(e=>e.id))} checked={filteredExpenses.length > 0 && selectedIds.length === filteredExpenses.length} className="w-4 h-4"/></th>
+              <th className="p-4 font-bold text-gray-600">Thời gian</th><th className="p-4 font-bold text-gray-600">Nội dung</th><th className="p-4 font-bold text-gray-600">Số tiền</th><th className="p-4 font-bold text-gray-600 text-right">Thao tác</th>
+            </tr>
+          </thead>
+          <tbody>
+            {filteredExpenses.map(e => (
+              <tr key={e.id} className="border-b hover:bg-gray-50 cursor-pointer" onClick={() => setDetailExpense(e)}>
+                <td className="p-4" onClick={evt=>evt.stopPropagation()}><input type="checkbox" checked={selectedIds.includes(e.id)} onChange={() => setSelectedIds(prev => prev.includes(e.id) ? prev.filter(x=>x!==e.id) : [...prev, e.id])} className="w-4 h-4"/></td>
+                <td className="p-4 text-gray-500">{formatDate(e.date)}</td><td className="p-4 font-medium text-blue-600 underline">{e.note}</td><td className="p-4 font-bold text-orange-600">{formatCurrency(e.amount)}</td>
+                <td className="p-4 text-right" onClick={evt=>evt.stopPropagation()}><button onClick={() => handleDelete(e.id)} className="text-red-500 bg-red-50 p-2 rounded-lg hover:bg-red-100"><Trash2 size={16}/></button></td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+      <Modal isOpen={!!detailExpense} onClose={() => setDetailExpense(null)} title="Chi tiết Khoản Chi">
+        {detailExpense && (
+          <div className="space-y-4">
+            <div className="bg-orange-50 p-4 rounded-xl border border-orange-100 text-center"><p className="text-xs text-orange-600 font-bold uppercase mb-1">Số tiền chi</p><p className="text-2xl font-bold text-orange-700">{formatCurrency(detailExpense.amount)}</p></div>
+            <div className="space-y-2 text-sm"><p><strong className="text-gray-500">Nội dung:</strong> {detailExpense.note}</p><p><strong className="text-gray-500">Thời gian ghi nhận:</strong> {formatDate(detailExpense.date)}</p></div>
+          </div>
+        )}
+      </Modal>
+    </div>
+  );
+}
+
+function ImportView({ products, suppliers, db, storeId, user, showToast }) {
+  const [cart, setCart] = useState([]);
+  const [supplierId, setSupplierId] = useState('');
+  const [isDebt, setIsDebt] = useState(false);
+  const [searchTerm, setSearchTerm] = useState('');
+  const [showAddSuppModal, setShowAddSuppModal] = useState(false);
+  const [newSuppForm, setNewSuppForm] = useState({ name: '', phone: '', address: '' });
+  const [showAddProdModal, setShowAddProdModal] = useState(false);
+  const [newProdForm, setNewProdForm] = useState({ name: '', category: '', cost: '', price: '', stock: '' });
+
+  const filteredProducts = useMemo(() => {
+    return products.filter(p => p.name && p.name.toLowerCase().includes(searchTerm.toLowerCase()));
+  }, [products, searchTerm]);
+
+  const handleAddSupplierQuick = async (e) => {
+    e.preventDefault();
+    try {
+      const nowIso = new Date().toISOString();
+      const docRef = await addDoc(collection(db, 'stores', storeId, 'suppliers'), { name: newSuppForm.name, phone: newSuppForm.phone || '', address: newSuppForm.address || '', totalDebt: 0, createdAt: nowIso });
+      setSupplierId(docRef.id); setShowAddSuppModal(false); setNewSuppForm({ name: '', phone: '', address: '' }); showToast("Đã thêm và chọn nhà cung cấp mới!");
+    } catch (err) { showToast("Lỗi thêm nhà cung cấp", "error"); }
+  };
+
+  const handleAddNewProductInImport = async (e) => {
+    e.preventDefault();
+    try {
+      const nowIso = new Date().toISOString();
+      const costVal = Number(newProdForm.cost) || 0; const priceVal = Number(newProdForm.price) || 0; const initStock = Number(newProdForm.stock) || 0;
+      const newProdData = { name: newProdForm.name, category: newProdForm.category || '', cost: costVal, price: priceVal, stock: initStock, createdAt: nowIso };
+      const docRef = await addDoc(collection(db, 'stores', storeId, 'products'), newProdData);
+      setCart(c => [...c, { id: docRef.id, name: newProdData.name, category: newProdData.category, qty: initStock > 0 ? initStock : 1, importCost: costVal, price: priceVal }]);
+      setShowAddProdModal(false); setNewProdForm({ name: '', category: '', cost: '', price: '', stock: '' }); showToast("Đã thêm hàng mới và đưa vào phiếu nhập!");
+    } catch (err) { showToast("Lỗi thêm sản phẩm mới", "error"); }
+  };
+
+  const handleImport = async () => {
+    if (cart.length === 0 || !supplierId) { showToast("Vui lòng chọn hoặc thêm mới Nhà cung cấp và có ít nhất 1 sản phẩm trước khi nhập hàng!", "error"); return; }
+    try {
+      const s = suppliers.find(sup => sup.id === supplierId);
+      const total = cart.reduce((sum, i) => sum + Number(i.importCost || 0) * Number(i.qty || 1), 0);
+      await addDoc(collection(db, 'stores', storeId, 'imports'), { supplierId: supplierId, supplierName: s.name, items: cart, total: total, status: isDebt ? 'DEBT' : 'PAID', date: new Date().toISOString() });
+      let batch = writeBatch(db);
+      cart.forEach(item => {
+        const p = products.find(prod => prod.id === item.id);
+        if (p) { batch.update(doc(db, 'stores', storeId, 'products', p.id), { stock: Number(p.stock || 0) + Number(item.qty || 1), cost: Number(item.importCost || p.cost || 0), lastSupplierId: supplierId, lastSupplierName: s.name }); }
+      });
+      if (isDebt) { batch.update(doc(db, 'stores', storeId, 'suppliers', supplierId), { totalDebt: (s.totalDebt || 0) + total }); }
+      await batch.commit();
+      setCart([]); setSupplierId(''); setIsDebt(false); showToast("Nhập hàng thành công!");
+    } catch (e) { showToast("Lỗi nhập hàng", "error"); }
+  };
+
+  const addProductToCart = (p) => {
+    setCart(c => {
+      if (c.find(i => i.id === p.id)) return c;
+      return [...c, { id: p.id, name: p.name, category: p.category || '', qty: 1, importCost: p.cost || 0, price: p.price || 0 }];
+    });
+  };
+
+  return (
+    <div className="flex-1 flex flex-col lg:flex-row overflow-hidden bg-gray-50 h-full">
+      <div className="flex-1 p-4 md:p-6 overflow-y-auto flex flex-col">
+        <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center mb-4 gap-3">
+          <div className="flex items-center gap-2">
+            <h2 className="text-xl font-bold text-gray-800">Kho hàng (Chọn sản phẩm nhập)</h2>
+            <button onClick={() => setShowAddProdModal(true)} className="bg-blue-600 hover:bg-blue-700 text-white px-3 py-1.5 rounded-lg text-xs font-bold flex items-center gap-1 shadow"><Plus size={14}/> + Thêm hàng mới</button>
+          </div>
+          <div className="relative w-full sm:w-64"><Search size={16} className="absolute left-3 top-3 text-gray-400"/><input placeholder="Tìm kiếm sản phẩm nhập..." value={searchTerm} onChange={e=>setSearchTerm(e.target.value)} className="w-full pl-9 pr-3 py-2 border rounded-lg bg-white outline-none text-sm"/></div>
+        </div>
+        <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+          {filteredProducts.map(p => (
+            <div key={p.id} onClick={() => addProductToCart(p)} className="bg-white p-3 rounded-xl border cursor-pointer hover:border-blue-400 shadow-sm transition">
+              {p.category && <span className="text-[10px] bg-blue-50 text-blue-600 px-1.5 py-0.5 rounded font-bold mb-1 inline-block">{p.category}</span>}
+              <h3 className="font-semibold text-sm truncate text-gray-800">{p.name}</h3>
+              <div className="flex justify-between items-end mt-2"><p className="text-xs text-gray-500">Tồn: {p.stock}</p><p className="text-blue-600 font-bold text-xs">{formatCurrency(p.cost)}</p></div>
+            </div>
+          ))}
+        </div>
+      </div>
+      <div className="w-full lg:w-[460px] bg-white border-l shadow-lg shrink-0 z-20 flex flex-col h-[65vh] lg:h-auto">
+        <div className="p-4 border-b bg-gray-50"><h2 className="font-bold flex items-center gap-2"><ArrowDownToLine size={20} className="text-gray-600"/> Phiếu Nhập Kho</h2></div>
+        <div className="flex-1 overflow-y-auto p-4 space-y-3">
+          {cart.map(item => (
+            <div key={item.id} className="bg-gray-50 p-3 rounded-xl border space-y-2 shadow-sm">
+              <div className="flex justify-between items-center"><h4 className="font-bold text-sm text-gray-800 truncate">{item.name}</h4><button onClick={() => setCart(c => c.filter(i => i.id !== item.id))} className="text-red-400 hover:text-red-600"><X size={16}/></button></div>
+              <div className="grid grid-cols-2 gap-2 text-xs">
+                <div>
+                  <label className="text-[10px] text-gray-500 font-bold">Số lượng nhập</label>
+                  <input type="number" value={item.qty} onChange={e => setCart(c => c.map(i => i.id === item.id ? {...i, qty: Number(e.target.value)} : i))} className="w-full p-1.5 border rounded outline-none font-bold text-center bg-white" />
+                </div>
+                <div>
+                  <label className="text-[10px] text-gray-500 font-bold">Đơn giá nhập (đ)</label>
+                  <input type="number" value={item.importCost} onChange={e => setCart(c => c.map(i => i.id === item.id ? {...i, importCost: Number(e.target.value)} : i))} className="w-full p-1.5 border rounded outline-none font-bold text-blue-600 text-center bg-white" />
+                </div>
+              </div>
+              <div className="flex justify-between items-center pt-1 border-t border-gray-200">
+                <span className="text-[11px] text-gray-500">Thành tiền:</span>
+                <span className="font-bold text-xs text-gray-900">{formatCurrency(Number(item.qty || 0) * Number(item.importCost || 0))}</span>
+              </div>
+            </div>
+          ))}
+          {cart.length === 0 && <div className="text-center text-gray-400 py-12">Chưa chọn sản phẩm nào để nhập</div>}
+        </div>
+        <div className="p-4 border-t bg-gray-50 space-y-3">
+          <div className="flex gap-2">
+            <select required value={supplierId} onChange={e=>setSupplierId(e.target.value)} className="flex-1 p-2.5 border rounded-lg outline-none text-sm bg-white font-medium">
+              <option value="">-- Bắt buộc chọn NCC --</option>
+              {suppliers.map(s => <option key={s.id} value={s.id}>{s.name}</option>)}
+            </select>
+            <button type="button" onClick={() => setShowAddSuppModal(true)} className="bg-blue-50 text-blue-600 border border-blue-200 px-3 rounded-lg font-bold text-xs flex items-center gap-1 shrink-0"><Plus size={14}/> Thêm NCC</button>
+          </div>
+          <div className="flex gap-2"><button onClick={() => setIsDebt(false)} className={"flex-1 py-2 rounded-lg border font-bold text-xs " + (!isDebt ? 'bg-blue-600 text-white' : 'bg-white')}>Tiền mặt</button><button onClick={() => setIsDebt(true)} className={"flex-1 py-2 rounded-lg border font-bold text-xs " + (isDebt ? 'bg-orange-500 text-white' : 'bg-white')}>Ghi nợ NCC</button></div>
+          <div className="flex justify-between items-center px-1"><span className="text-sm font-bold text-gray-700">Tổng tiền nhập:</span><span className="text-lg font-bold text-blue-600">{formatCurrency(cart.reduce((sum, i) => sum + (Number(i.qty || 0) * Number(i.importCost || 0)), 0))}</span></div>
+          <button onClick={handleImport} disabled={!supplierId || cart.length === 0} className="w-full bg-gray-800 disabled:bg-gray-300 text-white py-3 rounded-xl font-bold mt-1 shadow-sm">Hoàn tất Nhập Hàng</button>
+        </div>
+      </div>
+
+      <Modal isOpen={showAddSuppModal} onClose={() => setShowAddSuppModal(false)} title="Thêm Nhà Cung Cấp Mới">
+        <form onSubmit={handleAddSupplierQuick} className="space-y-4">
+          <input required placeholder="Tên nhà cung cấp *" value={newSuppForm.name} onChange={e=>setNewSuppForm({...newSuppForm, name:e.target.value})} className="w-full p-2.5 border rounded-lg outline-none text-sm"/>
+          <input placeholder="Số điện thoại" value={newSuppForm.phone} onChange={e=>setNewSuppForm({...newSuppForm, phone:e.target.value})} className="w-full p-2.5 border rounded-lg outline-none text-sm"/>
+          <input placeholder="Địa chỉ" value={newSuppForm.address} onChange={e=>setNewSuppForm({...newSuppForm, address:e.target.value})} className="w-full p-2.5 border rounded-lg outline-none text-sm"/>
+          <button type="submit" className="w-full bg-blue-600 text-white font-bold p-3 rounded-lg text-sm">Lưu & Chọn Nhà Cung Cấp</button>
+        </form>
+      </Modal>
+
+      <Modal isOpen={showAddProdModal} onClose={() => setShowAddProdModal(false)} title="Thêm Hàng Hóa Mới (Nhập Kho)">
+        <form onSubmit={handleAddNewProductInImport} className="space-y-4">
+          <div><label className="block text-xs font-bold text-gray-500 mb-1">Tên sản phẩm *</label><input required placeholder="Nhập tên sản phẩm..." value={newProdForm.name} onChange={e=>setNewProdForm({...newProdForm, name: e.target.value})} className="w-full p-2.5 border rounded-lg outline-none text-sm"/></div>
+          <div><label className="block text-xs font-bold text-gray-500 mb-1">Nhóm hàng</label><input placeholder="VD: Điện thoại, Ốp lưng, Sạc..." value={newProdForm.category} onChange={e=>setNewProdForm({...newProdForm, category: e.target.value})} className="w-full p-2.5 border rounded-lg outline-none text-sm"/></div>
+          <div className="grid grid-cols-2 gap-3">
+            <div><label className="block text-xs font-bold text-gray-500 mb-1">Giá vốn (đ) *</label><input required type="number" placeholder="0" value={newProdForm.cost} onChange={e=>setNewProdForm({...newProdForm, cost: e.target.value})} className="w-full p-2.5 border rounded-lg outline-none text-sm font-bold"/></div>
+            <div><label className="block text-xs font-bold text-gray-500 mb-1">Giá bán (đ) *</label><input required type="number" placeholder="0" value={newProdForm.price} onChange={e=>setNewProdForm({...newProdForm, price: e.target.value})} className="w-full p-2.5 border rounded-lg outline-none text-sm font-bold text-blue-600"/></div>
+          </div>
+          <div><label className="block text-xs font-bold text-gray-500 mb-1">Số lượng tồn ban đầu *</label><input required type="number" placeholder="0" value={newProdForm.stock} onChange={e=>setNewProdForm({...newProdForm, stock: e.target.value})} className="w-full p-2.5 border rounded-lg outline-none text-sm font-bold"/></div>
+          <button type="submit" className="w-full bg-blue-600 text-white font-bold p-3 rounded-lg text-sm">Lưu & Đưa Vào Phiếu Nhập</button>
+        </form>
+      </Modal>
+    </div>
+  );
+}
