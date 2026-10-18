@@ -299,7 +299,7 @@ export default function EnhancedPOS() {
         {activeTab === 'pos' && <POSView products={products} customers={customers} db={db} storeId={storeId} user={user} storeConfig={storeConfig} showToast={showToast} userData={userData} />}
         {activeTab === 'sales_history' && <SalesHistoryView orders={orders} products={products} customers={customers} storeConfig={storeConfig} db={db} storeId={storeId} user={user} showToast={showToast} />}
         {activeTab === 'imports' && <ImportView products={products} suppliers={suppliers} db={db} storeId={storeId} user={user} showToast={showToast} />}
-        {activeTab === 'products' && <InventoryView products={products} orders={orders} imports={imports} db={db} storeId={storeId} showToast={showToast} />}
+        {activeTab === 'products' && <InventoryView products={products} orders={imports} imports={imports} db={db} storeId={storeId} showToast={showToast} />}
         {activeTab === 'customers' && <ContactManager type="customers" data={customers} orders={orders} db={db} storeId={storeId} showToast={showToast} />}
         {activeTab === 'suppliers' && <ContactManager type="suppliers" data={suppliers} orders={imports} db={db} storeId={storeId} showToast={showToast} />}
         {activeTab === 'expenses' && <ExpenseView expenses={expenses} db={db} storeId={storeId} showToast={showToast} />}
@@ -318,6 +318,9 @@ function DashboardView({ orders, imports, expenses, customers, suppliers, showTo
   const [suppSortOrder, setSuppSortOrder] = useState('desc');
   const [showAllCust, setShowAllCust] = useState(false);
   const [showAllSupp, setShowAllSupp] = useState(false);
+  
+  // Trạng thái bộ lọc riêng cho biểu đồ
+  const [chartFilter, setChartFilter] = useState('7days'); 
 
   const stats = useMemo(() => {
     const fOrders = orders.filter(o => { const d = new Date(o.date); return (filterMonth === 'ALL' || (d.getMonth() + 1).toString() === filterMonth) && d.getFullYear().toString() === filterYear; });
@@ -334,22 +337,65 @@ function DashboardView({ orders, imports, expenses, customers, suppliers, showTo
     const overdueCust = orders.filter(o => o.status === 'DEBT').sort((a,b) => new Date(b.date) - new Date(a.date));
     const overdueCust1Week = overdueCust.filter(o => getDaysDifference(o.date) >= 7);
 
+    // Tính toán dữ liệu Biểu đồ (Khởi tạo trước các ngày/tháng để luôn có cột)
     let chartData = {};
-    if (filterMonth !== 'ALL') {
-      fOrders.forEach(o => {
-        const d = new Date(o.date);
+    if (chartFilter === '7days') {
+      for (let i = 6; i >= 0; i--) {
+        const d = new Date();
+        d.setDate(d.getDate() - i);
         const dayKey = d.getDate() + '/' + (d.getMonth() + 1);
-        chartData[dayKey] = (chartData[dayKey] || 0) + o.total;
-      });
-    } else {
+        chartData[dayKey] = 0;
+      }
+    } else if (chartFilter === 'month') {
+      const targetMonth = filterMonth !== 'ALL' ? parseInt(filterMonth) : currentDate.getMonth() + 1;
+      const targetYear = parseInt(filterYear);
+      const daysInMonth = new Date(targetYear, targetMonth, 0).getDate();
+      for (let i = 1; i <= daysInMonth; i++) {
+        const dayKey = i + '/' + targetMonth;
+        chartData[dayKey] = 0;
+      }
+    } else if (chartFilter === 'year') {
       const monthNames = ['Th 1', 'Th 2', 'Th 3', 'Th 4', 'Th 5', 'Th 6', 'Th 7', 'Th 8', 'Th 9', 'Th 10', 'Th 11', 'Th 12'];
       monthNames.forEach((m) => { chartData[m] = 0; });
-      fOrders.forEach(o => {
-        const d = new Date(o.date);
-        const mKey = monthNames[d.getMonth()];
-        chartData[mKey] = (chartData[mKey] || 0) + o.total;
-      });
     }
+
+    // Nạp dữ liệu đơn hàng vào đúng cột
+    orders.forEach(o => {
+      const d = new Date(o.date);
+      const oDay = d.getDate();
+      const oMonth = d.getMonth() + 1;
+      const oYear = d.getFullYear();
+
+      if (chartFilter === '7days') {
+        const today = new Date();
+        today.setHours(23, 59, 59, 999);
+        const sevenDaysAgo = new Date();
+        sevenDaysAgo.setDate(today.getDate() - 6);
+        sevenDaysAgo.setHours(0, 0, 0, 0);
+        if (d >= sevenDaysAgo && d <= today) {
+          const dayKey = oDay + '/' + oMonth;
+          if (chartData[dayKey] !== undefined) {
+            chartData[dayKey] += o.total;
+          }
+        }
+      } else if (chartFilter === 'month') {
+        const targetMonth = filterMonth !== 'ALL' ? parseInt(filterMonth) : currentDate.getMonth() + 1;
+        const targetYear = parseInt(filterYear);
+        if (oMonth === targetMonth && oYear === targetYear) {
+          const dayKey = oDay + '/' + targetMonth;
+          if (chartData[dayKey] !== undefined) {
+            chartData[dayKey] += o.total;
+          }
+        }
+      } else if (chartFilter === 'year') {
+        if (oYear === parseInt(filterYear)) {
+          const mKey = 'Th ' + oMonth;
+          if (chartData[mKey] !== undefined) {
+            chartData[mKey] += o.total;
+          }
+        }
+      }
+    });
 
     let productSalesMap = {};
     fOrders.forEach(o => {
@@ -364,7 +410,7 @@ function DashboardView({ orders, imports, expenses, customers, suppliers, showTo
     const topProducts = Object.values(productSalesMap).sort((a, b) => b.totalQty - a.totalQty).slice(0, 5);
 
     return { totalRev, totalCost, totalExp, netProfit, overdueCust, overdueCust1Week, chartData, topProducts, filteredCustDebt, filteredSuppDebt };
-  }, [orders, imports, expenses, customers, suppliers, filterMonth, filterYear, custSortOrder, suppSortOrder]);
+  }, [orders, imports, expenses, customers, suppliers, filterMonth, filterYear, custSortOrder, suppSortOrder, chartFilter]);
 
   const years = Array.from({length: 5}, (_, i) => currentDate.getFullYear() - i);
 
@@ -486,28 +532,31 @@ function DashboardView({ orders, imports, expenses, customers, suppliers, showTo
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
         <div className="bg-white p-6 rounded-2xl shadow-sm border border-gray-200 lg:col-span-2 flex flex-col">
-          <h3 className="font-bold text-gray-800 mb-4 flex items-center gap-2"><BarChart3 size={20} className="text-blue-600"/> Biểu đồ doanh thu {filterMonth === 'ALL' ? 'theo tháng' : 'theo ngày'}</h3>
-          <div className="flex-1 min-h-[220px] flex items-end gap-1 overflow-x-auto pt-6 pb-2 px-2 border-b border-gray-100">
-            {Object.keys(stats.chartData).length === 0 ? (
-              <div className="w-full text-center text-gray-400 py-16">Chưa có dữ liệu bán hàng</div>
-            ) : (
-              (() => {
-                const values = Object.values(stats.chartData);
-                const maxVal = Math.max(...values, 1000);
-                return Object.entries(stats.chartData).map(([label, val], idx) => {
-                  const heightPercent = Math.max((val / maxVal) * 100, 4);
-                  return (
-                    <div key={idx} className="flex-1 flex flex-col items-center gap-2 min-w-[32px] group relative">
-                      <div className="absolute -top-8 bg-gray-900 text-white text-[10px] px-2 py-1 rounded opacity-0 group-hover:opacity-100 transition whitespace-nowrap shadow-md z-10">
-                        {label}: {formatCurrency(val)}
-                      </div>
-                      <div className="w-full bg-blue-500 rounded-t-lg transition-all duration-500 hover:bg-blue-600" style={{ height: heightPercent + '%' }}></div>
-                      <span className="text-[10px] text-gray-500 truncate w-full text-center">{label}</span>
+          <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center mb-4 border-b border-gray-100 pb-3 gap-3">
+            <h3 className="font-bold text-gray-800 flex items-center gap-2"><BarChart3 size={20} className="text-blue-600"/> Biểu đồ doanh thu</h3>
+            <select value={chartFilter} onChange={e=>setChartFilter(e.target.value)} className="text-xs bg-gray-50 border border-gray-200 text-gray-700 font-bold rounded-lg px-2.5 py-2 outline-none focus:border-blue-500 w-full sm:w-auto">
+              <option value="7days">7 ngày gần nhất</option>
+              <option value="month">Theo ngày trong Tháng {filterMonth !== 'ALL' ? filterMonth : (new Date().getMonth() + 1)}/{filterYear}</option>
+              <option value="year">Theo tháng trong Năm {filterYear}</option>
+            </select>
+          </div>
+          <div className="flex-1 min-h-[220px] flex items-end gap-1 overflow-x-auto pt-6 pb-2 px-2 border-b border-gray-100 scrollbar-hide">
+            {(() => {
+              const values = Object.values(stats.chartData);
+              const maxVal = Math.max(...values, 1000);
+              return Object.entries(stats.chartData).map(([label, val], idx) => {
+                const heightPercent = Math.max((val / maxVal) * 100, 4);
+                return (
+                  <div key={idx} className="flex-1 flex flex-col items-center gap-2 min-w-[24px] group relative">
+                    <div className="absolute -top-8 bg-gray-900 text-white text-[10px] px-2 py-1 rounded opacity-0 group-hover:opacity-100 transition whitespace-nowrap shadow-md z-10">
+                      {label}: {formatCurrency(val)}
                     </div>
-                  );
-                });
-              })()
-            )}
+                    <div className={"w-full rounded-t-lg transition-all duration-500 hover:bg-blue-600 " + (val > 0 ? "bg-blue-500" : "bg-gray-200")} style={{ height: heightPercent + '%' }}></div>
+                    <span className="text-[10px] text-gray-500 truncate w-full text-center" style={{fontSize: chartFilter === 'month' ? '8px' : '10px'}}>{label}</span>
+                  </div>
+                );
+              });
+            })()}
           </div>
         </div>
 
