@@ -59,9 +59,9 @@ const getDeviceInfo = () => {
   return "Máy tính";
 };
 
-// --- Hỗ trợ UI Toggle Switch hiện đại ---
+// --- Toggle Switch UI ---
 const ToggleSwitch = ({ checked, onChange, label }) => (
-  <label className="flex items-center justify-between cursor-pointer w-full group">
+  <label className="flex items-center justify-between cursor-pointer w-full group py-1">
     <span className="text-sm font-medium text-gray-700 group-hover:text-blue-600 transition-colors">{label}</span>
     <div className="relative inline-flex items-center">
       <input type="checkbox" className="sr-only peer" checked={checked} onChange={(e) => onChange(e.target.checked)} />
@@ -180,7 +180,6 @@ export default function EnhancedPOS() {
   const [userData, setUserData] = useState({ role: null, name: '', perms: {} });
   const [activeTab, setActiveTab] = useState('pos');
   
-  // Cấu hình mặc định cho phần in
   const [storeConfig, setStoreConfig] = useState({ 
     name: 'SmartPOS Pro', address: '', phone: '', logo: '',
     printPaperSize: 'K80', printFontSize: 12,
@@ -314,9 +313,6 @@ function DashboardView({ orders, imports, expenses, customers, suppliers, showTo
   const [filterMonth, setFilterMonth] = useState((currentDate.getMonth() + 1).toString());
   const [filterYear, setFilterYear] = useState(currentDate.getFullYear().toString());
 
-  const [custSortOrder, setCustSortOrder] = useState('desc');
-  const [suppSortOrder, setSuppSortOrder] = useState('desc');
-  
   const stats = useMemo(() => {
     const fOrders = orders.filter(o => { const d = new Date(o.date); return (filterMonth === 'ALL' || (d.getMonth() + 1).toString() === filterMonth) && d.getFullYear().toString() === filterYear; });
     const fImports = imports.filter(i => { const d = new Date(i.date); return (filterMonth === 'ALL' || (d.getMonth() + 1).toString() === filterMonth) && d.getFullYear().toString() === filterYear; });
@@ -357,7 +353,7 @@ function DashboardView({ orders, imports, expenses, customers, suppliers, showTo
     const topProducts = Object.values(productSalesMap).sort((a, b) => b.totalQty - a.totalQty).slice(0, 5);
 
     return { totalRev, totalCost, totalExp, netProfit, chartData, topProducts };
-  }, [orders, imports, expenses, customers, suppliers, filterMonth, filterYear]);
+  }, [orders, imports, expenses, filterMonth, filterYear]);
 
   const years = Array.from({length: 5}, (_, i) => currentDate.getFullYear() - i);
 
@@ -442,7 +438,7 @@ const StatCard = ({ icon, title, value, color, highlight = false }) => {
 };
 
 // =========================================================================
-// MẪU IN DÙNG CHO POSView VÀ SalesHistoryView
+// MẪU IN DÙNG CHUNG (K80 / A4 / A5 CHUẨN KIOTVIET)
 // =========================================================================
 
 const ReceiptTemplate = ({ order, storeConfig, isA4A5, baseFontSize }) => {
@@ -473,7 +469,7 @@ const ReceiptTemplate = ({ order, storeConfig, isA4A5, baseFontSize }) => {
             {isA4A5 && <th className="py-1 px-1 text-center w-8 border border-gray-300">STT</th>}
             <th className={`py-1 px-1 text-left ${isA4A5 ? 'border border-gray-300' : ''}`}>Sản phẩm</th>
             
-            {/* Cột bảo hành & Ghi chú trên A4/A5 */}
+            {/* Tách cột Bảo hành & Ghi chú riêng biệt cho khổ A4/A5 */}
             {isA4A5 && storeConfig.printShowWarranty !== false && <th className="py-1 px-1 text-center border border-gray-300">Bảo hành</th>}
             {isA4A5 && storeConfig.printShowNote !== false && <th className="py-1 px-1 text-left border border-gray-300">Ghi chú</th>}
             
@@ -489,7 +485,7 @@ const ReceiptTemplate = ({ order, storeConfig, isA4A5, baseFontSize }) => {
               <td className={`py-2 px-1 ${isA4A5 ? 'border border-gray-300' : ''}`}>
                 <strong>{i.name}</strong>
                 
-                {/* Gộp thông tin hiển thị bên dưới ở chế độ K80 */}
+                {/* Ở khổ K80: Gộp thông tin hiển thị bên dưới tên sản phẩm */}
                 {!isA4A5 && (
                   <div className="text-[0.85em] text-gray-700 mt-1 space-y-0.5">
                     {storeConfig.printShowWarranty !== false && i.warrantyValue && <div>- BH: {i.warrantyValue} {i.warrantyUnit}</div>}
@@ -498,7 +494,7 @@ const ReceiptTemplate = ({ order, storeConfig, isA4A5, baseFontSize }) => {
                 )}
               </td>
               
-              {/* Riêng cột cho A4/A5 */}
+              {/* Hiển thị cột riêng trên A4/A5 */}
               {isA4A5 && storeConfig.printShowWarranty !== false && (
                 <td className="py-2 px-1 text-center border border-gray-300">
                   {i.warrantyValue ? `${i.warrantyValue} ${i.warrantyUnit}` : ''}
@@ -718,7 +714,7 @@ function SettingsView({ db, storeId, showToast, storeConfig }) {
                 <hr className="border-gray-100" />
                 <div className="space-y-4">
                   <h4 className="text-xs font-black text-gray-400 uppercase tracking-wider mb-2">Đầu trang & Cửa hàng</h4>
-                  <div className="space-y-3 bg-gray-50 p-3 rounded-xl border border-gray-100">
+                  <div className="space-y-2 bg-gray-50 p-3 rounded-xl border border-gray-100">
                     <ToggleSwitch label="In Logo cửa hàng" checked={form.printShowLogo} onChange={(val) => setForm({...form, printShowLogo: val})} />
                     <ToggleSwitch label="In Tên cửa hàng" checked={form.printShowStoreName} onChange={(val) => setForm({...form, printShowStoreName: val})} />
                     <ToggleSwitch label="In Địa chỉ cửa hàng" checked={form.printShowStoreAddress} onChange={(val) => setForm({...form, printShowStoreAddress: val})} />
@@ -733,7 +729,7 @@ function SettingsView({ db, storeId, showToast, storeConfig }) {
                 <hr className="border-gray-100" />
                 <div className="space-y-4">
                   <h4 className="text-xs font-black text-gray-400 uppercase tracking-wider mb-2">Thông tin Hóa đơn & Hàng hóa</h4>
-                  <div className="space-y-3 bg-gray-50 p-3 rounded-xl border border-gray-100">
+                  <div className="space-y-2 bg-gray-50 p-3 rounded-xl border border-gray-100">
                     <ToggleSwitch label="In Mã hóa đơn" checked={form.printShowInvoiceId} onChange={(val) => setForm({...form, printShowInvoiceId: val})} />
                     <ToggleSwitch label="In Ngày giờ bán" checked={form.printShowDate} onChange={(val) => setForm({...form, printShowDate: val})} />
                     <ToggleSwitch label="In Tên Thu ngân" checked={form.printShowCashier} onChange={(val) => setForm({...form, printShowCashier: val})} />
