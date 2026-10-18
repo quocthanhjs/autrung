@@ -2565,3 +2565,4 @@ function SettingsView({ db, storeId, showToast, storeConfig }) {
     </div>
   );
 }
+
