@@ -1104,12 +1104,12 @@ function SalesHistoryView({ orders, products, customers, storeConfig, db, storeI
                     <p className="text-[9px] text-gray-500 mt-0.5 w-full">Mã HĐ: #{viewingOrderPrint.id.slice(0,6).toUpperCase()} | Ngày: {formatDate(viewingOrderPrint.date)}</p>
                   </div>
 
-                  <div className="grid grid-cols-2 gap-2 bg-gray-50 p-2 rounded border border-gray-200 text-[9px] mb-3">
-                    <div><span className="text-gray-500">Khách hàng:</span> <strong className="text-gray-800 text-xs">{viewingOrderPrint.customerName}</strong></div>
+                  <div className="grid grid-cols-2 gap-2 bg-gray-50 p-2 rounded border border-gray-200 text-[6.5px] mb-3">
+                    <div><span className="text-gray-500">Khách hàng:</span> <strong className="text-gray-800 text-[8.5px]">{viewingOrderPrint.customerName}</strong></div>
                     <div><span className="text-gray-500">Trạng thái:</span> <strong className="text-blue-600">{viewingOrderPrint.status === 'PAID' ? 'Đã thanh toán' : 'Ghi nợ'}</strong></div>
                   </div>
 
-                  <table className="w-full text-[9px] mb-4 border-collapse border border-gray-400">
+                  <table className="w-full text-[6.5px] mb-4 border-collapse border border-gray-400">
                     <thead>
                       <tr className="bg-gray-100 border-b border-gray-400 text-gray-800">
                         <th className="py-1 px-1 border border-gray-400 text-center w-6">STT</th>
@@ -1135,14 +1135,14 @@ function SalesHistoryView({ orders, products, customers, storeConfig, db, storeI
                       ))}
                     </tbody>
                     <tfoot>
-                      <tr className="border-t-2 border-gray-400 font-bold text-[9px] bg-gray-50">
+                      <tr className="border-t-2 border-gray-400 font-bold text-[6.5px] bg-gray-50">
                         <td colSpan="4" className="py-1.5 px-2 border border-gray-400 text-right text-gray-800">TỔNG CỘNG THANH TOÁN:</td>
-                        <td colSpan="3" className="py-1.5 px-2 border border-gray-400 text-right text-blue-600 text-xs">{formatCurrency(viewingOrderPrint.total)}</td>
+                        <td colSpan="3" className="py-1.5 px-2 border border-gray-400 text-right text-blue-600 text-[8.5px]">{formatCurrency(viewingOrderPrint.total)}</td>
                       </tr>
                     </tfoot>
                   </table>
 
-                  <div className="grid grid-cols-2 gap-8 text-center pt-4 text-[9px]">
+                  <div className="grid grid-cols-2 gap-8 text-center pt-4 text-[6.5px]">
                     <div>
                       <p className="font-bold">Khách hàng ký nhận</p>
                       <p className="text-gray-400 italic mt-0.5">(Ký, ghi rõ họ tên)</p>
@@ -2245,12 +2245,12 @@ function POSView({ products, customers, db, storeId, user, storeConfig, showToas
                     <p className="text-[9px] text-gray-500 mt-0.5 w-full">Mã HĐ: #{completedOrder.id.slice(0,6).toUpperCase()} | Ngày: {formatDate(completedOrder.date)}</p>
                   </div>
 
-                  <div className="grid grid-cols-2 gap-2 bg-gray-50 p-2 rounded border border-gray-200 text-[9px] mb-3">
-                    <div><span className="text-gray-500">Khách hàng:</span> <strong className="text-gray-800 text-xs">{completedOrder.customerName}</strong></div>
+                  <div className="grid grid-cols-2 gap-2 bg-gray-50 p-2 rounded border border-gray-200 text-[6.5px] mb-3">
+                    <div><span className="text-gray-500">Khách hàng:</span> <strong className="text-gray-800 text-[8.5px]">{completedOrder.customerName}</strong></div>
                     <div><span className="text-gray-500">Trạng thái:</span> <strong className="text-blue-600">{completedOrder.status === 'PAID' ? 'Đã thanh toán' : 'Ghi nợ'}</strong></div>
                   </div>
 
-                  <table className="w-full text-[9px] mb-4 border-collapse border border-gray-400">
+                  <table className="w-full text-[6.5px] mb-4 border-collapse border border-gray-400">
                     <thead>
                       <tr className="bg-gray-100 border-b border-gray-400 text-gray-800">
                         <th className="py-1 px-1 border border-gray-400 text-center w-6">STT</th>
@@ -2276,14 +2276,14 @@ function POSView({ products, customers, db, storeId, user, storeConfig, showToas
                       ))}
                     </tbody>
                     <tfoot>
-                      <tr className="border-t-2 border-gray-400 font-bold text-[9px] bg-gray-50">
+                      <tr className="border-t-2 border-gray-400 font-bold text-[6.5px] bg-gray-50">
                         <td colSpan="4" className="py-1.5 px-2 border border-gray-400 text-right text-gray-800">TỔNG CỘNG THANH TOÁN:</td>
-                        <td colSpan="3" className="py-1.5 px-2 border border-gray-400 text-right text-blue-600 text-xs">{formatCurrency(completedOrder.total)}</td>
+                        <td colSpan="3" className="py-1.5 px-2 border border-gray-400 text-right text-blue-600 text-[8.5px]">{formatCurrency(completedOrder.total)}</td>
                       </tr>
                     </tfoot>
                   </table>
 
-                  <div className="grid grid-cols-2 gap-8 text-center pt-4 text-[9px]">
+                  <div className="grid grid-cols-2 gap-8 text-center pt-4 text-[6.5px]">
                     <div>
                       <p className="font-bold">Khách hàng ký nhận</p>
                       <p className="text-gray-400 italic mt-0.5">(Ký, ghi rõ họ tên)</p>
