@@ -1048,10 +1048,10 @@ function POSView({ products, customers, db, storeId, user, storeConfig, showToas
           {cart.length === 0 && <div className="text-center text-gray-400 py-10 text-sm font-medium">Chưa có sản phẩm nào trong giỏ</div>}
         </div>
         <div className="p-4 border-t bg-white space-y-3 shadow-[0_-4px_6px_-1px_rgba(0,0,0,0.05)]">
-          {/* Sửa lỗi hiển thị trên Mobile: flex-row luôn luôn giữ 1 hàng */}
+          {/* Đưa nút Thêm khách hàng vào ngay bên trong ô chọn khách hàng */}
           <div className="flex flex-row items-center gap-2 w-full">
             <select value={customerId} onChange={e=>setCustomerId(e.target.value)} className="flex-1 min-w-0 p-2.5 border border-gray-300 rounded-xl outline-none text-sm bg-gray-50 focus:bg-white font-medium focus:ring-2 focus:ring-blue-500 transition-all"><option value="">-- Khách lẻ (Tiền mặt) --</option>{customers.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}</select>
-            <button type="button" onClick={() => setShowAddCusModal(true)} className="bg-blue-50 hover:bg-blue-100 text-blue-600 border border-blue-200 px-3 py-2.5 rounded-xl font-bold text-xs flex items-center justify-center gap-1 shrink-0 whitespace-nowrap transition-colors"><Plus size={16}/> Thêm KH</button>
+            <button type="button" onClick={() => setShowAddCusModal(true)} className="bg-blue-50 hover:bg-blue-100 text-blue-600 border border-blue-200 px-3.5 py-2.5 rounded-xl font-bold text-xs flex items-center justify-center gap-1 shrink-0 whitespace-nowrap transition-colors shadow-sm"><Plus size={16}/> Thêm KH</button>
           </div>
           <textarea value={orderNote} onChange={e=>setOrderNote(e.target.value)} placeholder="Ghi chú đơn hàng..." className="w-full p-2.5 border border-gray-300 rounded-xl outline-none text-sm resize-none h-12 bg-gray-50 focus:bg-white focus:ring-2 focus:ring-blue-500 transition-all"></textarea>
           <div className="flex gap-2"><button onClick={() => setIsDebt(false)} className={"flex-1 py-2.5 rounded-xl border-2 font-bold transition-all " + (!isDebt ? 'bg-blue-600 text-white border-blue-600 shadow-md' : 'bg-white text-gray-500 border-gray-200 hover:bg-gray-50')}>Tiền mặt</button><button onClick={() => setIsDebt(true)} className={"flex-1 py-2.5 rounded-xl border-2 font-bold transition-all " + (isDebt ? 'bg-orange-500 text-white border-orange-500 shadow-md' : 'bg-white text-gray-500 border-gray-200 hover:bg-gray-50')}>Ghi nợ</button></div>
@@ -1247,8 +1247,8 @@ function SalesHistoryView({ orders, products, customers, storeConfig, db, storeI
           <p className="text-sm text-gray-500 mt-0.5">Theo dõi lịch sử giao dịch và in lại hóa đơn (Theo cấu hình mẫu in)</p>
         </div>
         <div className="flex items-center gap-2 w-full sm:w-auto">
-          <button onClick={() => { setNewOrderForm({ customerId: '', status: 'PAID', note: '', items: [] }); setShowCreateOrderModal(true); }} className="bg-blue-600 text-white px-3 py-2.5 rounded-xl font-bold flex gap-2 shrink-0 items-center shadow-sm whitespace-nowrap">
-            <Plus size={16}/> <span className="sm:inline">Tạo đơn</span>
+          <button onClick={() => { setNewOrderForm({ customerId: '', status: 'PAID', note: '', items: [] }); setShowCreateOrderModal(true); }} className="bg-blue-600 text-white px-4 py-2.5 rounded-xl font-bold flex gap-2 shrink-0 items-center shadow-sm whitespace-nowrap">
+            <Plus size={16}/> <span>Tạo đơn</span>
           </button>
           <div className="relative flex-1 sm:w-72">
             <Search size={16} className="absolute left-3 top-3.5 text-gray-400"/>
@@ -1363,7 +1363,7 @@ function SalesHistoryView({ orders, products, customers, storeConfig, db, storeI
                   <option value="">-- Khách lẻ (Tiền mặt) --</option>
                   {customers.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
                 </select>
-                <button type="button" onClick={() => setShowAddCusModal(true)} className="bg-blue-50 hover:bg-blue-100 text-blue-600 border border-blue-200 px-3 py-3 rounded-xl font-bold text-xs flex items-center justify-center gap-1 shrink-0 whitespace-nowrap transition-colors">
+                <button type="button" onClick={() => setShowAddCusModal(true)} className="bg-blue-50 hover:bg-blue-100 text-blue-600 border border-blue-200 px-3.5 py-3 rounded-xl font-bold text-xs flex items-center justify-center gap-1 shrink-0 whitespace-nowrap transition-colors shadow-sm">
                   <Plus size={16}/> Thêm KH
                 </button>
               </div>
