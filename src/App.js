@@ -6,7 +6,7 @@ import {
   DollarSign, CheckCircle2, Printer, FileText, CreditCard,
   Lock, LogOut, ShieldAlert, User as UserIcon, Database,
   UserCog, KeyRound, MonitorSmartphone, Mail, Download, Upload, 
-  ArrowUpDown, Search, Eye, Bell, Award, BarChart3, Receipt, 
+  ArrowUpDown, Search, Eye, EyeOff, Bell, Award, BarChart3, Receipt, 
   ChevronDown, ChevronUp, Image, Store, Sliders, HardDrive
 } from 'lucide-react';
 
@@ -91,6 +91,7 @@ const Modal = ({ isOpen, onClose, title, children, maxWidth = "max-w-md", hideHe
 function LoginView({ onLoginSuccess }) {
   const [loginInput, setLoginInput] = useState('');
   const [password, setPassword] = useState('');
+  const [showPassword, setShowPassword] = useState(false);
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
 
@@ -167,7 +168,15 @@ function LoginView({ onLoginSuccess }) {
         {error && <div className="bg-red-50 text-red-600 p-3 rounded-xl flex items-center gap-2 mb-4 text-sm font-medium border border-red-100"><ShieldAlert size={16} className="shrink-0"/> {error}</div>}
         <form onSubmit={handleLogin} className="space-y-4">
           <div><label className="block text-sm font-bold text-gray-700 mb-1">Tên đăng nhập (Username hoặc Email)</label><input type="text" value={loginInput} onChange={(e) => setLoginInput(e.target.value)} className="w-full p-3.5 border border-gray-300 rounded-xl outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-all font-medium bg-gray-50 focus:bg-white" required placeholder="Ví dụ: nhanvien1 hoặc admin" /></div>
-          <div><label className="block text-sm font-bold text-gray-700 mb-1">Mật khẩu</label><input type="password" value={password} onChange={(e) => setPassword(e.target.value)} className="w-full p-3.5 border border-gray-300 rounded-xl outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-all font-medium bg-gray-50 focus:bg-white" required /></div>
+          <div>
+            <label className="block text-sm font-bold text-gray-700 mb-1">Mật khẩu</label>
+            <div className="relative">
+              <input type={showPassword ? "text" : "password"} value={password} onChange={(e) => setPassword(e.target.value)} className="w-full p-3.5 pr-10 border border-gray-300 rounded-xl outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-all font-medium bg-gray-50 focus:bg-white" required />
+              <button type="button" onClick={() => setShowPassword(!showPassword)} className="absolute right-3 top-3.5 text-gray-400 hover:text-gray-600">
+                {showPassword ? <EyeOff size={20} /> : <Eye size={20} />}
+              </button>
+            </div>
+          </div>
           <button type="submit" disabled={loading} className="w-full bg-blue-600 hover:bg-blue-700 text-white font-bold py-3.5 rounded-xl shadow-md hover:shadow-lg transition-all flex justify-center items-center gap-2">{loading ? <div className="animate-spin h-5 w-5 border-2 border-white border-t-transparent rounded-full"></div> : 'Đăng Nhập Hệ Thống'}</button>
         </form>
       </div>
@@ -299,9 +308,9 @@ export default function EnhancedPOS() {
         {activeTab === 'pos' && <POSView products={products} customers={customers} db={db} storeId={storeId} user={user} storeConfig={storeConfig} showToast={showToast} userData={userData} />}
         {activeTab === 'sales_history' && <SalesHistoryView orders={orders} products={products} customers={customers} storeConfig={storeConfig} db={db} storeId={storeId} user={user} showToast={showToast} />}
         {activeTab === 'imports' && <ImportView products={products} suppliers={suppliers} db={db} storeId={storeId} user={user} showToast={showToast} />}
-        {activeTab === 'products' && <InventoryView products={products} orders={imports} imports={imports} db={db} storeId={storeId} showToast={showToast} />}
-        {activeTab === 'customers' && <ContactManager type="customers" data={customers} orders={orders} db={db} storeId={storeId} showToast={showToast} />}
-        {activeTab === 'suppliers' && <ContactManager type="suppliers" data={suppliers} orders={imports} db={db} storeId={storeId} showToast={showToast} />}
+        {activeTab === 'products' && <InventoryView products={products} orders={imports} imports={imports} storeConfig={storeConfig} db={db} storeId={storeId} showToast={showToast} />}
+        {activeTab === 'customers' && <ContactManager type="customers" data={customers} orders={orders} storeConfig={storeConfig} db={db} storeId={storeId} showToast={showToast} />}
+        {activeTab === 'suppliers' && <ContactManager type="suppliers" data={suppliers} orders={imports} storeConfig={storeConfig} db={db} storeId={storeId} showToast={showToast} />}
         {activeTab === 'expenses' && <ExpenseView expenses={expenses} db={db} storeId={storeId} showToast={showToast} />}
         {activeTab === 'settings' && <SettingsView db={db} storeId={storeId} showToast={showToast} storeConfig={storeConfig} />}
         {activeTab === 'staff' && <StaffManagerView db={db} showToast={showToast} />}
@@ -1048,7 +1057,6 @@ function POSView({ products, customers, db, storeId, user, storeConfig, showToas
           {cart.length === 0 && <div className="text-center text-gray-400 py-10 text-sm font-medium">Chưa có sản phẩm nào trong giỏ</div>}
         </div>
         <div className="p-4 border-t bg-white space-y-3 shadow-[0_-4px_6px_-1px_rgba(0,0,0,0.05)]">
-          {/* Đưa nút Thêm khách hàng vào ngay bên trong ô chọn khách hàng */}
           <div className="flex flex-row items-center gap-2 w-full">
             <select value={customerId} onChange={e=>setCustomerId(e.target.value)} className="flex-1 min-w-0 p-2.5 border border-gray-300 rounded-xl outline-none text-sm bg-gray-50 focus:bg-white font-medium focus:ring-2 focus:ring-blue-500 transition-all"><option value="">-- Khách lẻ (Tiền mặt) --</option>{customers.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}</select>
             <button type="button" onClick={() => setShowAddCusModal(true)} className="bg-blue-50 hover:bg-blue-100 text-blue-600 border border-blue-200 px-3.5 py-2.5 rounded-xl font-bold text-xs flex items-center justify-center gap-1 shrink-0 whitespace-nowrap transition-colors shadow-sm"><Plus size={16}/> Thêm KH</button>
@@ -1105,11 +1113,9 @@ function SalesHistoryView({ orders, products, customers, storeConfig, db, storeI
   const [viewingOrderPrint, setViewingOrderPrint] = useState(null);
   const [localPrintSize, setLocalPrintSize] = useState(storeConfig.printPaperSize || 'K80');
 
-  // Popup tạo đơn hàng trực tiếp
   const [showCreateOrderModal, setShowCreateOrderModal] = useState(false);
   const [newOrderForm, setNewOrderForm] = useState({ customerId: '', status: 'PAID', note: '', items: [] });
   
-  // Trạng thái cho Thêm Khách Hàng Nhanh
   const [showAddCusModal, setShowAddCusModal] = useState(false);
   const [newCusForm, setNewCusForm] = useState({ name: '', phone: '', address: '' });
 
@@ -1177,7 +1183,6 @@ function SalesHistoryView({ orders, products, customers, storeConfig, db, storeI
     } catch (err) { showToast("Lỗi cập nhật hóa đơn", "error"); }
   };
 
-  // Hàm thêm Khách hàng nhanh từ Modal
   const handleAddCustomerQuick = async (e) => {
     e.preventDefault();
     try { 
@@ -1190,7 +1195,6 @@ function SalesHistoryView({ orders, products, customers, storeConfig, db, storeI
     } catch (err) { showToast("Lỗi thêm khách hàng", "error"); }
   };
 
-  // Hàm lưu tạo đơn hàng mới qua Popup (Modal)
   const handleSaveNewOrder = async (e) => {
     e.preventDefault();
     if (newOrderForm.items.length === 0) return showToast("Vui lòng thêm ít nhất 1 sản phẩm vào đơn", "error");
@@ -1352,7 +1356,6 @@ function SalesHistoryView({ orders, products, customers, storeConfig, db, storeI
         </table>
       </div>
 
-      {/* POPUP: TẠO ĐƠN HÀNG LÀM TRỰC TIẾP */}
       <Modal isOpen={showCreateOrderModal} onClose={() => setShowCreateOrderModal(false)} title="Tạo Đơn Hàng Mới (Trực tiếp)" maxWidth="max-w-3xl">
         <form onSubmit={handleSaveNewOrder} className="space-y-4">
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
@@ -1428,7 +1431,6 @@ function SalesHistoryView({ orders, products, customers, storeConfig, db, storeI
         </form>
       </Modal>
       
-      {/* Modal Thêm nhanh Khách hàng trực tiếp từ Quản lý Bán Hàng */}
       <Modal isOpen={showAddCusModal} onClose={() => setShowAddCusModal(false)} title="Thêm Khách Hàng Nhanh">
         <form onSubmit={handleAddCustomerQuick} className="space-y-4">
           <input required placeholder="Tên khách hàng *" value={newCusForm.name} onChange={e=>setNewCusForm({...newCusForm, name:e.target.value})} className="w-full p-3 border rounded-xl outline-none text-sm bg-gray-50 focus:bg-white"/>
@@ -1492,7 +1494,9 @@ function StaffManagerView({ db, showToast }) {
   const [staff, setStaff] = useState([]);
   const [logs, setLogs] = useState([]);
   const [isModalOpen, setIsModalOpen] = useState(false);
-  const [form, setForm] = useState({ id: '', name: '', username: '', password: '', role: 'seller', perms: {} });
+  const [form, setForm] = useState({ id: '', name: '', username: '', password: '', confirmPassword: '', role: 'seller', perms: {} });
+  const [showPassword, setShowPassword] = useState(false);
+  const [showConfirmPassword, setShowConfirmPassword] = useState(false);
   const [loading, setLoading] = useState(false);
 
   useEffect(() => {
@@ -1503,7 +1507,12 @@ function StaffManagerView({ db, showToast }) {
   }, []);
 
   const handleSave = async (e) => {
-    e.preventDefault(); setLoading(true);
+    e.preventDefault(); 
+    if (form.password && form.password !== form.confirmPassword) {
+      showToast("Mật khẩu và Xác nhận mật khẩu không khớp!", "error");
+      return;
+    }
+    setLoading(true);
     try {
       if (form.id) {
         await updateDoc(doc(db, 'users_db', form.id), { role: form.role, permissions: form.perms, ...(form.password ? { password: form.password } : {}) });
@@ -1527,8 +1536,8 @@ function StaffManagerView({ db, showToast }) {
     }
   };
 
-  const openAddModal = () => { setForm({ id: '', name: '', username: '', password: '', role: 'seller', perms: {} }); setIsModalOpen(true); };
-  const openEditModal = (s) => { setForm({ id: s.id, name: s.name, username: s.username, password: '', role: s.role, perms: s.permissions || {} }); setIsModalOpen(true); };
+  const openAddModal = () => { setForm({ id: '', name: '', username: '', password: '', confirmPassword: '', role: 'seller', perms: {} }); setShowPassword(false); setShowConfirmPassword(false); setIsModalOpen(true); };
+  const openEditModal = (s) => { setForm({ id: s.id, name: s.name, username: s.username, password: '', confirmPassword: '', role: s.role, perms: s.permissions || {} }); setShowPassword(false); setShowConfirmPassword(false); setIsModalOpen(true); };
 
   const modalTitle = form.id ? "Sửa quyền & Reset mật khẩu: " + form.name : "Thêm Nhân Viên Mới";
 
@@ -1575,7 +1584,23 @@ function StaffManagerView({ db, showToast }) {
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4 bg-blue-50 p-4 rounded-xl border border-blue-100 mb-4">
             <div className="col-span-2"><input required placeholder="Tên nhân viên *" value={form.name} onChange={e=>setForm({...form, name:e.target.value})} className="w-full p-2.5 border rounded outline-none text-sm bg-white"/></div>
             <div><input required placeholder="Username đăng nhập *" value={form.username} onChange={e=>setForm({...form, username:e.target.value})} disabled={!!form.id} className="w-full p-2.5 border rounded outline-none text-sm bg-white disabled:bg-gray-100"/></div>
-            <div><input type="text" placeholder={form.id ? "Mật khẩu mới (Bỏ trống nếu không đổi)" : "Mật khẩu *"} required={!form.id} value={form.password} onChange={e=>setForm({...form, password:e.target.value})} className="w-full p-2.5 border rounded outline-none text-sm bg-white font-medium" /></div>
+            <div>
+              <div className="relative">
+                <input type={showPassword ? "text" : "password"} placeholder={form.id ? "Mật khẩu mới (Bỏ trống nếu không đổi)" : "Mật khẩu *"} required={!form.id} value={form.password} onChange={e=>setForm({...form, password:e.target.value})} className="w-full p-2.5 pr-10 border rounded outline-none text-sm bg-white font-medium" />
+                <button type="button" onClick={() => setShowPassword(!showPassword)} className="absolute right-3 top-2.5 text-gray-400 hover:text-gray-600">
+                  {showPassword ? <EyeOff size={16} /> : <Eye size={16} />}
+                </button>
+              </div>
+            </div>
+            <div className="col-span-2">
+              <label className="block text-xs font-bold text-gray-500 mb-1">Xác nhận mật khẩu</label>
+              <div className="relative">
+                <input type={showConfirmPassword ? "text" : "password"} placeholder="Nhập lại mật khẩu *" required={!form.id || !!form.password} value={form.confirmPassword} onChange={e=>setForm({...form, confirmPassword:e.target.value})} className="w-full p-2.5 pr-10 border rounded outline-none text-sm bg-white font-medium" />
+                <button type="button" onClick={() => setShowConfirmPassword(!showConfirmPassword)} className="absolute right-3 top-2.5 text-gray-400 hover:text-gray-600">
+                  {showConfirmPassword ? <EyeOff size={16} /> : <Eye size={16} />}
+                </button>
+              </div>
+            </div>
           </div>
           <div>
             <label className="block text-xs font-bold text-gray-500 mb-1">Vai trò tài khoản</label>
@@ -1599,7 +1624,7 @@ function StaffManagerView({ db, showToast }) {
   );
 }
 
-function ContactManager({ type, data, orders, db, storeId, showToast }) {
+function ContactManager({ type, data, orders, storeConfig, db, storeId, showToast }) {
   const isCus = type === 'customers';
   const title = isCus ? "Khách Hàng" : "Nhà Cung Cấp";
   const [isModalOpen, setIsModalOpen] = useState(false);
@@ -1636,6 +1661,59 @@ function ContactManager({ type, data, orders, db, storeId, showToast }) {
       selectedIds.forEach(id => { batch.delete(doc(db, 'stores', storeId, type, id)); });
       await batch.commit(); setSelectedIds([]); showToast("Đã xóa các mục đã chọn");
     }
+  };
+
+  const handlePrintDetail = () => {
+    const printWindow = window.open('', '_blank');
+    if (!printWindow) return;
+    printWindow.document.write(`
+      <html>
+        <head>
+          <title>In Thông Tin Chi Tiết - ${title}</title>
+          <style>
+            body { font-family: sans-serif; padding: 20px; color: #333; }
+            h2 { text-align: center; color: #1e3a8a; }
+            .info { margin-bottom: 20px; border-bottom: 1px solid #ddd; padding-bottom: 10px; }
+            table { width: 100%; border-collapse: collapse; margin-top: 10px; }
+            th, td { border: 1px solid #ddd; padding: 8px; text-align: left; font-size: 12px; }
+            th { background-color: #f3f4f6; }
+            .text-right { text-align: right; }
+          </style>
+        </head>
+        <body>
+          <h2>CHI TIẾT ${title.toUpperCase()}</h2>
+          <div class="info">
+            <p><strong>Tên:</strong> ${detailTarget?.name}</p>
+            <p><strong>SĐT:</strong> ${detailTarget?.phone || 'Trống'}</p>
+            <p><strong>Địa chỉ:</strong> ${detailTarget?.address || 'Trống'}</p>
+            <p><strong>Tổng Nợ:</strong> ${formatCurrency(detailTarget?.totalDebt)}</p>
+          </div>
+          <h3>Lịch sử giao dịch trong kỳ</h3>
+          <table>
+            <thead>
+              <tr>
+                <th>Thời gian</th>
+                <th>Mặt hàng</th>
+                <th class="text-right">Giá trị</th>
+                <th>Trạng thái</th>
+              </tr>
+            </thead>
+            <tbody>
+              ${detailData.list.map(ord => `
+                <tr>
+                  <td>${formatDate(ord.date)}</td>
+                  <td>${(ord.items || []).map(i => `${i.name} (x${i.quantity || i.qty || 1})`).join(', ')}</td>
+                  <td class="text-right">${formatCurrency(ord.total)}</td>
+                  <td>${ord.status === 'PAID' ? 'Đã trả' : 'Đang nợ'}</td>
+                </tr>
+              `).join('')}
+            </tbody>
+          </table>
+          <script>window.print();</script>
+        </body>
+      </html>
+    `);
+    printWindow.document.close();
   };
 
   const bannerStats = useMemo(() => {
@@ -1735,9 +1813,12 @@ function ContactManager({ type, data, orders, db, storeId, showToast }) {
             <div className="flex justify-between items-center bg-gray-50 p-3 rounded-xl border">
               <div><p className="text-xs text-gray-500">SĐT:</p><p className="font-bold">{detailTarget.phone || 'Trống'}</p></div>
               <div><p className="text-xs text-gray-500">Tổng Nợ Gốc:</p><p className="font-bold text-red-600">{formatCurrency(detailTarget.totalDebt)}</p></div>
-              <div className="flex items-center gap-1 bg-white p-1 rounded border">
-                <select value={filterMonth} onChange={e=>setFilterMonth(e.target.value)} className="bg-transparent text-xs outline-none"><option value="ALL">Cả năm</option>{Array.from({length: 12}, (_, i) => <option key={i+1} value={i+1}>Tháng {i+1}</option>)}</select>
-                <select value={filterYear} onChange={e=>setFilterYear(e.target.value)} className="bg-transparent text-xs outline-none">{Array.from({length: 5}, (_, i) => new Date().getFullYear() - i).map(y => <option key={y} value={y}>{y}</option>)}</select>
+              <div className="flex items-center gap-2">
+                <button onClick={handlePrintDetail} className="bg-blue-600 hover:bg-blue-700 text-white px-3 py-1.5 rounded-lg text-xs font-bold flex items-center gap-1 shadow-sm"><Printer size={14}/> In Phiếu</button>
+                <div className="flex items-center gap-1 bg-white p-1 rounded border">
+                  <select value={filterMonth} onChange={e=>setFilterMonth(e.target.value)} className="bg-transparent text-xs outline-none"><option value="ALL">Cả năm</option>{Array.from({length: 12}, (_, i) => <option key={i+1} value={i+1}>Tháng {i+1}</option>)}</select>
+                  <select value={filterYear} onChange={e=>setFilterYear(e.target.value)} className="bg-transparent text-xs outline-none">{Array.from({length: 5}, (_, i) => new Date().getFullYear() - i).map(y => <option key={y} value={y}>{y}</option>)}</select>
+                </div>
               </div>
             </div>
             <div className="grid grid-cols-3 gap-3 text-center">
@@ -1806,7 +1887,7 @@ function ContactManager({ type, data, orders, db, storeId, showToast }) {
   );
 }
 
-function InventoryView({ products, orders, imports, db, storeId, showToast }) {
+function InventoryView({ products, orders, imports, storeConfig, db, storeId, showToast }) {
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [form, setForm] = useState({ name: '', category: '', price: '', cost: '', stock: '' });
   const [selectedIds, setSelectedIds] = useState([]);
@@ -1841,6 +1922,56 @@ function InventoryView({ products, orders, imports, db, storeId, showToast }) {
       selectedIds.forEach(id => { batch.delete(doc(db, 'stores', storeId, 'products', id)); });
       await batch.commit(); setSelectedIds([]); showToast("Đã xóa các sản phẩm đã chọn");
     }
+  };
+
+  const handlePrintProductDetail = () => {
+    const printWindow = window.open('', '_blank');
+    if (!printWindow) return;
+    printWindow.document.write(`
+      <html>
+        <head>
+          <title>In Thẻ Kho - ${detailProduct?.name}</title>
+          <style>
+            body { font-family: sans-serif; padding: 20px; color: #333; }
+            h2 { text-align: center; color: #1e3a8a; }
+            .info { margin-bottom: 20px; border-bottom: 1px solid #ddd; padding-bottom: 10px; }
+            table { width: 100%; border-collapse: collapse; margin-top: 10px; }
+            th, td { border: 1px solid #ddd; padding: 8px; text-align: left; font-size: 12px; }
+            th { background-color: #f3f4f6; }
+            .text-right { text-align: right; }
+          </style>
+        </head>
+        <body>
+          <h2>THẺ KHO / LỊCH SỬ SẢN PHẨM</h2>
+          <div class="info">
+            <p><strong>Tên sản phẩm:</strong> ${detailProduct?.name}</p>
+            <p><strong>Nhóm hàng:</strong> ${detailProduct?.category || 'Chưa phân nhóm'}</p>
+            <p><strong>Giá bán:</strong> ${formatCurrency(detailProduct?.price)}</p>
+            <p><strong>Tồn kho hiện tại:</strong> ${detailProduct?.stock}</p>
+          </div>
+          <h3>Lịch sử bán ra</h3>
+          <table>
+            <thead>
+              <tr><th>Khách hàng</th><th>Thời gian</th><th>Số lượng</th></tr>
+            </thead>
+            <tbody>
+              ${productHistory.sales.map(s => `<tr><td>${s.customerName}</td><td>${formatDate(s.date)}</td><td>${s.quantity}</td></tr>`).join('')}
+            </tbody>
+          </table>
+          <h3 style="margin-top: 20px;">Lịch sử nhập hàng</h3>
+          <table>
+            <thead>
+              <tr><th>Nhà cung cấp</th><th>Thời gian</th><th>Số lượng</th></tr>
+            </thead>
+            <tbody>
+              ${productHistory.imports.map(im => `<tr><td>${im.supplierName}</td><td>${formatDate(im.date)}</td><td>${im.qty}</td></tr>`).join('')}
+            </tbody>
+          </table>
+          <script>window.print();</script>
+        </body>
+      </html>
+    `);
+    printWindow.document.close();
   };
 
   const bannerStats = useMemo(() => {
@@ -1957,9 +2088,12 @@ function InventoryView({ products, orders, imports, db, storeId, showToast }) {
             <div className="flex justify-between items-center bg-gray-50 p-3 rounded-xl border">
               <div><p className="text-xs text-gray-500">Giá bán:</p><p className="font-bold text-blue-600">{formatCurrency(detailProduct.price)}</p></div>
               <div><p className="text-xs text-gray-500">Tồn kho:</p><p className={"font-bold " + (detailProduct.stock < 0 ? 'text-red-600' : 'text-gray-800')}>{detailProduct.stock}</p></div>
-              <div className="flex items-center gap-1 bg-white p-1 rounded border">
-                <select value={filterMonth} onChange={e=>setFilterMonth(e.target.value)} className="bg-transparent text-xs outline-none"><option value="ALL">Cả năm</option>{Array.from({length: 12}, (_, i) => <option key={i+1} value={i+1}>Tháng {i+1}</option>)}</select>
-                <select value={filterYear} onChange={e=>setFilterYear(e.target.value)} className="bg-transparent text-xs outline-none">{Array.from({length: 5}, (_, i) => new Date().getFullYear() - i).map(y => <option key={y} value={y}>{y}</option>)}</select>
+              <div className="flex items-center gap-2">
+                <button onClick={handlePrintProductDetail} className="bg-blue-600 hover:bg-blue-700 text-white px-3 py-1.5 rounded-lg text-xs font-bold flex items-center gap-1 shadow-sm"><Printer size={14}/> In Thẻ Kho</button>
+                <div className="flex items-center gap-1 bg-white p-1 rounded border">
+                  <select value={filterMonth} onChange={e=>setFilterMonth(e.target.value)} className="bg-transparent text-xs outline-none"><option value="ALL">Cả năm</option>{Array.from({length: 12}, (_, i) => <option key={i+1} value={i+1}>Tháng {i+1}</option>)}</select>
+                  <select value={filterYear} onChange={e=>setFilterYear(e.target.value)} className="bg-transparent text-xs outline-none">{Array.from({length: 5}, (_, i) => new Date().getFullYear() - i).map(y => <option key={y} value={y}>{y}</option>)}</select>
+                </div>
               </div>
             </div>
             <div className="grid grid-cols-4 gap-2 text-center">
