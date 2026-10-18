@@ -184,6 +184,7 @@ export default function EnhancedPOS() {
     name: 'SmartPOS Pro', address: '', phone: '', logo: '',
     printPaperSize: 'K80', printFontSize: 12,
     printTablePaddingX: 4, printTablePaddingY: 6, printDetailFontScale: 80,
+    colWidthStt: 5, colWidthProduct: 35, colWidthQty: 8, colWidthPrice: 12, colWidthWarranty: 12, colWidthNote: 13, colWidthTotal: 15,
     printShowLogo: true, printShowStoreName: true, printShowStoreAddress: true, printShowStorePhone: true,
     printInvoiceTitle: 'HÓA ĐƠN BÁN HÀNG', 
     printShowInvoiceId: true, printShowDate: true, printShowCashier: true,
@@ -559,6 +560,15 @@ const ReceiptTemplate = ({ order, storeConfig, isA4A5, baseFontSize }) => {
   const showGC = isA4A5 && storeConfig.printShowNote !== false;
   const a4a5ColSpan = 4 + (showBH ? 1 : 0) + (showGC ? 1 : 0);
 
+  // Kích thước các cột (A4/A5 dùng Slider %, K80 dùng cố định)
+  const wStt = isA4A5 ? `${storeConfig.colWidthStt ?? 5}%` : 'auto';
+  const wProd = isA4A5 ? `${storeConfig.colWidthProduct ?? 35}%` : '45%';
+  const wQty = isA4A5 ? `${storeConfig.colWidthQty ?? 8}%` : '10%';
+  const wPrice = isA4A5 ? `${storeConfig.colWidthPrice ?? 12}%` : '20%';
+  const wWarranty = isA4A5 ? `${storeConfig.colWidthWarranty ?? 12}%` : 'auto';
+  const wNote = isA4A5 ? `${storeConfig.colWidthNote ?? 13}%` : 'auto';
+  const wTotal = isA4A5 ? `${storeConfig.colWidthTotal ?? 15}%` : '25%';
+
   return (
     <>
       <div className="text-center border-b border-dashed border-gray-400 pb-3 mb-3">
@@ -583,17 +593,17 @@ const ReceiptTemplate = ({ order, storeConfig, isA4A5, baseFontSize }) => {
       <table className="w-full mb-3 border-collapse">
         <thead>
           <tr className="border-b border-gray-400 bg-gray-100/50">
-            {isA4A5 && <th style={thStyle} className="text-center w-8 border border-gray-300">STT</th>}
+            {isA4A5 && <th style={{...thStyle, width: wStt}} className="text-center border border-gray-300">STT</th>}
             {/* Tăng độ rộng cột Sản phẩm */}
-            <th style={thStyle} className={`text-left ${isA4A5 ? 'border border-gray-300 w-[35%]' : 'w-[45%]'}`}>Sản phẩm</th>
-            <th style={thStyle} className={`text-center w-10 ${isA4A5 ? 'border border-gray-300' : ''}`}>SL</th>
-            <th style={thStyle} className={`text-right w-20 ${isA4A5 ? 'border border-gray-300' : ''}`}>Đ.Giá</th>
+            <th style={{...thStyle, width: wProd}} className={`text-left ${isA4A5 ? 'border border-gray-300' : ''}`}>Sản phẩm</th>
+            <th style={{...thStyle, width: wQty}} className={`text-center ${isA4A5 ? 'border border-gray-300' : ''}`}>SL</th>
+            <th style={{...thStyle, width: wPrice}} className={`text-right ${isA4A5 ? 'border border-gray-300' : ''}`}>Đ.Giá</th>
             
             {/* Dời Bảo hành, Ghi chú về bên phải */}
-            {showBH && <th style={thStyle} className="text-center border border-gray-300">Bảo hành</th>}
-            {showGC && <th style={thStyle} className="text-left border border-gray-300">Ghi chú</th>}
+            {showBH && <th style={{...thStyle, width: wWarranty}} className="text-center border border-gray-300">Bảo hành</th>}
+            {showGC && <th style={{...thStyle, width: wNote}} className="text-left border border-gray-300">Ghi chú</th>}
             
-            <th style={thStyle} className={`text-right w-24 ${isA4A5 ? 'border border-gray-300' : ''}`}>Thành tiền</th>
+            <th style={{...thStyle, width: wTotal}} className={`text-right ${isA4A5 ? 'border border-gray-300' : ''}`}>Thành tiền</th>
           </tr>
         </thead>
         <tbody>
@@ -668,6 +678,14 @@ function SettingsView({ db, storeId, showToast, storeConfig }) {
     printTablePaddingY: storeConfig?.printTablePaddingY ?? 6,
     printDetailFontScale: storeConfig?.printDetailFontScale ?? 80,
     
+    colWidthStt: storeConfig?.colWidthStt ?? 5,
+    colWidthProduct: storeConfig?.colWidthProduct ?? 35,
+    colWidthQty: storeConfig?.colWidthQty ?? 8,
+    colWidthPrice: storeConfig?.colWidthPrice ?? 12,
+    colWidthWarranty: storeConfig?.colWidthWarranty ?? 12,
+    colWidthNote: storeConfig?.colWidthNote ?? 13,
+    colWidthTotal: storeConfig?.colWidthTotal ?? 15,
+
     printShowLogo: storeConfig?.printShowLogo ?? true,
     printShowStoreName: storeConfig?.printShowStoreName ?? true,
     printShowStoreAddress: storeConfig?.printShowStoreAddress ?? true,
@@ -816,9 +834,9 @@ function SettingsView({ db, storeId, showToast, storeConfig }) {
               </div>
               <div className="flex-1 overflow-y-auto p-5 space-y-6">
                 <div className="space-y-4">
-                  <h4 className="text-xs font-black text-gray-400 uppercase tracking-wider mb-2">Cơ bản</h4>
+                  <h4 className="text-xs font-black text-gray-400 uppercase tracking-wider mb-2">Cơ bản (Cấu hình mặc định)</h4>
                   <div>
-                    <label className="block text-sm font-bold text-gray-700 mb-1">Khổ giấy in</label>
+                    <label className="block text-sm font-bold text-gray-700 mb-1">Khổ giấy in mặc định</label>
                     <div className="flex gap-2">
                       {['K80', 'A4', 'A5'].map(size => (
                         <button key={size} onClick={() => setForm({...form, printPaperSize: size})} className={`flex-1 py-2 text-sm font-bold rounded-lg border transition-all ${form.printPaperSize === size ? 'bg-blue-50 border-blue-600 text-blue-700 shadow-sm' : 'bg-white border-gray-300 text-gray-600 hover:bg-gray-50'}`}>{size}</button>
@@ -836,18 +854,53 @@ function SettingsView({ db, storeId, showToast, storeConfig }) {
 
                 <hr className="border-gray-100" />
                 <div className="space-y-4 mt-6">
-                  <h4 className="text-xs font-black text-gray-400 uppercase tracking-wider mb-2">Tùy chỉnh Bảng chi tiết</h4>
+                  <h4 className="text-xs font-black text-gray-400 uppercase tracking-wider mb-2">Tùy chỉnh Kích thước, Chiều ngang/Dọc</h4>
                   <div>
-                    <label className="block text-sm font-bold text-gray-700 mb-1">Tỷ lệ Cỡ chữ chi tiết (Hiện tại: {form.printDetailFontScale ?? 80}%)</label>
+                    <label className="block text-sm font-bold text-gray-700 mb-1">Tỷ lệ Cỡ chữ phần Chi tiết ({form.printDetailFontScale ?? 80}%)</label>
                     <input type="range" min="50" max="150" step="5" value={form.printDetailFontScale ?? 80} onChange={(e) => setForm({...form, printDetailFontScale: Number(e.target.value)})} className="w-full accent-blue-600" />
                   </div>
                   <div>
-                    <label className="block text-sm font-bold text-gray-700 mb-1">Độ rộng Cột ngang (Padding X: {form.printTablePaddingX ?? 4}px)</label>
+                    <label className="block text-sm font-bold text-gray-700 mb-1">Chiều ngang (Padding X: {form.printTablePaddingX ?? 4}px)</label>
                     <input type="range" min="0" max="20" step="1" value={form.printTablePaddingX ?? 4} onChange={(e) => setForm({...form, printTablePaddingX: Number(e.target.value)})} className="w-full accent-blue-600" />
                   </div>
                   <div>
-                    <label className="block text-sm font-bold text-gray-700 mb-1">Độ rộng Cột dọc (Padding Y: {form.printTablePaddingY ?? 6}px)</label>
+                    <label className="block text-sm font-bold text-gray-700 mb-1">Chiều dọc (Padding Y: {form.printTablePaddingY ?? 6}px)</label>
                     <input type="range" min="0" max="20" step="1" value={form.printTablePaddingY ?? 6} onChange={(e) => setForm({...form, printTablePaddingY: Number(e.target.value)})} className="w-full accent-blue-600" />
+                  </div>
+                </div>
+
+                <hr className="border-gray-100" />
+                <div className="space-y-4 mt-6">
+                  <h4 className="text-xs font-black text-gray-400 uppercase tracking-wider mb-2">Độ rộng từng Cột (Tính theo % cho khổ A4/A5)</h4>
+                  <div className="grid grid-cols-2 gap-4 bg-gray-50 p-4 rounded-xl border border-gray-100">
+                    <div>
+                      <label className="text-[10px] font-bold text-gray-600 uppercase">Cột STT ({form.colWidthStt}%)</label>
+                      <input type="range" min="1" max="20" value={form.colWidthStt} onChange={e=>setForm({...form, colWidthStt: Number(e.target.value)})} className="w-full accent-blue-600"/>
+                    </div>
+                    <div>
+                      <label className="text-[10px] font-bold text-gray-600 uppercase">Cột Sản phẩm ({form.colWidthProduct}%)</label>
+                      <input type="range" min="10" max="80" value={form.colWidthProduct} onChange={e=>setForm({...form, colWidthProduct: Number(e.target.value)})} className="w-full accent-blue-600"/>
+                    </div>
+                    <div>
+                      <label className="text-[10px] font-bold text-gray-600 uppercase">Cột Số lượng ({form.colWidthQty}%)</label>
+                      <input type="range" min="1" max="20" value={form.colWidthQty} onChange={e=>setForm({...form, colWidthQty: Number(e.target.value)})} className="w-full accent-blue-600"/>
+                    </div>
+                    <div>
+                      <label className="text-[10px] font-bold text-gray-600 uppercase">Cột Đơn giá ({form.colWidthPrice}%)</label>
+                      <input type="range" min="5" max="40" value={form.colWidthPrice} onChange={e=>setForm({...form, colWidthPrice: Number(e.target.value)})} className="w-full accent-blue-600"/>
+                    </div>
+                    <div>
+                      <label className="text-[10px] font-bold text-gray-600 uppercase">Cột Bảo hành ({form.colWidthWarranty}%)</label>
+                      <input type="range" min="5" max="40" value={form.colWidthWarranty} onChange={e=>setForm({...form, colWidthWarranty: Number(e.target.value)})} className="w-full accent-blue-600"/>
+                    </div>
+                    <div>
+                      <label className="text-[10px] font-bold text-gray-600 uppercase">Cột Ghi chú ({form.colWidthNote}%)</label>
+                      <input type="range" min="5" max="40" value={form.colWidthNote} onChange={e=>setForm({...form, colWidthNote: Number(e.target.value)})} className="w-full accent-blue-600"/>
+                    </div>
+                    <div className="col-span-2">
+                      <label className="text-[10px] font-bold text-gray-600 uppercase">Cột Thành tiền ({form.colWidthTotal}%)</label>
+                      <input type="range" min="5" max="40" value={form.colWidthTotal} onChange={e=>setForm({...form, colWidthTotal: Number(e.target.value)})} className="w-full accent-blue-600"/>
+                    </div>
                   </div>
                 </div>
 
@@ -971,6 +1024,13 @@ function POSView({ products, customers, db, storeId, user, storeConfig, showToas
   const [printInvoice, setPrintInvoice] = useState(true);
   const [showAddCusModal, setShowAddCusModal] = useState(false);
   const [newCusForm, setNewCusForm] = useState({ name: '', phone: '', address: '' });
+  
+  // Tùy chọn khổ in cục bộ lúc bán hàng
+  const [localPrintSize, setLocalPrintSize] = useState(storeConfig.printPaperSize || 'K80');
+
+  useEffect(() => {
+    setLocalPrintSize(storeConfig.printPaperSize || 'K80');
+  }, [storeConfig.printPaperSize]);
 
   useEffect(() => {
     const handleKeyDown = (e) => { if (e.key === 'Escape') { setShowModal(false); } };
@@ -1021,8 +1081,8 @@ function POSView({ products, customers, db, storeId, user, storeConfig, showToas
     } catch (error) { showToast("Lỗi khi tạo ảnh hóa đơn", "error"); }
   };
 
-  const isA4A5 = storeConfig?.printPaperSize === 'A4' || storeConfig?.printPaperSize === 'A5';
-  const paperWidthClass = storeConfig?.printPaperSize === 'K80' ? 'max-w-[300px]' : (storeConfig?.printPaperSize === 'A4' ? 'max-w-[210mm]' : 'max-w-[148mm]');
+  const isA4A5 = localPrintSize === 'A4' || localPrintSize === 'A5';
+  const paperWidthClass = localPrintSize === 'K80' ? 'max-w-[300px]' : (localPrintSize === 'A4' ? 'max-w-[210mm]' : 'max-w-[148mm]');
   const baseFontSize = Number(storeConfig?.printFontSize) || 12;
 
   return (
@@ -1076,7 +1136,14 @@ function POSView({ products, customers, db, storeId, user, storeConfig, showToas
           <div className="flex gap-2"><button onClick={() => setIsDebt(false)} className={"flex-1 py-2.5 rounded-xl border-2 font-bold transition-all " + (!isDebt ? 'bg-blue-600 text-white border-blue-600 shadow-md' : 'bg-white text-gray-500 border-gray-200 hover:bg-gray-50')}>Tiền mặt</button><button onClick={() => setIsDebt(true)} className={"flex-1 py-2.5 rounded-xl border-2 font-bold transition-all " + (isDebt ? 'bg-orange-500 text-white border-orange-500 shadow-md' : 'bg-white text-gray-500 border-gray-200 hover:bg-gray-50')}>Ghi nợ</button></div>
           <div className="flex items-center justify-between gap-2 pt-1 border-t border-gray-100 mt-2">
             <label className="flex items-center gap-2 text-sm font-bold text-gray-700 cursor-pointer select-none"><input type="checkbox" checked={printInvoice} onChange={e => setPrintInvoice(e.target.checked)} className="w-5 h-5 text-blue-600 rounded border-gray-300 focus:ring-blue-500"/> In hóa đơn</label>
-            <span className="text-xs bg-gray-100 px-2 py-1 rounded text-gray-600 font-bold border">Khổ: {storeConfig.printPaperSize || 'K80'}</span>
+            <div className="flex items-center gap-2">
+              <span className="text-xs text-gray-500 font-bold">Khổ:</span>
+              <select value={localPrintSize} onChange={e => setLocalPrintSize(e.target.value)} className="text-xs bg-gray-100 px-2 py-1.5 rounded text-blue-700 font-bold border outline-none">
+                <option value="K80">Bill (K80)</option>
+                <option value="A4">Giấy A4</option>
+                <option value="A5">Giấy A5</option>
+              </select>
+            </div>
           </div>
           <div className="flex justify-between items-end py-1"><span className="font-bold text-gray-500 text-sm uppercase tracking-wide">Cần thanh toán</span><span className="text-3xl font-black text-blue-600">{formatCurrency(cartTotal)}</span></div>
           <button onClick={handleCheckout} disabled={cart.length === 0 || (isDebt && !customerId)} className="w-full bg-emerald-500 hover:bg-emerald-600 disabled:bg-gray-300 text-white font-black py-4 rounded-xl shadow-lg hover:shadow-xl transition-all tracking-wider text-lg uppercase">Thanh Toán Ngay</button>
@@ -1103,7 +1170,7 @@ function POSView({ products, customers, db, storeId, user, storeConfig, showToas
             </div>
 
             <div id="print-invoice-area-pos" className={`bg-white shadow-xl border border-gray-200 mx-auto transition-all ${paperWidthClass}`} style={{ fontSize: `${baseFontSize}px`, padding: isA4A5 ? '20px' : '15px', color: '#000', fontFamily: 'sans-serif' }}>
-              <ReceiptTemplate order={completedOrder} storeConfig={storeConfig} isA4A5={isA4A5} baseFontSize={baseFontSize} />
+              <ReceiptTemplate order={completedOrder} storeConfig={{...storeConfig, printPaperSize: localPrintSize}} isA4A5={isA4A5} baseFontSize={baseFontSize} />
             </div>
           </div>
         )}
@@ -1122,6 +1189,13 @@ function SalesHistoryView({ orders, products, customers, storeConfig, db, storeI
   
   const [editingOrder, setEditingOrder] = useState(null);
   const [viewingOrderPrint, setViewingOrderPrint] = useState(null);
+  
+  // Tùy chọn khổ in cục bộ
+  const [localPrintSize, setLocalPrintSize] = useState(storeConfig.printPaperSize || 'K80');
+
+  useEffect(() => {
+    setLocalPrintSize(storeConfig.printPaperSize || 'K80');
+  }, [storeConfig.printPaperSize]);
 
   useEffect(() => {
     const handleKeyDown = (e) => { if (e.key === 'Escape') setViewingOrderPrint(null); };
@@ -1185,8 +1259,8 @@ function SalesHistoryView({ orders, products, customers, storeConfig, db, storeI
     } catch (err) { showToast("Lỗi cập nhật hóa đơn", "error"); }
   };
 
-  const isA4A5 = storeConfig?.printPaperSize === 'A4' || storeConfig?.printPaperSize === 'A5';
-  const paperWidthClass = storeConfig?.printPaperSize === 'K80' ? 'max-w-[300px]' : (storeConfig?.printPaperSize === 'A4' ? 'max-w-[210mm]' : 'max-w-[148mm]');
+  const isA4A5 = localPrintSize === 'A4' || localPrintSize === 'A5';
+  const paperWidthClass = localPrintSize === 'K80' ? 'max-w-[300px]' : (localPrintSize === 'A4' ? 'max-w-[210mm]' : 'max-w-[148mm]');
   const baseFontSize = Number(storeConfig?.printFontSize) || 12;
 
   return (
@@ -1328,14 +1402,21 @@ function SalesHistoryView({ orders, products, customers, storeConfig, db, storeI
         {viewingOrderPrint && (
           <div className="space-y-4">
             <div className="flex justify-between items-center bg-gray-100 p-3 rounded-xl border">
-              <span className="text-xs font-bold text-gray-600 bg-white px-2 py-1 rounded shadow-sm border">Đang dùng mẫu in: {storeConfig.printPaperSize || 'K80'}</span>
+              <div className="flex items-center gap-2">
+                <span className="text-xs font-bold text-gray-600">Khổ in:</span>
+                <select value={localPrintSize} onChange={e => setLocalPrintSize(e.target.value)} className="text-xs font-bold text-blue-700 bg-white px-2 py-1.5 rounded shadow-sm border outline-none">
+                  <option value="K80">Bill (K80)</option>
+                  <option value="A4">Giấy A4</option>
+                  <option value="A5">Giấy A5</option>
+                </select>
+              </div>
               <div className="flex gap-2">
                 <button onClick={handlePrintAsImage} className="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg text-sm font-bold flex items-center gap-1.5 shadow-md"><Printer size={16}/> In Ảnh Trực Tiếp</button>
               </div>
             </div>
 
             <div id="print-invoice-area" className={`bg-white shadow-xl border border-gray-200 mx-auto transition-all ${paperWidthClass}`} style={{ fontSize: `${baseFontSize}px`, padding: isA4A5 ? '20px' : '15px', color: '#000', fontFamily: 'sans-serif' }}>
-              <ReceiptTemplate order={viewingOrderPrint} storeConfig={storeConfig} isA4A5={isA4A5} baseFontSize={baseFontSize} />
+              <ReceiptTemplate order={viewingOrderPrint} storeConfig={{...storeConfig, printPaperSize: localPrintSize}} isA4A5={isA4A5} baseFontSize={baseFontSize} />
             </div>
           </div>
         )}
