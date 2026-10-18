@@ -929,7 +929,6 @@ function SalesHistoryView({ orders, products, customers, storeConfig, db, storeI
                     </div>
                   </div>
                   
-                  {/* PHẦN NHẬP BẢO HÀNH & GHI CHÚ */}
                   <div className="grid grid-cols-2 gap-2 pt-1.5 border-t border-gray-200 mt-1">
                     <div>
                       <label className="text-[10px] text-gray-500 font-bold block mb-0.5">Bảo hành</label>
@@ -1058,7 +1057,7 @@ function SalesHistoryView({ orders, products, customers, storeConfig, db, storeI
                     <p className="text-[10px] text-gray-600 text-center w-full">ĐC: {storeConfig?.address || '...'}</p>
                     <p className="text-[10px] text-gray-600 text-center w-full">SĐT: {storeConfig?.phone || '...'}</p>
                     <h1 className="text-xs font-bold mt-3 uppercase tracking-wide text-center w-full">HÓA ĐƠN BÁN HÀNG</h1>
-                    <p className="text-[9px] text-gray-500 text-center w-full mt-1">Mã: #{viewingOrderPrint.id.slice(0,6).toUpperCase()} | Ngày: {formatDate(viewingOrderPrint.date)}</p>
+                    <p className="text-[9px] text-gray-500 text-center w-full mt-1">Ngày: {formatDate(viewingOrderPrint.date)}</p>
                   </div>
                   <div className="mb-3 text-[10px]">
                     <p><strong>Khách hàng:</strong> {viewingOrderPrint.customerName}</p>
@@ -1101,24 +1100,23 @@ function SalesHistoryView({ orders, products, customers, storeConfig, db, storeI
                     <p className="text-[9px] text-gray-600 w-full">Địa chỉ: {storeConfig?.address || '...'}</p>
                     <p className="text-[9px] text-gray-600 w-full">Điện thoại: {storeConfig?.phone || '...'}</p>
                     <h1 className="text-sm font-bold uppercase text-blue-800 mt-2 w-full">PHIẾU BÁN HÀNG</h1>
-                    <p className="text-[9px] text-gray-500 mt-0.5 w-full">Mã HĐ: #{viewingOrderPrint.id.slice(0,6).toUpperCase()} | Ngày: {formatDate(viewingOrderPrint.date)}</p>
+                    <p className="text-[9px] text-gray-500 mt-0.5 w-full">Ngày: {formatDate(viewingOrderPrint.date)}</p>
                   </div>
 
-                  <div className="grid grid-cols-2 gap-2 bg-gray-50 p-2 rounded border border-gray-200 text-[6.5px] mb-3">
-                    <div><span className="text-gray-500">Khách hàng:</span> <strong className="text-gray-800 text-[8.5px]">{viewingOrderPrint.customerName}</strong></div>
-                    <div><span className="text-gray-500">Trạng thái:</span> <strong className="text-blue-600">{viewingOrderPrint.status === 'PAID' ? 'Đã thanh toán' : 'Ghi nợ'}</strong></div>
+                  <div className="bg-gray-50 p-2 rounded border border-gray-200 text-[6.5px] mb-3">
+                    <span className="text-gray-500">Khách hàng:</span> <strong className="text-gray-800 text-[8.5px]">{viewingOrderPrint.customerName}</strong>
                   </div>
 
                   <table className="w-full text-[6.5px] mb-4 border-collapse border border-gray-400">
                     <thead>
                       <tr className="bg-gray-100 border-b border-gray-400 text-gray-800">
-                        <th className="py-1 px-1 border border-gray-400 text-center w-6">STT</th>
-                        <th className="py-1 px-2 border border-gray-400 text-left">Tên sản phẩm</th>
-                        <th className="py-1 px-1 border border-gray-400 text-center w-6">SL</th>
-                        <th className="py-1 px-2 border border-gray-400 text-right">Đơn giá</th>
-                        <th className="py-1 px-2 border border-gray-400 text-right">Thành tiền</th>
-                        <th className="py-1 px-1 border border-gray-400 text-center">Bảo hành</th>
-                        <th className="py-1 px-2 border border-gray-400 text-left w-16">Ghi chú</th>
+                        <th className="py-1 px-1 border border-gray-400 text-center w-6 shrink-0">STT</th>
+                        <th className="py-1 px-2 border border-gray-400 text-left w-full">Tên sản phẩm</th>
+                        <th className="py-1 px-1 border border-gray-400 text-center w-6 shrink-0">SL</th>
+                        <th className="py-1 px-2 border border-gray-400 text-right w-14 shrink-0">Đơn giá</th>
+                        <th className="py-1 px-2 border border-gray-400 text-right w-16 shrink-0">Thành tiền</th>
+                        <th className="py-1 px-1 border border-gray-400 text-center w-10 shrink-0">Bảo hành</th>
+                        <th className="py-1 px-2 border border-gray-400 text-left w-14 shrink-0">Ghi chú</th>
                       </tr>
                     </thead>
                     <tbody>
@@ -2199,7 +2197,7 @@ function POSView({ products, customers, db, storeId, user, storeConfig, showToas
                     <p className="text-[10px] text-gray-600 text-center w-full">ĐC: {storeConfig?.address || '...'}</p>
                     <p className="text-[10px] text-gray-600 text-center w-full">SĐT: {storeConfig?.phone || '...'}</p>
                     <h1 className="text-xs font-bold mt-3 uppercase tracking-wide text-center w-full">HÓA ĐƠN BÁN HÀNG</h1>
-                    <p className="text-[9px] text-gray-500 text-center w-full mt-1">Mã: #{completedOrder.id.slice(0,6).toUpperCase()} | Ngày: {formatDate(completedOrder.date)}</p>
+                    <p className="text-[9px] text-gray-500 text-center w-full mt-1">Ngày: {formatDate(completedOrder.date)}</p>
                   </div>
                   <div className="mb-3 text-[10px]">
                     <p><strong>Khách hàng:</strong> {completedOrder.customerName}</p>
@@ -2242,24 +2240,23 @@ function POSView({ products, customers, db, storeId, user, storeConfig, showToas
                     <p className="text-[9px] text-gray-600 w-full">Địa chỉ: {storeConfig?.address || '...'}</p>
                     <p className="text-[9px] text-gray-600 w-full">Điện thoại: {storeConfig?.phone || '...'}</p>
                     <h1 className="text-sm font-bold uppercase text-blue-800 mt-2 w-full">PHIẾU BÁN HÀNG</h1>
-                    <p className="text-[9px] text-gray-500 mt-0.5 w-full">Mã HĐ: #{completedOrder.id.slice(0,6).toUpperCase()} | Ngày: {formatDate(completedOrder.date)}</p>
+                    <p className="text-[9px] text-gray-500 mt-0.5 w-full">Ngày: {formatDate(completedOrder.date)}</p>
                   </div>
 
-                  <div className="grid grid-cols-2 gap-2 bg-gray-50 p-2 rounded border border-gray-200 text-[6.5px] mb-3">
-                    <div><span className="text-gray-500">Khách hàng:</span> <strong className="text-gray-800 text-[8.5px]">{completedOrder.customerName}</strong></div>
-                    <div><span className="text-gray-500">Trạng thái:</span> <strong className="text-blue-600">{completedOrder.status === 'PAID' ? 'Đã thanh toán' : 'Ghi nợ'}</strong></div>
+                  <div className="bg-gray-50 p-2 rounded border border-gray-200 text-[6.5px] mb-3">
+                    <span className="text-gray-500">Khách hàng:</span> <strong className="text-gray-800 text-[8.5px]">{completedOrder.customerName}</strong>
                   </div>
 
                   <table className="w-full text-[6.5px] mb-4 border-collapse border border-gray-400">
                     <thead>
                       <tr className="bg-gray-100 border-b border-gray-400 text-gray-800">
-                        <th className="py-1 px-1 border border-gray-400 text-center w-6">STT</th>
-                        <th className="py-1 px-2 border border-gray-400 text-left">Tên sản phẩm</th>
-                        <th className="py-1 px-1 border border-gray-400 text-center w-6">SL</th>
-                        <th className="py-1 px-2 border border-gray-400 text-right">Đơn giá</th>
-                        <th className="py-1 px-2 border border-gray-400 text-right">Thành tiền</th>
-                        <th className="py-1 px-1 border border-gray-400 text-center">Bảo hành</th>
-                        <th className="py-1 px-2 border border-gray-400 text-left w-16">Ghi chú</th>
+                        <th className="py-1 px-1 border border-gray-400 text-center w-5 shrink-0">STT</th>
+                        <th className="py-1 px-2 border border-gray-400 text-left w-full">Tên sản phẩm</th>
+                        <th className="py-1 px-1 border border-gray-400 text-center w-6 shrink-0">SL</th>
+                        <th className="py-1 px-2 border border-gray-400 text-right w-14 shrink-0">Đơn giá</th>
+                        <th className="py-1 px-2 border border-gray-400 text-right w-16 shrink-0">Thành tiền</th>
+                        <th className="py-1 px-1 border border-gray-400 text-center w-10 shrink-0">Bảo hành</th>
+                        <th className="py-1 px-2 border border-gray-400 text-left w-14 shrink-0">Ghi chú</th>
                       </tr>
                     </thead>
                     <tbody>
