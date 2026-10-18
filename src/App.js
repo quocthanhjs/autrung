@@ -7,7 +7,7 @@ import {
   Lock, LogOut, ShieldAlert, User as UserIcon, Database,
   UserCog, KeyRound, MonitorSmartphone, Mail, Download, Upload, 
   ArrowUpDown, Search, Eye, EyeOff, Bell, Award, BarChart3, Receipt, 
-  ChevronDown, ChevronUp, Image, Store, Sliders, HardDrive
+  ChevronDown, ChevronUp, Image, Store, Sliders, HardDrive, ChevronLeft, ChevronRight
 } from 'lucide-react';
 
 import { initializeApp } from 'firebase/app';
@@ -57,6 +57,48 @@ const getDeviceInfo = () => {
   if (/android/i.test(ua)) return "Android";
   if (/iPad|iPhone|iPod/.test(ua)) return "iOS";
   return "Máy tính";
+};
+
+// --- Pagination Component ---
+const PaginationControls = ({ currentPage, totalPages, rowsPerPage, onPageChange, onRowsChange, totalItems }) => {
+  return (
+    <div className="flex flex-col sm:flex-row justify-between items-center gap-3 py-3 px-4 bg-white border-t text-sm">
+      <div className="flex items-center gap-2">
+        <span className="text-gray-500 font-medium">Hiển thị:</span>
+        <select 
+          value={rowsPerPage} 
+          onChange={(e) => onRowsChange(e.target.value)} 
+          className="p-1.5 border rounded-lg bg-gray-50 font-bold outline-none text-xs"
+        >
+          <option value="10">10</option>
+          <option value="20">20</option>
+          <option value="50">50</option>
+          <option value="100">100</option>
+          <option value="all">Tất cả</option>
+        </select>
+        <span className="text-gray-500 text-xs font-medium">/ Tổng số {totalItems} mục</span>
+      </div>
+      <div className="flex items-center gap-2">
+        <button 
+          onClick={() => onPageChange(currentPage - 1)} 
+          disabled={currentPage === 1 || rowsPerPage === 'all'}
+          className="p-2 border rounded-lg hover:bg-gray-50 disabled:opacity-40 disabled:cursor-not-allowed bg-white"
+        >
+          <ChevronLeft size={16}/>
+        </button>
+        <span className="font-bold text-gray-700 px-2 text-xs">
+          Trang {rowsPerPage === 'all' ? 1 : currentPage} / {rowsPerPage === 'all' ? 1 : (totalPages || 1)}
+        </span>
+        <button 
+          onClick={() => onPageChange(currentPage + 1)} 
+          disabled={currentPage >= totalPages || rowsPerPage === 'all'}
+          className="p-2 border rounded-lg hover:bg-gray-50 disabled:opacity-40 disabled:cursor-not-allowed bg-white"
+        >
+          <ChevronRight size={16}/>
+        </button>
+      </div>
+    </div>
+  );
 };
 
 // --- Toggle Switch UI ---
@@ -597,7 +639,7 @@ const StatCard = ({ icon, title, value, color, highlight = false }) => {
 };
 
 // =========================================================================
-// MẪU IN DÙNG CHUNG
+// MẪU IN DÙNG CHUNG (Đã căn giữa các tiêu đề cột theo yêu cầu)
 // =========================================================================
 
 const ReceiptTemplate = ({ order, storeConfig, isA4A5, baseFontSize }) => {
@@ -606,7 +648,7 @@ const ReceiptTemplate = ({ order, storeConfig, isA4A5, baseFontSize }) => {
   const detailFontScale = (storeConfig.printDetailFontScale ?? 80) / 100;
   const detailFontSize = `${baseFontSize * detailFontScale}px`;
   
-  const thStyle = { padding: `${padY}px ${padX}px`, fontSize: detailFontSize };
+  const thStyle = { padding: `${padY}px ${padX}px`, fontSize: detailFontSize, textAlign: 'center' };
   const tdStyle = { padding: `${padY}px ${padX}px`, fontSize: detailFontSize };
 
   const showBH = isA4A5 && storeConfig.printShowWarranty !== false;
@@ -643,13 +685,13 @@ const ReceiptTemplate = ({ order, storeConfig, isA4A5, baseFontSize }) => {
       <table className="w-full mb-3 border-collapse">
         <thead>
           <tr className="border-b border-gray-400 bg-gray-100/50">
-            {isA4A5 && <th style={{...thStyle, width: wStt}} className="text-center border border-gray-300">STT</th>}
-            <th style={{...thStyle, width: wProd}} className={`text-left ${isA4A5 ? 'border border-gray-300' : ''}`}>Sản phẩm</th>
-            <th style={{...thStyle, width: wQty}} className={`text-center ${isA4A5 ? 'border border-gray-300' : ''}`}>SL</th>
-            <th style={{...thStyle, width: wPrice}} className={`text-right ${isA4A5 ? 'border border-gray-300' : ''}`}>Đ.Giá</th>
-            {showBH && <th style={{...thStyle, width: wWarranty}} className="text-center border border-gray-300">Bảo hành</th>}
-            {showGC && <th style={{...thStyle, width: wNote}} className="text-left border border-gray-300">Ghi chú</th>}
-            <th style={{...thStyle, width: wTotal}} className={`text-right ${isA4A5 ? 'border border-gray-300' : ''}`}>Thành tiền</th>
+            {isA4A5 && <th style={{...thStyle, width: wStt}} className="border border-gray-300">STT</th>}
+            <th style={{...thStyle, width: wProd}} className={`border border-gray-300`}>Sản phẩm</th>
+            <th style={{...thStyle, width: wQty}} className={`border border-gray-300`}>SL</th>
+            <th style={{...thStyle, width: wPrice}} className={`border border-gray-300`}>Đ.Giá</th>
+            {showBH && <th style={{...thStyle, width: wWarranty}} className="border border-gray-300">Bảo hành</th>}
+            {showGC && <th style={{...thStyle, width: wNote}} className="border border-gray-300">Ghi chú</th>}
+            <th style={{...thStyle, width: wTotal}} className={`border border-gray-300`}>Thành tiền</th>
           </tr>
         </thead>
         <tbody>
@@ -957,6 +999,10 @@ function POSView({ products, customers, db, storeId, user, storeConfig, showToas
   const [showAddCusModal, setShowAddCusModal] = useState(false);
   const [newCusForm, setNewCusForm] = useState({ name: '', phone: '', address: '' });
   
+  // Pagination & rows per page for POS product grid
+  const [posRowsPerPage, setPosRowsPerPage] = useState('10');
+  const [posCurrentPage, setPosCurrentPage] = useState(1);
+
   const [localPrintSize, setLocalPrintSize] = useState(storeConfig.printPaperSize || 'K80');
 
   useEffect(() => { setLocalPrintSize(storeConfig.printPaperSize || 'K80'); }, [storeConfig.printPaperSize]);
@@ -967,7 +1013,23 @@ function POSView({ products, customers, db, storeId, user, storeConfig, showToas
   }, []);
 
   const categories = useMemo(() => [...new Set(products.map(p => p.category).filter(Boolean))], [products]);
-  const filteredProducts = useMemo(() => products.filter(p => { const matchSearch = p.name && p.name.toLowerCase().includes(searchTerm.toLowerCase()); const matchCategory = selectedCategory === 'ALL' || p.category === selectedCategory; return matchSearch && matchCategory; }), [products, searchTerm, selectedCategory]);
+  
+  const filteredProducts = useMemo(() => {
+    return products.filter(p => { 
+      const matchSearch = p.name && p.name.toLowerCase().includes(searchTerm.toLowerCase()); 
+      const matchCategory = selectedCategory === 'ALL' || p.category === selectedCategory; 
+      return matchSearch && matchCategory; 
+    });
+  }, [products, searchTerm, selectedCategory]);
+
+  const paginatedProducts = useMemo(() => {
+    if (posRowsPerPage === 'all') return filteredProducts;
+    const limit = parseInt(posRowsPerPage) || 10;
+    const start = (posCurrentPage - 1) * limit;
+    return filteredProducts.slice(start, start + limit);
+  }, [filteredProducts, posRowsPerPage, posCurrentPage]);
+
+  const totalPosPages = posRowsPerPage === 'all' ? 1 : Math.ceil(filteredProducts.length / (parseInt(posRowsPerPage) || 10));
 
   const addToCart = (product) => { setCart(prev => { const ex = prev.find(i => i.id === product.id); if (ex) return prev.map(i => i.id === product.id ? { ...i, quantity: i.quantity + 1 } : i); return [...prev, { ...product, quantity: 1, price: product.price, warrantyValue: '', warrantyUnit: 'tháng', note: '' }]; }); };
   const updateQty = (id, delta) => setCart(prev => prev.map(i => { if (i.id === id) { const nq = i.quantity + delta; if (nq > 0) return { ...i, quantity: nq }; } return i; }));
@@ -1016,25 +1078,37 @@ function POSView({ products, customers, db, storeId, user, storeConfig, showToas
 
   return (
     <div className="flex-1 flex flex-col lg:flex-row bg-gray-50 h-full overflow-hidden">
-      <div className="flex-1 p-4 md:p-6 overflow-y-auto flex flex-col">
-        <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center mb-4 gap-3">
-          <h2 className="text-xl font-bold text-gray-800">Sản phẩm bán hàng</h2>
-          <div className="flex items-center gap-2 w-full sm:w-auto">
-            <select value={selectedCategory} onChange={e=>setSelectedCategory(e.target.value)} className="p-2 border rounded-lg text-sm bg-white font-medium outline-none w-full sm:w-40"><option value="ALL">-- Tất cả Nhóm --</option>{categories.map((c, i) => <option key={i} value={c}>{c}</option>)}</select>
-            <div className="relative flex-1 sm:w-64"><Search size={16} className="absolute left-3 top-3 text-gray-400"/><input placeholder="Tìm nhanh sản phẩm..." value={searchTerm} onChange={e=>setSearchTerm(e.target.value)} className="w-full pl-9 pr-3 py-2 border rounded-lg bg-white outline-none text-sm"/></div>
+      <div className="flex-1 p-4 md:p-6 overflow-y-auto flex flex-col justify-between">
+        <div>
+          <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center mb-4 gap-3">
+            <h2 className="text-xl font-bold text-gray-800">Sản phẩm bán hàng</h2>
+            <div className="flex items-center gap-2 w-full sm:w-auto">
+              <select value={selectedCategory} onChange={e=>{ setSelectedCategory(e.target.value); setPosCurrentPage(1); }} className="p-2 border rounded-lg text-sm bg-white font-medium outline-none w-full sm:w-40"><option value="ALL">-- Tất cả Nhóm --</option>{categories.map((c, i) => <option key={i} value={c}>{c}</option>)}</select>
+              <div className="relative flex-1 sm:w-64"><Search size={16} className="absolute left-3 top-3 text-gray-400"/><input placeholder="Tìm nhanh sản phẩm..." value={searchTerm} onChange={e=>{ setSearchTerm(e.target.value); setPosCurrentPage(1); }} className="w-full pl-9 pr-3 py-2 border rounded-lg bg-white outline-none text-sm"/></div>
+            </div>
+          </div>
+          <div className="grid grid-cols-2 sm:grid-cols-3 xl:grid-cols-4 gap-4">
+            {paginatedProducts.map(p => {
+              const stockClass = p.stock < 0 ? 'text-red-500 font-bold' : 'text-gray-500';
+              return (
+                <div key={p.id} onClick={() => addToCart(p)} className="bg-white p-3 rounded-xl border cursor-pointer hover:border-blue-400 shadow-sm transition transform hover:-translate-y-0.5">
+                  {p.category && <span className="text-[10px] bg-blue-50 text-blue-600 px-1.5 py-0.5 rounded font-bold mb-1 inline-block">{p.category}</span>}
+                  <h3 className="font-semibold text-sm text-gray-800 line-clamp-2">{p.name}</h3>
+                  <div className="flex justify-between items-end mt-2"><p className="text-blue-600 font-black">{formatCurrency(p.price)}</p><p className={"text-xs " + stockClass}>Kho: {p.stock}</p></div>
+                </div>
+              );
+            })}
           </div>
         </div>
-        <div className="grid grid-cols-2 sm:grid-cols-3 xl:grid-cols-4 gap-4">
-          {filteredProducts.map(p => {
-            const stockClass = p.stock < 0 ? 'text-red-500 font-bold' : 'text-gray-500';
-            return (
-              <div key={p.id} onClick={() => addToCart(p)} className="bg-white p-3 rounded-xl border cursor-pointer hover:border-blue-400 shadow-sm transition transform hover:-translate-y-0.5">
-                {p.category && <span className="text-[10px] bg-blue-50 text-blue-600 px-1.5 py-0.5 rounded font-bold mb-1 inline-block">{p.category}</span>}
-                <h3 className="font-semibold text-sm text-gray-800 line-clamp-2">{p.name}</h3>
-                <div className="flex justify-between items-end mt-2"><p className="text-blue-600 font-black">{formatCurrency(p.price)}</p><p className={"text-xs " + stockClass}>Kho: {p.stock}</p></div>
-              </div>
-            );
-          })}
+        <div className="mt-4 shrink-0 bg-white rounded-xl border shadow-sm">
+          <PaginationControls 
+            currentPage={posCurrentPage} 
+            totalPages={totalPosPages} 
+            rowsPerPage={posRowsPerPage} 
+            onPageChange={(p) => setPosCurrentPage(p)} 
+            onRowsChange={(r) => { setPosRowsPerPage(r); setPosCurrentPage(1); }} 
+            totalItems={filteredProducts.length} 
+          />
         </div>
       </div>
       
@@ -1109,6 +1183,10 @@ function SalesHistoryView({ orders, products, customers, storeConfig, db, storeI
   const [filterYear, setFilterYear] = useState(currentDate.getFullYear().toString());
   const [searchTerm, setSearchTerm] = useState('');
   
+  // Pagination & rows per page for Sales History
+  const [salesRowsPerPage, setSalesRowsPerPage] = useState('10');
+  const [salesCurrentPage, setSalesCurrentPage] = useState(1);
+
   const [editingOrder, setEditingOrder] = useState(null);
   const [viewingOrderPrint, setViewingOrderPrint] = useState(null);
   const [localPrintSize, setLocalPrintSize] = useState(storeConfig.printPaperSize || 'K80');
@@ -1148,6 +1226,15 @@ function SalesHistoryView({ orders, products, customers, storeConfig, db, storeI
       return matchTime && matchSearch;
     }).sort((a, b) => new Date(b.date) - new Date(a.date));
   }, [orders, filterType, selectedDate, filterMonth, filterYear, searchTerm]);
+
+  const paginatedOrders = useMemo(() => {
+    if (salesRowsPerPage === 'all') return filteredOrders;
+    const limit = parseInt(salesRowsPerPage) || 10;
+    const start = (salesCurrentPage - 1) * limit;
+    return filteredOrders.slice(start, start + limit);
+  }, [filteredOrders, salesRowsPerPage, salesCurrentPage]);
+
+  const totalSalesPages = salesRowsPerPage === 'all' ? 1 : Math.ceil(filteredOrders.length / (parseInt(salesRowsPerPage) || 10));
 
   const summaryStats = useMemo(() => {
     let totalRevenue = 0; let totalCost = 0;
@@ -1256,29 +1343,29 @@ function SalesHistoryView({ orders, products, customers, storeConfig, db, storeI
           </button>
           <div className="relative flex-1 sm:w-72">
             <Search size={16} className="absolute left-3 top-3.5 text-gray-400"/>
-            <input placeholder="Tìm mã HĐ hoặc tên khách..." value={searchTerm} onChange={e=>setSearchTerm(e.target.value)} className="w-full pl-9 pr-3 py-2.5 border rounded-xl bg-white outline-none shadow-sm focus:ring-2 focus:ring-blue-500 transition-all"/>
+            <input placeholder="Tìm mã HĐ hoặc tên khách..." value={searchTerm} onChange={e=>{ setSearchTerm(e.target.value); setSalesCurrentPage(1); }} className="w-full pl-9 pr-3 py-2.5 border rounded-xl bg-white outline-none shadow-sm focus:ring-2 focus:ring-blue-500 transition-all"/>
           </div>
         </div>
       </div>
 
       <div className="bg-white p-4 rounded-2xl border shadow-sm mb-4 flex flex-col lg:flex-row justify-between items-start lg:items-center gap-4">
         <div className="flex flex-wrap items-center gap-2 bg-gray-100 p-1 rounded-xl">
-          <button onClick={() => setFilterType('day')} className={"px-4 py-2 rounded-lg text-sm font-bold transition-all " + (filterType==='day'?'bg-white text-blue-600 shadow-sm':'text-gray-600 hover:bg-white/50')}>Ngày</button>
-          <button onClick={() => setFilterType('month')} className={"px-4 py-2 rounded-lg text-sm font-bold transition-all " + (filterType==='month'?'bg-white text-blue-600 shadow-sm':'text-gray-600 hover:bg-white/50')}>Tháng</button>
-          <button onClick={() => setFilterType('year')} className={"px-4 py-2 rounded-lg text-sm font-bold transition-all " + (filterType==='year'?'bg-white text-blue-600 shadow-sm':'text-gray-600 hover:bg-white/50')}>Năm</button>
-          <button onClick={() => setFilterType('all')} className={"px-4 py-2 rounded-lg text-sm font-bold transition-all " + (filterType==='all'?'bg-white text-blue-600 shadow-sm':'text-gray-600 hover:bg-white/50')}>Tất cả</button>
+          <button onClick={() => { setFilterType('day'); setSalesCurrentPage(1); }} className={"px-4 py-2 rounded-lg text-sm font-bold transition-all " + (filterType==='day'?'bg-white text-blue-600 shadow-sm':'text-gray-600 hover:bg-white/50')}>Ngày</button>
+          <button onClick={() => { setFilterType('month'); setSalesCurrentPage(1); }} className={"px-4 py-2 rounded-lg text-sm font-bold transition-all " + (filterType==='month'?'bg-white text-blue-600 shadow-sm':'text-gray-600 hover:bg-white/50')}>Tháng</button>
+          <button onClick={() => { setFilterType('year'); setSalesCurrentPage(1); }} className={"px-4 py-2 rounded-lg text-sm font-bold transition-all " + (filterType==='year'?'bg-white text-blue-600 shadow-sm':'text-gray-600 hover:bg-white/50')}>Năm</button>
+          <button onClick={() => { setFilterType('all'); setSalesCurrentPage(1); }} className={"px-4 py-2 rounded-lg text-sm font-bold transition-all " + (filterType==='all'?'bg-white text-blue-600 shadow-sm':'text-gray-600 hover:bg-white/50')}>Tất cả</button>
         </div>
 
         <div className="flex items-center gap-2">
-          {filterType === 'day' && (<input type="date" value={selectedDate} onChange={e=>setSelectedDate(e.target.value)} className="p-2 border rounded-xl text-sm bg-gray-50 font-bold outline-none"/>)}
+          {filterType === 'day' && (<input type="date" value={selectedDate} onChange={e=>{ setSelectedDate(e.target.value); setSalesCurrentPage(1); }} className="p-2 border rounded-xl text-sm bg-gray-50 font-bold outline-none"/>)}
           {filterType === 'month' && (
             <div className="flex items-center gap-2 bg-gray-50 p-1.5 rounded-xl border">
-              <select value={filterMonth} onChange={e=>setFilterMonth(e.target.value)} className="bg-transparent text-sm font-bold outline-none">{Array.from({length: 12}, (_, i) => <option key={i+1} value={i+1}>Tháng {i+1}</option>)}</select>
+              <select value={filterMonth} onChange={e=>{ setFilterMonth(e.target.value); setSalesCurrentPage(1); }} className="bg-transparent text-sm font-bold outline-none">{Array.from({length: 12}, (_, i) => <option key={i+1} value={i+1}>Tháng {i+1}</option>)}</select>
               <span className="text-gray-300">|</span>
-              <select value={filterYear} onChange={e=>setFilterYear(e.target.value)} className="bg-transparent text-sm font-bold outline-none">{Array.from({length: 5}, (_, i) => currentDate.getFullYear() - i).map(y => <option key={y} value={y}>{y}</option>)}</select>
+              <select value={filterYear} onChange={e=>{ setFilterYear(e.target.value); setSalesCurrentPage(1); }} className="bg-transparent text-sm font-bold outline-none">{Array.from({length: 5}, (_, i) => currentDate.getFullYear() - i).map(y => <option key={y} value={y}>{y}</option>)}</select>
             </div>
           )}
-          {filterType === 'year' && (<select value={filterYear} onChange={e=>setFilterYear(e.target.value)} className="p-2.5 border rounded-xl text-sm bg-gray-50 font-bold outline-none">{Array.from({length: 5}, (_, i) => currentDate.getFullYear() - i).map(y => <option key={y} value={y}>Năm {y}</option>)}</select>)}
+          {filterType === 'year' && (<select value={filterYear} onChange={e=>{ setFilterYear(e.target.value); setSalesCurrentPage(1); }} className="p-2.5 border rounded-xl text-sm bg-gray-50 font-bold outline-none">{Array.from({length: 5}, (_, i) => currentDate.getFullYear() - i).map(y => <option key={y} value={y}>Năm {y}</option>)}</select>)}
         </div>
 
         <div className="grid grid-cols-3 gap-3 w-full lg:w-auto">
@@ -1288,72 +1375,84 @@ function SalesHistoryView({ orders, products, customers, storeConfig, db, storeI
         </div>
       </div>
 
-      <div className="flex-1 bg-white rounded-2xl border shadow-sm overflow-auto">
-        <table className="w-full text-left text-sm">
-          <thead className="bg-gray-50/80 sticky top-0 border-b backdrop-blur-sm z-10">
-            <tr>
-              <th className="p-4 font-bold text-gray-600">Mã HĐ / Thời gian</th>
-              <th className="p-4 font-bold text-gray-600">Khách hàng</th>
-              <th className="p-4 font-bold text-gray-600">Chi tiết hàng bán & Bảo hành / Ghi chú</th>
-              <th className="p-4 font-bold text-gray-600">Tổng Tiền</th>
-              <th className="p-4 font-bold text-gray-600">Tiền Lãi</th>
-              <th className="p-4 font-bold text-gray-600">Trạng thái</th>
-              <th className="p-4 font-bold text-gray-600 text-right">Thao tác</th>
-            </tr>
-          </thead>
-          <tbody>
-            {filteredOrders.map(o => {
-              let orderTotalCost = o.totalCost || 0;
-              if (!orderTotalCost && o.items) { orderTotalCost = o.items.reduce((sum, it) => sum + (Number(it.cost || 0) * Number(it.quantity || 1)), 0); }
-              const orderProfit = (Number(o.total) || 0) - orderTotalCost;
-              const statusClass = o.status === 'PAID' ? 'bg-green-100 text-green-700' : 'bg-orange-100 text-orange-700';
+      <div className="flex-1 bg-white rounded-2xl border shadow-sm overflow-hidden flex flex-col justify-between">
+        <div className="overflow-auto flex-1">
+          <table className="w-full text-left text-sm">
+            <thead className="bg-gray-50/80 sticky top-0 border-b backdrop-blur-sm z-10">
+              <tr>
+                <th className="p-4 font-bold text-gray-600">Mã HĐ / Thời gian</th>
+                <th className="p-4 font-bold text-gray-600">Khách hàng</th>
+                <th className="p-4 font-bold text-gray-600">Chi tiết hàng bán & Bảo hành / Ghi chú</th>
+                <th className="p-4 font-bold text-gray-600">Tổng Tiền</th>
+                <th className="p-4 font-bold text-gray-600">Tiền Lãi</th>
+                <th className="p-4 font-bold text-gray-600">Trạng thái</th>
+                <th className="p-4 font-bold text-gray-600 text-right">Thao tác</th>
+              </tr>
+            </thead>
+            <tbody>
+              {paginatedOrders.map(o => {
+                let orderTotalCost = o.totalCost || 0;
+                if (!orderTotalCost && o.items) { orderTotalCost = o.items.reduce((sum, it) => sum + (Number(it.cost || 0) * Number(it.quantity || 1)), 0); }
+                const orderProfit = (Number(o.total) || 0) - orderTotalCost;
+                const statusClass = o.status === 'PAID' ? 'bg-green-100 text-green-700' : 'bg-orange-100 text-orange-700';
 
-              return (
-                <tr key={o.id} className="border-b hover:bg-blue-50/50 transition-colors">
-                  <td className="p-4">
-                    <p className="font-bold text-blue-600">#{o.id.slice(0,6).toUpperCase()}</p>
-                    <p className="text-xs text-gray-400 mt-0.5">{formatDate(o.date)}</p>
-                  </td>
-                  <td className="p-4 font-bold text-gray-800">{o.customerName || 'Khách lẻ'}</td>
-                  <td className="p-4">
-                    <div className="space-y-1.5">
-                      {o.items?.map((it, idx) => {
-                        const itemQty = Number(it.quantity || 1); const itemPrice = Number(it.price || 0);
-                        return (
-                          <div key={idx} className="text-xs bg-gray-50 p-2.5 rounded-lg border border-gray-100 flex flex-col gap-1">
-                            <div className="flex justify-between items-center">
-                              <span className="font-semibold text-gray-800">{it.name} (x{itemQty})</span>
-                              <span className="text-blue-600 font-bold">{formatCurrency(itemPrice * itemQty)}</span>
-                            </div>
-                            {(it.warrantyValue || it.note) && (
-                              <div className="text-[11px] text-gray-500 flex gap-3 mt-0.5 border-t pt-1">
-                                {it.warrantyValue && <span>🛡️ BH: <strong className="text-gray-700">{it.warrantyValue} {it.warrantyUnit}</strong></span>}
-                                {it.note && <span>📝 Ghi chú: <strong className="text-gray-700">{it.note}</strong></span>}
+                return (
+                  <tr key={o.id} className="border-b hover:bg-blue-50/50 transition-colors">
+                    <td className="p-4">
+                      <p className="font-bold text-blue-600">#{o.id.slice(0,6).toUpperCase()}</p>
+                      <p className="text-xs text-gray-400 mt-0.5">{formatDate(o.date)}</p>
+                    </td>
+                    <td className="p-4 font-bold text-gray-800">{o.customerName || 'Khách lẻ'}</td>
+                    <td className="p-4">
+                      <div className="space-y-1.5">
+                        {o.items?.map((it, idx) => {
+                          const itemQty = Number(it.quantity || 1); const itemPrice = Number(it.price || 0);
+                          return (
+                            <div key={idx} className="text-xs bg-gray-50 p-2.5 rounded-lg border border-gray-100 flex flex-col gap-1">
+                              <div className="flex justify-between items-center">
+                                <span className="font-semibold text-gray-800">{it.name} (x{itemQty})</span>
+                                <span className="text-blue-600 font-bold">{formatCurrency(itemPrice * itemQty)}</span>
                               </div>
-                            )}
-                          </div>
-                        );
-                      })}
-                    </div>
-                  </td>
-                  <td className="p-4 font-black text-gray-900">{formatCurrency(o.total)}</td>
-                  <td className="p-4 font-black text-green-600">{formatCurrency(orderProfit)}</td>
-                  <td className="p-4">
-                    <span className={"px-3 py-1 rounded-lg text-xs font-bold " + statusClass}>{o.status === 'PAID' ? 'Đã thanh toán' : 'Ghi nợ'}</span>
-                  </td>
-                  <td className="p-4 text-right">
-                    <div className="flex justify-end gap-1.5">
-                      <button onClick={() => setViewingOrderPrint(o)} title="In Hóa Đơn" className="text-emerald-600 bg-emerald-50 p-2 rounded-lg hover:bg-emerald-100 transition-colors"><Printer size={18}/></button>
-                      <button onClick={() => setEditingOrder(JSON.parse(JSON.stringify(o)))} title="Chỉnh sửa hóa đơn" className="text-blue-600 bg-blue-50 p-2 rounded-lg hover:bg-blue-100 transition-colors"><Edit size={18}/></button>
-                      <button onClick={() => handleDeleteOrder(o)} title="Xóa hóa đơn" className="text-red-600 bg-red-50 p-2 rounded-lg hover:bg-red-100 transition-colors"><Trash2 size={18}/></button>
-                    </div>
-                  </td>
-                </tr>
-              );
-            })}
-            {filteredOrders.length === 0 && (<tr><td colSpan="7" className="p-12 text-center text-gray-400 font-medium">Không tìm thấy hóa đơn nào trong thời điểm này</td></tr>)}
-          </tbody>
-        </table>
+                              {(it.warrantyValue || it.note) && (
+                                <div className="text-[11px] text-gray-500 flex gap-3 mt-0.5 border-t pt-1">
+                                  {it.warrantyValue && <span>🛡️ BH: <strong className="text-gray-700">{it.warrantyValue} {it.warrantyUnit}</strong></span>}
+                                  {it.note && <span>📝 Ghi chú: <strong className="text-gray-700">{it.note}</strong></span>}
+                                </div>
+                              )}
+                            </div>
+                          );
+                        })}
+                      </div>
+                    </td>
+                    <td className="p-4 font-black text-gray-900">{formatCurrency(o.total)}</td>
+                    <td className="p-4 font-black text-green-600">{formatCurrency(orderProfit)}</td>
+                    <td className="p-4">
+                      <span className={"px-3 py-1 rounded-lg text-xs font-bold " + statusClass}>{o.status === 'PAID' ? 'Đã thanh toán' : 'Ghi nợ'}</span>
+                    </td>
+                    <td className="p-4 text-right">
+                      <div className="flex justify-end gap-1.5">
+                        <button onClick={() => setViewingOrderPrint(o)} title="In Hóa Đơn" className="text-emerald-600 bg-emerald-50 p-2 rounded-lg hover:bg-emerald-100 transition-colors"><Printer size={18}/></button>
+                        <button onClick={() => setEditingOrder(JSON.parse(JSON.stringify(o)))} title="Chỉnh sửa hóa đơn" className="text-blue-600 bg-blue-50 p-2 rounded-lg hover:bg-blue-100 transition-colors"><Edit size={18}/></button>
+                        <button onClick={() => handleDeleteOrder(o)} title="Xóa hóa đơn" className="text-red-600 bg-red-50 p-2 rounded-lg hover:bg-red-100 transition-colors"><Trash2 size={18}/></button>
+                      </div>
+                    </td>
+                  </tr>
+                );
+              })}
+              {paginatedOrders.length === 0 && (<tr><td colSpan="7" className="p-12 text-center text-gray-400 font-medium">Không tìm thấy hóa đơn nào trong thời điểm này</td></tr>)}
+            </tbody>
+          </table>
+        </div>
+        <div className="border-t shrink-0">
+          <PaginationControls 
+            currentPage={salesCurrentPage} 
+            totalPages={totalSalesPages} 
+            rowsPerPage={salesRowsPerPage} 
+            onPageChange={(p) => setSalesCurrentPage(p)} 
+            onRowsChange={(r) => { setSalesRowsPerPage(r); setSalesCurrentPage(1); }} 
+            totalItems={filteredOrders.length} 
+          />
+        </div>
       </div>
 
       <Modal isOpen={showCreateOrderModal} onClose={() => setShowCreateOrderModal(false)} title="Tạo Đơn Hàng Mới (Trực tiếp)" maxWidth="max-w-3xl">
@@ -1898,6 +1997,10 @@ function InventoryView({ products, orders, imports, storeConfig, db, storeId, sh
   const [filterMonth, setFilterMonth] = useState((currentDate.getMonth() + 1).toString());
   const [filterYear, setFilterYear] = useState(currentDate.getFullYear().toString());
 
+  // Pagination & rows per page for Inventory (Hàng hóa)
+  const [invRowsPerPage, setInvRowsPerPage] = useState('10');
+  const [invCurrentPage, setInvCurrentPage] = useState(1);
+
   const handleSave = async (e) => {
     e.preventDefault();
     try {
@@ -2009,6 +2112,15 @@ function InventoryView({ products, orders, imports, storeConfig, db, storeId, sh
     return list;
   }, [products, searchTerm, sortConfig]);
 
+  const paginatedProducts = useMemo(() => {
+    if (invRowsPerPage === 'all') return filteredProducts;
+    const limit = parseInt(invRowsPerPage) || 10;
+    const start = (invCurrentPage - 1) * limit;
+    return filteredProducts.slice(start, start + limit);
+  }, [filteredProducts, invRowsPerPage, invCurrentPage]);
+
+  const totalInvPages = invRowsPerPage === 'all' ? 1 : Math.ceil(filteredProducts.length / (parseInt(invRowsPerPage) || 10));
+
   const productHistory = useMemo(() => {
     if (!detailProduct) return { sales: [], imports: [], totalSoldQty: 0, totalImportQty: 0, totalSoldAmount: 0, totalImportAmount: 0, totalPaid: 0, totalDebtRemain: 0 };
     const matchTime = (dateStr) => {
@@ -2038,7 +2150,7 @@ function InventoryView({ products, orders, imports, storeConfig, db, storeId, sh
       <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center mb-4 gap-3">
         <h2 className="text-2xl font-bold text-gray-800">Kho Hàng</h2>
         <div className="flex items-center gap-3 w-full sm:w-auto">
-          <div className="relative flex-1 sm:w-64"><Search size={16} className="absolute left-3 top-3 text-gray-400"/><input placeholder="Tìm kiếm trực tiếp sản phẩm..." value={searchTerm} onChange={e=>setSearchTerm(e.target.value)} className="w-full pl-9 pr-3 py-2 border rounded-lg bg-white outline-none text-sm"/></div>
+          <div className="relative flex-1 sm:w-64"><Search size={16} className="absolute left-3 top-3 text-gray-400"/><input placeholder="Tìm kiếm trực tiếp sản phẩm..." value={searchTerm} onChange={e=>{ setSearchTerm(e.target.value); setInvCurrentPage(1); }} className="w-full pl-9 pr-3 py-2 border rounded-lg bg-white outline-none text-sm"/></div>
           <button onClick={() => {setForm({name:'', category:'', price:'', cost:'', stock:''}); setIsModalOpen(true);}} className="bg-blue-600 text-white px-4 py-2 rounded-lg font-bold flex items-center gap-2 shrink-0"><Plus size={18}/> Thêm mới</button>
         </div>
       </div>
@@ -2053,35 +2165,48 @@ function InventoryView({ products, orders, imports, storeConfig, db, storeId, sh
           <button onClick={handleBatchDelete} className="bg-red-600 hover:bg-red-700 text-white px-3 py-1 rounded-lg text-xs font-bold flex items-center gap-1"><Trash2 size={14}/> Xóa đã chọn</button>
         </div>
       )}
-      <div className="flex-1 bg-white rounded-xl border shadow-sm overflow-auto">
-        <table className="w-full text-left text-sm">
-          <thead className="bg-gray-100 sticky top-0 border-b select-none">
-            <tr>
-              <th className="p-4 w-10"><input type="checkbox" onChange={() => setSelectedIds(selectedIds.length === products.length ? [] : products.map(p=>p.id))} checked={products.length > 0 && selectedIds.length === products.length} className="w-4 h-4"/></th>
-              <th className="p-4 font-bold text-gray-600 cursor-pointer hover:bg-gray-200" onClick={() => handleSort('name')}> <div className="flex items-center gap-1">Sản phẩm {sortConfig.field === 'name' && sortConfig.direction !== 'none' && <ArrowUpDown size={14} className={sortConfig.direction==='desc' ? 'text-red-500' : 'text-green-500'} />}</div> </th>
-              <th className="p-4 font-bold text-gray-600">Nhóm & Nguồn Gốc</th>
-              <th className="p-4 font-bold text-gray-600 cursor-pointer hover:bg-gray-200" onClick={() => handleSort('cost')}> <div className="flex items-center gap-1">Giá vốn {sortConfig.field === 'cost' && sortConfig.direction !== 'none' && <ArrowUpDown size={14} className={sortConfig.direction==='desc' ? 'text-red-500' : 'text-green-500'} />}</div> </th>
-              <th className="p-4 font-bold text-gray-600 cursor-pointer hover:bg-gray-200" onClick={() => handleSort('price')}> <div className="flex items-center gap-1">Giá bán {sortConfig.field === 'price' && sortConfig.direction !== 'none' && <ArrowUpDown size={14} className={sortConfig.direction==='desc' ? 'text-red-500' : 'text-green-500'} />}</div> </th>
-              <th className="p-4 font-bold text-gray-600 cursor-pointer hover:bg-gray-200" onClick={() => handleSort('stock')}> <div className="flex items-center gap-1">Tồn {sortConfig.field === 'stock' && sortConfig.direction !== 'none' && <ArrowUpDown size={14} className={sortConfig.direction==='desc' ? 'text-red-500' : 'text-green-500'} />}</div> </th>
-              <th className="p-4 font-bold text-gray-600 text-right">Thao tác</th>
-            </tr>
-          </thead>
-          <tbody>
-            {filteredProducts.map(p => {
-              const stockClass = p.stock < 0 ? 'text-red-600' : 'text-gray-800';
-              return (
-                <tr key={p.id} className="border-b hover:bg-blue-50/50 cursor-pointer" onClick={() => setDetailProduct(p)}>
-                  <td className="p-4" onClick={e=>e.stopPropagation()}><input type="checkbox" checked={selectedIds.includes(p.id)} onChange={() => setSelectedIds(prev => prev.includes(p.id) ? prev.filter(x=>x!==p.id) : [...prev, p.id])} className="w-4 h-4"/></td>
-                  <td className="p-4 font-medium text-blue-600 underline">{p.name}</td>
-                  <td className="p-4"><p className="text-[11px] bg-gray-100 border inline-block px-1.5 py-0.5 rounded text-gray-600">{p.category || 'Chưa phân nhóm'}</p>{p.lastSupplierName && <p className="text-[10px] text-gray-400 mt-1">Từ: {p.lastSupplierName}</p>}</td>
-                  <td className="p-4 text-gray-600">{formatCurrency(p.cost)}</td><td className="p-4 font-bold text-blue-600">{formatCurrency(p.price)}</td><td className={"p-4 font-bold " + stockClass}>{p.stock}</td>
-                  <td className="p-4 text-right flex justify-end gap-1" onClick={e=>e.stopPropagation()}><button onClick={() => setDetailProduct(p)} title="Xem chi tiết nhập/bán" className="text-gray-600 bg-gray-100 p-2 rounded-lg hover:bg-gray-200"><Eye size={16}/></button><button onClick={() => {setForm(p); setIsModalOpen(true);}} className="text-blue-600 bg-blue-50 p-2 rounded-lg hover:bg-blue-100"><Edit size={16}/></button><button onClick={() => handleDelete(p.id)} className="text-red-600 bg-red-50 p-2 rounded-lg hover:bg-red-100"><Trash2 size={16}/></button></td>
-                </tr>
-              );
-            })}
-          </tbody>
-        </table>
+      <div className="flex-1 bg-white rounded-xl border shadow-sm overflow-hidden flex flex-col justify-between">
+        <div className="overflow-auto flex-1">
+          <table className="w-full text-left text-sm">
+            <thead className="bg-gray-100 sticky top-0 border-b select-none">
+              <tr>
+                <th className="p-4 w-10"><input type="checkbox" onChange={() => setSelectedIds(selectedIds.length === products.length ? [] : products.map(p=>p.id))} checked={products.length > 0 && selectedIds.length === products.length} className="w-4 h-4"/></th>
+                <th className="p-4 font-bold text-gray-600 cursor-pointer hover:bg-gray-200" onClick={() => handleSort('name')}> <div className="flex items-center gap-1">Sản phẩm {sortConfig.field === 'name' && sortConfig.direction !== 'none' && <ArrowUpDown size={14} className={sortConfig.direction==='desc' ? 'text-red-500' : 'text-green-500'} />}</div> </th>
+                <th className="p-4 font-bold text-gray-600">Nhóm & Nguồn Gốc</th>
+                <th className="p-4 font-bold text-gray-600 cursor-pointer hover:bg-gray-200" onClick={() => handleSort('cost')}> <div className="flex items-center gap-1">Giá vốn {sortConfig.field === 'cost' && sortConfig.direction !== 'none' && <ArrowUpDown size={14} className={sortConfig.direction==='desc' ? 'text-red-500' : 'text-green-500'} />}</div> </th>
+                <th className="p-4 font-bold text-gray-600 cursor-pointer hover:bg-gray-200" onClick={() => handleSort('price')}> <div className="flex items-center gap-1">Giá bán {sortConfig.field === 'price' && sortConfig.direction !== 'none' && <ArrowUpDown size={14} className={sortConfig.direction==='desc' ? 'text-red-500' : 'text-green-500'} />}</div> </th>
+                <th className="p-4 font-bold text-gray-600 cursor-pointer hover:bg-gray-200" onClick={() => handleSort('stock')}> <div className="flex items-center gap-1">Tồn {sortConfig.field === 'stock' && sortConfig.direction !== 'none' && <ArrowUpDown size={14} className={sortConfig.direction==='desc' ? 'text-red-500' : 'text-green-500'} />}</div> </th>
+                <th className="p-4 font-bold text-gray-600 text-right">Thao tác</th>
+              </tr>
+            </thead>
+            <tbody>
+              {paginatedProducts.map(p => {
+                const stockClass = p.stock < 0 ? 'text-red-600' : 'text-gray-800';
+                return (
+                  <tr key={p.id} className="border-b hover:bg-blue-50/50 cursor-pointer" onClick={() => setDetailProduct(p)}>
+                    <td className="p-4" onClick={e=>e.stopPropagation()}><input type="checkbox" checked={selectedIds.includes(p.id)} onChange={() => setSelectedIds(prev => prev.includes(p.id) ? prev.filter(x=>x!==p.id) : [...prev, p.id])} className="w-4 h-4"/></td>
+                    <td className="p-4 font-medium text-blue-600 underline">{p.name}</td>
+                    <td className="p-4"><p className="text-[11px] bg-gray-100 border inline-block px-1.5 py-0.5 rounded text-gray-600">{p.category || 'Chưa phân nhóm'}</p>{p.lastSupplierName && <p className="text-[10px] text-gray-400 mt-1">Từ: {p.lastSupplierName}</p>}</td>
+                    <td className="p-4 text-gray-600">{formatCurrency(p.cost)}</td><td className="p-4 font-bold text-blue-600">{formatCurrency(p.price)}</td><td className={"p-4 font-bold " + stockClass}>{p.stock}</td>
+                    <td className="p-4 text-right flex justify-end gap-1" onClick={e=>e.stopPropagation()}><button onClick={() => setDetailProduct(p)} title="Xem chi tiết nhập/bán" className="text-gray-600 bg-gray-100 p-2 rounded-lg hover:bg-gray-200"><Eye size={16}/></button><button onClick={() => {setForm(p); setIsModalOpen(true);}} className="text-blue-600 bg-blue-50 p-2 rounded-lg hover:bg-blue-100"><Edit size={16}/></button><button onClick={() => handleDelete(p.id)} className="text-red-600 bg-red-50 p-2 rounded-lg hover:bg-red-100"><Trash2 size={16}/></button></td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        </div>
+        <div className="border-t shrink-0">
+          <PaginationControls 
+            currentPage={invCurrentPage} 
+            totalPages={totalInvPages} 
+            rowsPerPage={invRowsPerPage} 
+            onPageChange={(p) => setInvCurrentPage(p)} 
+            onRowsChange={(r) => { setInvRowsPerPage(r); setInvCurrentPage(1); }} 
+            totalItems={filteredProducts.length} 
+          />
+        </div>
       </div>
+
       <Modal isOpen={!!detailProduct} onClose={() => setDetailProduct(null)} title={`Lịch sử: ${detailProduct?.name || ''}`} maxWidth="max-w-4xl">
         {detailProduct && (
           <div className="space-y-4">
