@@ -1048,10 +1048,10 @@ function POSView({ products, customers, db, storeId, user, storeConfig, showToas
           {cart.length === 0 && <div className="text-center text-gray-400 py-10 text-sm font-medium">Chưa có sản phẩm nào trong giỏ</div>}
         </div>
         <div className="p-4 border-t bg-white space-y-3 shadow-[0_-4px_6px_-1px_rgba(0,0,0,0.05)]">
-          {/* Nút Thêm Khách hàng được hiển thị to rõ trên di động bằng class whitespace-nowrap */}
-          <div className="flex gap-2">
-            <select value={customerId} onChange={e=>setCustomerId(e.target.value)} className="flex-1 p-2.5 border border-gray-300 rounded-xl outline-none text-sm bg-gray-50 focus:bg-white font-medium focus:ring-2 focus:ring-blue-500 transition-all"><option value="">-- Khách lẻ (Tiền mặt) --</option>{customers.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}</select>
-            <button onClick={() => setShowAddCusModal(true)} className="bg-blue-50 hover:bg-blue-100 text-blue-600 border border-blue-200 px-3 py-2.5 rounded-xl font-bold text-xs flex items-center gap-1 shrink-0 whitespace-nowrap transition-colors"><Plus size={16}/> Thêm KH</button>
+          {/* Sửa lỗi hiển thị trên Mobile: flex-row luôn luôn giữ 1 hàng */}
+          <div className="flex flex-row items-center gap-2 w-full">
+            <select value={customerId} onChange={e=>setCustomerId(e.target.value)} className="flex-1 min-w-0 p-2.5 border border-gray-300 rounded-xl outline-none text-sm bg-gray-50 focus:bg-white font-medium focus:ring-2 focus:ring-blue-500 transition-all"><option value="">-- Khách lẻ (Tiền mặt) --</option>{customers.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}</select>
+            <button type="button" onClick={() => setShowAddCusModal(true)} className="bg-blue-50 hover:bg-blue-100 text-blue-600 border border-blue-200 px-3 py-2.5 rounded-xl font-bold text-xs flex items-center justify-center gap-1 shrink-0 whitespace-nowrap transition-colors"><Plus size={16}/> Thêm KH</button>
           </div>
           <textarea value={orderNote} onChange={e=>setOrderNote(e.target.value)} placeholder="Ghi chú đơn hàng..." className="w-full p-2.5 border border-gray-300 rounded-xl outline-none text-sm resize-none h-12 bg-gray-50 focus:bg-white focus:ring-2 focus:ring-blue-500 transition-all"></textarea>
           <div className="flex gap-2"><button onClick={() => setIsDebt(false)} className={"flex-1 py-2.5 rounded-xl border-2 font-bold transition-all " + (!isDebt ? 'bg-blue-600 text-white border-blue-600 shadow-md' : 'bg-white text-gray-500 border-gray-200 hover:bg-gray-50')}>Tiền mặt</button><button onClick={() => setIsDebt(true)} className={"flex-1 py-2.5 rounded-xl border-2 font-bold transition-all " + (isDebt ? 'bg-orange-500 text-white border-orange-500 shadow-md' : 'bg-white text-gray-500 border-gray-200 hover:bg-gray-50')}>Ghi nợ</button></div>
@@ -1105,9 +1105,13 @@ function SalesHistoryView({ orders, products, customers, storeConfig, db, storeI
   const [viewingOrderPrint, setViewingOrderPrint] = useState(null);
   const [localPrintSize, setLocalPrintSize] = useState(storeConfig.printPaperSize || 'K80');
 
-  // --- THÊM TÍNH NĂNG TẠO ĐƠN HÀNG LÀM TRỰC TIẾP QUA POPUP ---
+  // Popup tạo đơn hàng trực tiếp
   const [showCreateOrderModal, setShowCreateOrderModal] = useState(false);
   const [newOrderForm, setNewOrderForm] = useState({ customerId: '', status: 'PAID', note: '', items: [] });
+  
+  // Trạng thái cho Thêm Khách Hàng Nhanh
+  const [showAddCusModal, setShowAddCusModal] = useState(false);
+  const [newCusForm, setNewCusForm] = useState({ name: '', phone: '', address: '' });
 
   useEffect(() => { setLocalPrintSize(storeConfig.printPaperSize || 'K80'); }, [storeConfig.printPaperSize]);
 
@@ -1173,6 +1177,19 @@ function SalesHistoryView({ orders, products, customers, storeConfig, db, storeI
     } catch (err) { showToast("Lỗi cập nhật hóa đơn", "error"); }
   };
 
+  // Hàm thêm Khách hàng nhanh từ Modal
+  const handleAddCustomerQuick = async (e) => {
+    e.preventDefault();
+    try { 
+      const nowIso = new Date().toISOString(); 
+      const docRef = await addDoc(collection(db, 'stores', storeId, 'customers'), { name: newCusForm.name, phone: newCusForm.phone || '', address: newCusForm.address || '', totalDebt: 0, createdAt: nowIso }); 
+      setNewOrderForm(prev => ({...prev, customerId: docRef.id})); 
+      setShowAddCusModal(false); 
+      setNewCusForm({ name: '', phone: '', address: '' }); 
+      showToast("Đã thêm và chọn khách hàng mới!"); 
+    } catch (err) { showToast("Lỗi thêm khách hàng", "error"); }
+  };
+
   // Hàm lưu tạo đơn hàng mới qua Popup (Modal)
   const handleSaveNewOrder = async (e) => {
     e.preventDefault();
@@ -1230,7 +1247,6 @@ function SalesHistoryView({ orders, products, customers, storeConfig, db, storeI
           <p className="text-sm text-gray-500 mt-0.5">Theo dõi lịch sử giao dịch và in lại hóa đơn (Theo cấu hình mẫu in)</p>
         </div>
         <div className="flex items-center gap-2 w-full sm:w-auto">
-          {/* NÚT TẠO ĐƠN HIỂN THỊ RÕ RÀNG TRÊN CẢ DI ĐỘNG */}
           <button onClick={() => { setNewOrderForm({ customerId: '', status: 'PAID', note: '', items: [] }); setShowCreateOrderModal(true); }} className="bg-blue-600 text-white px-3 py-2.5 rounded-xl font-bold flex gap-2 shrink-0 items-center shadow-sm whitespace-nowrap">
             <Plus size={16}/> <span className="sm:inline">Tạo đơn</span>
           </button>
@@ -1342,10 +1358,15 @@ function SalesHistoryView({ orders, products, customers, storeConfig, db, storeI
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             <div>
               <label className="block text-sm font-bold text-gray-700 mb-1">Khách hàng</label>
-              <select value={newOrderForm.customerId} onChange={e=>setNewOrderForm({...newOrderForm, customerId: e.target.value})} className="w-full p-3 border rounded-xl outline-none text-sm font-bold bg-gray-50 focus:bg-white">
-                <option value="">-- Khách lẻ (Tiền mặt) --</option>
-                {customers.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
-              </select>
+              <div className="flex flex-row items-center gap-2 w-full">
+                <select value={newOrderForm.customerId} onChange={e=>setNewOrderForm({...newOrderForm, customerId: e.target.value})} className="flex-1 min-w-0 p-3 border rounded-xl outline-none text-sm font-bold bg-gray-50 focus:bg-white transition-all">
+                  <option value="">-- Khách lẻ (Tiền mặt) --</option>
+                  {customers.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
+                </select>
+                <button type="button" onClick={() => setShowAddCusModal(true)} className="bg-blue-50 hover:bg-blue-100 text-blue-600 border border-blue-200 px-3 py-3 rounded-xl font-bold text-xs flex items-center justify-center gap-1 shrink-0 whitespace-nowrap transition-colors">
+                  <Plus size={16}/> Thêm KH
+                </button>
+              </div>
             </div>
             <div>
               <label className="block text-sm font-bold text-gray-700 mb-1">Trạng thái thanh toán</label>
@@ -1404,6 +1425,16 @@ function SalesHistoryView({ orders, products, customers, storeConfig, db, storeI
             </div>
           </div>
           <button type="submit" className="w-full bg-blue-600 hover:bg-blue-700 text-white font-bold p-4 rounded-xl shadow-lg transition-all text-lg uppercase tracking-wider">Hoàn tất Tạo Đơn Hàng</button>
+        </form>
+      </Modal>
+      
+      {/* Modal Thêm nhanh Khách hàng trực tiếp từ Quản lý Bán Hàng */}
+      <Modal isOpen={showAddCusModal} onClose={() => setShowAddCusModal(false)} title="Thêm Khách Hàng Nhanh">
+        <form onSubmit={handleAddCustomerQuick} className="space-y-4">
+          <input required placeholder="Tên khách hàng *" value={newCusForm.name} onChange={e=>setNewCusForm({...newCusForm, name:e.target.value})} className="w-full p-3 border rounded-xl outline-none text-sm bg-gray-50 focus:bg-white"/>
+          <input placeholder="Số điện thoại" value={newCusForm.phone} onChange={e=>setNewCusForm({...newCusForm, phone:e.target.value})} className="w-full p-3 border rounded-xl outline-none text-sm bg-gray-50 focus:bg-white"/>
+          <input placeholder="Địa chỉ" value={newCusForm.address} onChange={e=>setNewCusForm({...newCusForm, address:e.target.value})} className="w-full p-3 border rounded-xl outline-none text-sm bg-gray-50 focus:bg-white"/>
+          <button type="submit" className="w-full bg-blue-600 text-white font-bold p-3.5 rounded-xl text-sm shadow-md hover:shadow-lg transition-all">Lưu & Chọn Khách Hàng</button>
         </form>
       </Modal>
 
