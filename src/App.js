@@ -129,21 +129,39 @@ const ReceiptTemplate = ({ order, storeConfig, isA4A5, baseFontSize }) => {
   return (
     <>
       <div className="border-b border-dashed border-gray-400 pb-3 mb-3">
-        {cfg.printShowLogo && storeConfig.logo && (
-          <div className={isA4A5 ? "flex justify-start mb-2" : "flex flex-col items-center text-center mb-2"}>
-            <img src={storeConfig.logo} alt="Logo" className="max-h-16 object-contain" />
+        {isA4A5 ? (
+          <div className="flex items-center gap-4 mb-3">
+            {cfg.printShowLogo && storeConfig.logo && (
+              <div className="shrink-0">
+                <img src={storeConfig.logo} alt="Logo" className="max-h-16 object-contain" />
+              </div>
+            )}
+            <div className="flex flex-col flex-1">
+              {cfg.printShowStoreName && (
+                <h2 className="font-bold uppercase" style={{fontSize: fsStoreName}}>
+                  {storeConfig.name || 'SmartPOS Pro'}
+                </h2>
+              )}
+              {cfg.printShowStoreAddress && <p className="mt-0.5" style={{fontSize: fsStoreAddress}}>ĐC: {storeConfig.address}</p>}
+              {cfg.printShowStorePhone && <p style={{fontSize: fsStorePhone}}>SĐT: {storeConfig.phone}</p>}
+            </div>
+          </div>
+        ) : (
+          <div className="flex flex-col items-center text-center mb-2">
+            {cfg.printShowLogo && storeConfig.logo && (
+              <div className="mb-2">
+                <img src={storeConfig.logo} alt="Logo" className="max-h-16 object-contain" />
+              </div>
+            )}
+            {cfg.printShowStoreName && (
+              <h2 className="font-bold uppercase" style={{fontSize: fsStoreName}}>
+                {storeConfig.name || 'SmartPOS Pro'}
+              </h2>
+            )}
+            {cfg.printShowStoreAddress && <p className="mt-0.5" style={{fontSize: fsStoreAddress}}>ĐC: {storeConfig.address}</p>}
+            {cfg.printShowStorePhone && <p style={{fontSize: fsStorePhone}}>SĐT: {storeConfig.phone}</p>}
           </div>
         )}
-
-        <div className="flex flex-col items-center text-center">
-          {cfg.printShowStoreName && (
-            <h2 className="font-bold uppercase" style={{fontSize: fsStoreName}}>
-              {storeConfig.name || 'SmartPOS Pro'}
-            </h2>
-          )}
-          {cfg.printShowStoreAddress && <p className="mt-0.5" style={{fontSize: fsStoreAddress}}>ĐC: {storeConfig.address}</p>}
-          {cfg.printShowStorePhone && <p style={{fontSize: fsStorePhone}}>SĐT: {storeConfig.phone}</p>}
-        </div>
 
         <div className="text-center mt-3">
           <h1 className="font-bold uppercase" style={{fontSize: fsInvoiceTitle}}>
@@ -1061,7 +1079,7 @@ function SalesHistoryView({ orders, products, customers, storeConfig, db, storeI
           <p className="text-sm text-gray-500 mt-0.5">Theo dõi lịch sử giao dịch và in lại hóa đơn (Theo cấu hình mẫu in)</p>
         </div>
         <div className="flex items-center gap-2 w-full sm:w-auto">
-          <button onClick={() => { setNewOrderForm({ customerId: '', status: 'PAID', note: '', items: [] }); setShowCreateOrderModal(true); }} className="bg-blue-600 text-white px-4 py-2.5 rounded-xl font-bold flex gap-2 shrink-0 items-center shadow-sm whitespace-nowrap"> <Plus size={16}/> <span>Tạo đơn</span> </button>
+          <button onClick={() => { setNewOrderForm({ customerId: '', status: 'PAID', note: '', items: [] }); setShowCreateOrderModal(true); }} className="bg-blue-600 text-white px-4 py-2.5 rounded-lg font-bold flex gap-2 shrink-0 items-center shadow-sm whitespace-nowrap"> <Plus size={16}/> <span>Tạo đơn</span> </button>
           <div className="relative flex-1 sm:w-72">
             <Search size={16} className="absolute left-3 top-3.5 text-gray-400"/>
             <input placeholder="Tìm mã HĐ hoặc tên khách..." value={searchTerm} onChange={e=>{ setSearchTerm(e.target.value); setSalesCurrentPage(1); }} className="w-full pl-9 pr-3 py-2.5 border rounded-xl bg-white outline-none shadow-sm focus:ring-2 focus:ring-blue-500 transition-all"/>
