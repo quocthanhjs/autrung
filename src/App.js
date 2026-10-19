@@ -468,7 +468,7 @@ export default function App() {
         {activeTab === 'groups' && <GroupManagementView products={products} db={db} storeId={storeId} showToast={showToast} />}
         {activeTab === 'pos' && <POSView products={products} orders={orders} customers={customers} db={db} storeId={storeId} user={user} storeConfig={storeConfig} showToast={showToast} userData={userData} />}
         {activeTab === 'sales_history' && <SalesHistoryView orders={orders} imports={imports} products={products} customers={customers} storeConfig={storeConfig} db={db} storeId={storeId} user={user} userData={userData} showToast={showToast} />}
-        {activeTab === 'imports' && <ImportView products={products} suppliers={suppliers} db={db} storeId={storeId} user={user} userData={userData} showToast={showToast} storeConfig={storeConfig} />}
+        {activeTab === 'imports' && <ImportView products={products} imports={imports} suppliers={suppliers} db={db} storeId={storeId} user={user} userData={userData} showToast={showToast} storeConfig={storeConfig} />}
         {activeTab === 'products' && <InventoryView products={products} orders={orders} imports={imports} storeConfig={storeConfig} db={db} storeId={storeId} showToast={showToast} />}
         {activeTab === 'customers' && <ContactManager type="customers" data={customers} orders={orders} storeConfig={storeConfig} db={db} storeId={storeId} showToast={showToast} />}
         {activeTab === 'suppliers' && <ContactManager type="suppliers" data={suppliers} orders={imports} storeConfig={storeConfig} db={db} storeId={storeId} showToast={showToast} />}
@@ -2005,7 +2005,8 @@ function ExpenseView({ expenses, db, storeId, showToast }) {
   );
 }
 
-function ImportView({ products, suppliers, db, storeId, user, userData, showToast, storeConfig }) {
+function ImportView({ products, imports = [], suppliers, db, storeId, user, userData, showToast, storeConfig }) {
+  const [activeImportTab, setActiveImportTab] = useState('history');
   const [cart, setCart] = useState([]);
   const [supplierId, setSupplierId] = useState('');
   const [isDebt, setIsDebt] = useState(false);
@@ -2076,8 +2077,21 @@ function ImportView({ products, suppliers, db, storeId, user, userData, showToas
 
   const addProductToCart = (p) => setCart(c => c.find(i => i.id === p.id) ? c : [...c, { id: p.id, name: p.name, category: p.category || '', qty: 1, importCost: p.cost || 0, price: p.price || 0 }]);
 
+  const sortedImports = [...(imports || [])].sort((a, b) => new Date(b.date || 0) - new Date(a.date || 0));
+
   return (
-    <div className="flex-1 flex flex-col lg:flex-row overflow-hidden bg-gray-50 h-full">
+    <div className="flex-1 flex flex-col overflow-hidden bg-gray-50 h-full">
+      <div className="flex items-center gap-2 px-4 md:px-6 pt-4 bg-white border-b shrink-0">
+        <button onClick={() => setActiveImportTab('history')} className={`px-4 py-3 text-sm font-bold border-b-2 transition-colors ${activeImportTab === 'history' ? 'border-blue-600 text-blue-700' : 'border-transparent text-gray-500 hover:text-gray-800'}`}>Lịch sử nhập hàng</button>
+        <button onClick={() => setActiveImportTab('create')} className={`px-4 py-3 text-sm font-bold border-b-2 transition-colors ${activeImportTab === 'create' ? 'border-blue-600 text-blue-700' : 'border-transparent text-gray-500 hover:text-gray-800'}`}>Nhập hàng</button>
+      </div>
+      {activeImportTab === 'history' ? (
+        <div className="flex-1 overflow-auto p-4 md:p-6 space-y-4">
+          <div className="flex flex-wrap items-center justify-between gap-3"><div><h2 className="text-xl font-bold text-gray-800">Lịch sử nhập hàng</h2><p className="text-sm text-gray-500 mt-1">Danh sách các phiếu nhập hàng đã ghi nhận, bao gồm phiếu nhập từ Excel.</p></div><button onClick={() => setActiveImportTab('create')} className="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2.5 rounded-xl text-sm font-bold flex items-center gap-2"><Plus size={16}/> Tạo phiếu nhập</button></div>
+          <div className="bg-white rounded-xl border shadow-sm overflow-auto"><table className="w-full text-left text-sm min-w-[850px]"><thead className="bg-gray-100 text-gray-600"><tr><th className="p-3">Ngày nhập</th><th className="p-3">Mã phiếu</th><th className="p-3">Nhà cung cấp</th><th className="p-3">Chi tiết hàng hóa</th><th className="p-3 text-right">Tổng tiền</th><th className="p-3">Trạng thái</th></tr></thead><tbody>{sortedImports.map((im, idx) => <tr key={im.id || idx} className="border-t hover:bg-gray-50 align-top"><td className="p-3 whitespace-nowrap">{im.date ? formatDate(im.date) : '—'}</td><td className="p-3 font-semibold">{im.invoiceCode || im.receiptCode || (im.id ? im.id.slice(0, 8) : '—')}</td><td className="p-3">{im.supplierName || 'Chưa rõ nhà cung cấp'}</td><td className="p-3">{(im.items || []).length ? <div className="space-y-1">{im.items.map((it, i) => <div key={i}>{it.name || 'Sản phẩm'} × {Number(it.qty ?? it.quantity ?? 0)}</div>)}</div> : 'Không có chi tiết hàng hóa'}</td><td className="p-3 text-right font-bold whitespace-nowrap">{formatCurrency(Number(im.total) || 0)}</td><td className="p-3"><span className={`px-2 py-1 rounded-lg text-xs font-bold ${im.status === 'DEBT' ? 'bg-orange-50 text-orange-700' : 'bg-green-50 text-green-700'}`}>{im.status === 'DEBT' ? 'Ghi nợ' : 'Đã thanh toán'}</span></td></tr>)}{sortedImports.length === 0 && <tr><td colSpan="6" className="p-10 text-center text-gray-400">Chưa có lịch sử nhập hàng.</td></tr>}</tbody></table></div>
+        </div>
+      ) : (
+      <div className="flex-1 flex flex-col lg:flex-row overflow-hidden min-h-0">
       <div className="flex-1 p-4 md:p-6 flex flex-col overflow-hidden">
         <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center mb-4 gap-3 shrink-0">
           <div className="flex items-center gap-2"><h2 className="text-xl font-bold text-gray-800">Chọn sản phẩm nhập</h2><button onClick={() => setShowAddProdModal(true)} className="bg-blue-600 hover:bg-blue-700 text-white px-3 py-1.5 rounded-lg text-xs font-bold flex items-center gap-1 shadow"><Plus size={14}/> Thêm mới</button></div>
@@ -2147,6 +2161,8 @@ function ImportView({ products, suppliers, db, storeId, user, userData, showToas
         </div>
       </div>
 
+      </div>
+      )}
       <Modal isOpen={showAddSuppModal} onClose={() => setShowAddSuppModal(false)} title="Thêm Nhà Cung Cấp Mới">
         <form onSubmit={handleAddSupplierQuick} className="space-y-4">
           <input required placeholder="Tên nhà cung cấp *" value={newSuppForm.name} onChange={e=>setNewSuppForm({...newSuppForm, name:e.target.value})} className="w-full p-2.5 border rounded-lg outline-none text-sm"/>
@@ -2272,8 +2288,71 @@ function SettingsView({ db, storeId, showToast, storeConfig }) {
           let count = 0; 
           let success = 0;
 
+          // --- LOGIC NHẬP LỊCH SỬ NHẬP HÀNG TỪ EXCEL KIOTVIET ---
+          if (type === 'imports') {
+            const productSnap = await getDocs(collection(db, 'stores', storeId, 'products'));
+            const supplierSnap = await getDocs(collection(db, 'stores', storeId, 'suppliers'));
+            const productDocs = productSnap.docs.map(d => ({ id: d.id, ...d.data() }));
+            const productByName = new Map(productDocs.map(p => [String(p.name || '').trim().toLowerCase(), p]));
+            const supplierByName = new Map(supplierSnap.docs.map(d => [String(d.data().name || '').trim().toLowerCase(), { id: d.id, ...d.data() }]));
+            const receipts = {};
+            const parseExcelDate = (value) => {
+              if (!value) return new Date().toISOString();
+              if (typeof value === 'number') return new Date(Math.round((value - 25569) * 86400 * 1000)).toISOString();
+              const parsed = new Date(value);
+              return Number.isNaN(parsed.getTime()) ? new Date().toISOString() : parsed.toISOString();
+            };
+            data.forEach(row => {
+              const productName = String(row['Tên hàng'] || row['Tên sản phẩm'] || '').trim();
+              const qty = Number(row['Số lượng'] || row['SL nhập'] || row['Số lượng nhập']) || 0;
+              if (!productName || qty <= 0) return;
+              const supplierName = String(row['Tên nhà cung cấp'] || row['Nhà cung cấp'] || '').trim() || 'Nhà cung cấp Excel';
+              const receiptCode = String(row['Mã phiếu nhập'] || row['Mã nhập hàng'] || row['Mã chứng từ'] || '').trim();
+              const date = parseExcelDate(row['Thời gian'] || row['Ngày nhập'] || row['Ngày tạo']);
+              const groupKey = receiptCode || `${supplierName}|${date.slice(0, 10)}`;
+              if (!receipts[groupKey]) receipts[groupKey] = { receiptCode, supplierName, date, items: [], total: 0, source: 'KiotViet Excel' };
+              const product = productByName.get(productName.toLowerCase());
+              const unitCost = Number(row['Giá nhập'] || row['Đơn giá nhập'] || row['Giá vốn'] || row['Đơn giá']) || 0;
+              const lineTotal = Number(row['Thành tiền'] || row['Tổng tiền hàng']) || qty * unitCost;
+              receipts[groupKey].items.push({ id: product?.id || '', name: productName, category: product?.category || String(row['Nhóm hàng'] || ''), qty, importCost: unitCost, price: Number(product?.price) || Number(row['Giá bán']) || 0 });
+              receipts[groupKey].total += lineTotal;
+            });
+            const receiptEntries = Object.values(receipts);
+            if (!receiptEntries.length) throw new Error('Không tìm thấy dòng nhập hàng hợp lệ. Cần có cột Tên hàng và Số lượng.');
+            let importBatch = writeBatch(db);
+            let writes = 0;
+            for (const receipt of receiptEntries) {
+              let supplier = supplierByName.get(receipt.supplierName.toLowerCase());
+              if (!supplier) {
+                const supplierRef = doc(collection(db, 'stores', storeId, 'suppliers'));
+                supplier = { id: supplierRef.id, name: receipt.supplierName, phone: '', address: '', totalDebt: 0, createdAt: new Date().toISOString() };
+                supplierByName.set(receipt.supplierName.toLowerCase(), supplier);
+                importBatch.set(supplierRef, supplier); writes++;
+              }
+              const validItems = receipt.items.filter(item => item.id && productDocs.some(p => p.id === item.id));
+              const total = receipt.total || receipt.items.reduce((sum, item) => sum + Number(item.qty || 0) * Number(item.importCost || 0), 0);
+              const importRef = doc(collection(db, 'stores', storeId, 'imports'));
+              importBatch.set(importRef, { invoiceCode: receipt.receiptCode || '', receiptCode: receipt.receiptCode || '', supplierId: supplier.id, supplierName: receipt.supplierName, createdByUid: '', createdByName: 'Excel KiotViet', items: receipt.items, total, status: 'PAID', date: receipt.date, source: 'KiotViet Excel' }); writes++;
+              for (const item of validItems) {
+                const product = productDocs.find(p => p.id === item.id);
+                const currentStock = Number(product.stock) || 0;
+                const oldCost = Number(product.cost) || 0;
+                let newCost = Number(item.importCost) || oldCost;
+                const method = storeConfig?.costCalcMethod || 'LATEST';
+                if (method === 'AVERAGE' && currentStock + item.qty > 0) newCost = Math.round(((currentStock * oldCost) + (item.qty * newCost)) / (currentStock + item.qty));
+                else if (method === 'HIGHEST') newCost = Math.max(oldCost, newCost);
+                else if (method === 'LOWEST') newCost = oldCost === 0 ? newCost : Math.min(oldCost, newCost);
+                importBatch.update(doc(db, 'stores', storeId, 'products', product.id), { stock: currentStock + item.qty, cost: newCost, lastSupplierId: supplier.id, lastSupplierName: receipt.supplierName });
+                product.stock = currentStock + item.qty; product.cost = newCost; writes++;
+                if (writes >= 400) { await importBatch.commit(); importBatch = writeBatch(db); writes = 0; }
+              }
+              if (writes >= 400) { await importBatch.commit(); importBatch = writeBatch(db); writes = 0; }
+              success++;
+            }
+            if (writes > 0) await importBatch.commit();
+          }
           // --- LOGIC GOM NHÓM ĐƠN HÀNG KIOTVIET ---
-          if (type === 'orders') {
+          else if (type === 'orders') {
             const ordersMap = {};
             
             data.forEach(row => {
@@ -2433,6 +2512,7 @@ function SettingsView({ db, storeId, showToast, storeConfig }) {
         if (type === 'suppliers') exportData.push({ 'Tên nhà cung cấp': item.name, 'Điện thoại': item.phone, 'Nợ cần trả hiện tại': item.totalDebt });
         if (type === 'expenses') exportData.push({ 'Ngày': formatDate(item.date), 'Nội dung': item.note, 'Số tiền': item.amount });
         if (type === 'orders') exportData.push({ 'Mã hóa đơn': item.invoiceCode || '', 'Ngày giờ': item.date || '', 'Mã khách hàng': item.customerId || '', 'Khách hàng': item.customerName || 'Khách lẻ', 'Mã nhân viên': item.sellerUid || '', 'Nhân viên': item.sellerName || '', 'Trạng thái': item.status || 'PAID', 'Ghi chú': item.note || '', 'Tổng tiền': Number(item.total) || 0, 'Tổng giá vốn': Number(item.totalCost) || 0, 'Chi tiết hàng hóa (JSON)': JSON.stringify(item.items || []) });
+        if (type === 'imports') (item.items || []).forEach(it => exportData.push({ 'Mã phiếu nhập': item.receiptCode || item.invoiceCode || '', 'Thời gian': item.date || '', 'Tên nhà cung cấp': item.supplierName || '', 'Tên hàng': it.name || '', 'Số lượng': Number(it.qty ?? it.quantity) || 0, 'Giá nhập': Number(it.importCost) || 0, 'Thành tiền': (Number(it.qty ?? it.quantity) || 0) * (Number(it.importCost) || 0), 'Trạng thái': item.status || 'PAID' }));
       });
       const ws = window.XLSX.utils.json_to_sheet(exportData); const wb = window.XLSX.utils.book_new();
       window.XLSX.utils.book_append_sheet(wb, ws, "Data"); window.XLSX.writeFile(wb, "Xuat_Du_Lieu_" + type + ".xlsx");
@@ -2445,6 +2525,7 @@ function SettingsView({ db, storeId, showToast, storeConfig }) {
     { id: 'suppliers', label: 'Nhà cung cấp (Nợ phải trả)' }, 
     { id: 'products', label: 'Hàng hóa & Kho' }, 
     { id: 'orders', label: 'Hóa đơn (Bán hàng)' },
+    { id: 'imports', label: 'Nhập hàng (Excel KiotViet)' },
     { id: 'expenses', label: 'Lịch sử Chi phí' }
   ];
 
