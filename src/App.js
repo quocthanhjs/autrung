@@ -37,6 +37,96 @@ const generateInvoiceCode = (orders = [], date = new Date()) => {
   return `AT${prefix}${String(maxSeq + 1).padStart(8, '0')}`;
 };
 
+// Đồng hồ GMT+7 và chuyển đổi ngày âm lịch Việt Nam.
+const jdFromDate = (dd, mm, yy) => {
+  const a = Math.floor((14 - mm) / 12);
+  const y = yy + 4800 - a;
+  const m = mm + 12 * a - 3;
+  let jd = dd + Math.floor((153 * m + 2) / 5) + 365 * y + Math.floor(y / 4) - Math.floor(y / 100) + Math.floor(y / 400) - 32045;
+  if (jd < 2299161) jd = dd + Math.floor((153 * m + 2) / 5) + 365 * y + Math.floor(y / 4) - 32083;
+  return jd;
+};
+const getNewMoonDay = (k, timeZone) => {
+  const T = k / 1236.85;
+  const T2 = T * T;
+  const T3 = T2 * T;
+  const dr = Math.PI / 180;
+  let jd1 = 2415020.75933 + 29.53058868 * k + 0.0001178 * T2 - 0.000000155 * T3;
+  jd1 += 0.00033 * Math.sin((166.56 + 132.87 * T - 0.009173 * T2) * dr);
+  const M = 359.2242 + 29.10535608 * k - 0.0000333 * T2 - 0.00000347 * T3;
+  const Mpr = 306.0253 + 385.81691806 * k + 0.0107306 * T2 + 0.00001236 * T3;
+  const F = 21.2964 + 390.67050646 * k - 0.0016528 * T2 - 0.00000239 * T3;
+  let C1 = (0.1734 - 0.000393 * T) * Math.sin(M * dr) + 0.0021 * Math.sin(2 * dr * M);
+  C1 -= 0.4068 * Math.sin(Mpr * dr) + 0.0161 * Math.sin(2 * dr * Mpr);
+  C1 -= 0.0004 * Math.sin(3 * dr * Mpr);
+  C1 += 0.0104 * Math.sin(2 * dr * F) - 0.0051 * Math.sin((M + Mpr) * dr);
+  C1 -= 0.0074 * Math.sin((M - Mpr) * dr) + 0.0004 * Math.sin((2 * F + M) * dr);
+  C1 -= 0.0004 * Math.sin((2 * F - M) * dr) - 0.0006 * Math.sin((2 * F + Mpr) * dr);
+  C1 += 0.0010 * Math.sin((2 * F - Mpr) * dr) + 0.0005 * Math.sin((2 * Mpr + M) * dr);
+  const deltaT = T < -11 ? 0.001 + 0.000839 * T + 0.0002261 * T2 - 0.00000845 * T3 - 0.000000081 * T * T3 : -0.000278 + 0.000265 * T + 0.000262 * T2;
+  return Math.floor(jd1 + C1 - deltaT + 0.5 + timeZone / 24);
+};
+const getSunLongitude = (jdn, timeZone) => {
+  const T = (jdn - 2451545.5 - timeZone / 24) / 36525;
+  const T2 = T * T;
+  const dr = Math.PI / 180;
+  const M = 357.52910 + 35999.05030 * T - 0.0001559 * T2 - 0.00000048 * T * T2;
+  const L0 = 280.46645 + 36000.76983 * T + 0.0003032 * T2;
+  let delta = (1.914600 - 0.004817 * T - 0.000014 * T2) * Math.sin(dr * M);
+  delta += (0.019993 - 0.000101 * T) * Math.sin(2 * dr * M) + 0.000290 * Math.sin(3 * dr * M);
+  let L = (L0 + delta) * dr;
+  L -= Math.PI * 2 * Math.floor(L / (Math.PI * 2));
+  return Math.floor(L / Math.PI * 6);
+};
+const getLunarMonth11 = (yy, timeZone) => {
+  const off = jdFromDate(31, 12, yy) - 2415021;
+  const k = Math.floor(off / 29.530588853);
+  let nm = getNewMoonDay(k, timeZone);
+  if (getSunLongitude(nm, timeZone) >= 9) nm = getNewMoonDay(k - 1, timeZone);
+  return nm;
+};
+const getLeapMonthOffset = (a11, timeZone) => {
+  const k = Math.floor(0.5 + (a11 - 2415021.076998695) / 29.530588853);
+  let last = 0;
+  let i = 1;
+  let arc = getSunLongitude(getNewMoonDay(k + i, timeZone), timeZone);
+  do {
+    last = arc;
+    i++;
+    arc = getSunLongitude(getNewMoonDay(k + i, timeZone), timeZone);
+  } while (arc !== last && i < 14);
+  return i - 1;
+};
+const solarToVietnameseLunar = (dd, mm, yy) => {
+  const timeZone = 7;
+  const dayNumber = jdFromDate(dd, mm, yy);
+  const k = Math.floor((dayNumber - 2415021.076998695) / 29.530588853);
+  let monthStart = getNewMoonDay(k + 1, timeZone);
+  if (monthStart > dayNumber) monthStart = getNewMoonDay(k, timeZone);
+  let a11 = getLunarMonth11(yy, timeZone);
+  let b11 = a11;
+  let lunarYear;
+  if (a11 >= monthStart) {
+    lunarYear = yy;
+    a11 = getLunarMonth11(yy - 1, timeZone);
+  } else {
+    lunarYear = yy + 1;
+    b11 = getLunarMonth11(yy + 1, timeZone);
+  }
+  const lunarDay = dayNumber - monthStart + 1;
+  const diff = Math.floor((monthStart - a11) / 29);
+  let lunarLeap = 0;
+  let lunarMonth = diff + 11;
+  if (b11 - a11 > 365) {
+    const leapMonthDiff = getLeapMonthOffset(a11, timeZone);
+    if (diff >= leapMonthDiff) lunarMonth = diff + 10;
+    if (diff === leapMonthDiff) lunarLeap = 1;
+  }
+  if (lunarMonth > 12) lunarMonth -= 12;
+  if (lunarMonth >= 11 && diff < 4) lunarYear--;
+  return { day: lunarDay, month: lunarMonth, year: lunarYear, leap: lunarLeap };
+};
+
 const formatCurrency = (amount) => {
   return new Intl.NumberFormat('vi-VN', { style: 'currency', currency: 'VND' }).format(amount || 0);
 };
@@ -357,6 +447,31 @@ export default function App() {
   const [expenses, setExpenses] = useState([]);
   const [loading, setLoading] = useState(true);
   const storeId = 'main_store';
+  const [clockNow, setClockNow] = useState(() => Date.now());
+
+  useEffect(() => {
+    let active = true;
+    let offsetMs = 0;
+    let intervalId;
+    const tick = () => { if (active) setClockNow(Date.now() + offsetMs); };
+    fetch('https://worldtimeapi.org/api/timezone/Asia/Ho_Chi_Minh', { cache: 'no-store' })
+      .then(response => { if (!response.ok) throw new Error('Không đồng bộ được giờ Internet'); return response.json(); })
+      .then(data => {
+        if (!active || !data.unixtime) return;
+        offsetMs = Number(data.unixtime) * 1000 - Date.now();
+        tick();
+      })
+      .catch(() => { /* Nếu API không khả dụng, vẫn hiển thị giờ thiết bị theo múi giờ GMT+7. */ });
+    intervalId = window.setInterval(tick, 1000);
+    return () => { active = false; window.clearInterval(intervalId); };
+  }, []);
+
+  const clockDate = new Date(clockNow);
+  const clockParts = new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Ho_Chi_Minh', year: 'numeric', month: 'numeric', day: 'numeric' }).formatToParts(clockDate);
+  const clockPart = (type) => Number(clockParts.find(part => part.type === type)?.value || 0);
+  const lunarDate = solarToVietnameseLunar(clockPart('day'), clockPart('month'), clockPart('year'));
+  const clockTimeText = new Intl.DateTimeFormat('vi-VN', { timeZone: 'Asia/Ho_Chi_Minh', hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: false }).format(clockDate);
+  const solarDateText = new Intl.DateTimeFormat('vi-VN', { timeZone: 'Asia/Ho_Chi_Minh', day: '2-digit', month: '2-digit', year: 'numeric' }).format(clockDate);
 
   useEffect(() => {
     if (!window.html2canvas) {
@@ -454,6 +569,12 @@ export default function App() {
         </div>
       </aside>
       <main className="flex-1 overflow-hidden flex flex-col h-[calc(100vh-80px)] md:h-screen relative">
+        <div className="fixed top-3 right-3 md:top-4 md:right-5 z-40 w-[190px] md:w-[220px] rounded-2xl border border-blue-100 bg-white/95 px-3 py-2.5 shadow-lg backdrop-blur-sm text-center pointer-events-none">
+          <div className="text-[10px] md:text-[11px] font-bold uppercase tracking-[0.12em] text-blue-600">Giờ Việt Nam · GMT+7</div>
+          <div className="my-0.5 text-xl md:text-2xl leading-tight font-black tracking-wide tabular-nums text-gray-900">{clockTimeText}</div>
+          <div className="border-t border-gray-100 pt-1 text-xs md:text-sm font-semibold text-gray-700">{solarDateText}</div>
+          <div className="mt-0.5 text-[11px] md:text-xs font-medium text-amber-700">Âm lịch: {lunarDate.day}/{lunarDate.month}{lunarDate.leap ? ' nhuận' : ''}/{lunarDate.year}</div>
+        </div>
         {toast && <div className={"absolute top-4 right-4 z-50 px-6 py-3.5 rounded-xl shadow-xl flex items-center gap-2 text-white animate-in slide-in-from-top-2 " + (toast.type === 'success' ? 'bg-emerald-600' : 'bg-red-600')}><div className="bg-white/20 p-1 rounded-full">{toast.type === 'success' ? <Check size={16} /> : <AlertCircle size={16} />}</div><span className="font-bold text-sm tracking-wide">{toast.msg}</span></div>}
         {activeTab === 'dashboard' && <DashboardView orders={orders} imports={imports} expenses={expenses} customers={customers} suppliers={suppliers} showToast={showToast} />}
         {activeTab === 'groups' && <GroupManagementView products={products} db={db} storeId={storeId} showToast={showToast} />}
