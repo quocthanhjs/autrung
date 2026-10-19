@@ -27,6 +27,16 @@ const PERMISSION_TREE = [
   { module: 'Sổ quỹ', perms: [{ id: 'quy_so_quy', label: 'Sổ quỹ / Chi phí' }] }
 ];
 
+const generateInvoiceCode = (orders = [], date = new Date()) => {
+  const prefix = `${String(date.getMonth() + 1).padStart(2, '0')}${String(date.getFullYear()).slice(-2)}`;
+  const existing = orders.map(o => o.invoiceCode || '').filter(code => code.startsWith(`AT${prefix}`));
+  const maxSeq = existing.reduce((max, code) => {
+    const seq = Number(code.slice(6));
+    return Number.isFinite(seq) ? Math.max(max, seq) : max;
+  }, 0);
+  return `AT${prefix}${String(maxSeq + 1).padStart(8, '0')}`;
+};
+
 const formatCurrency = (amount) => {
   return new Intl.NumberFormat('vi-VN', { style: 'currency', currency: 'VND' }).format(amount || 0);
 };
@@ -169,7 +179,7 @@ const ReceiptTemplate = ({ order, storeConfig, isA4A5, baseFontSize }) => {
           </h1>
           <div className="flex justify-center items-center gap-3 mt-1 text-gray-800" style={{fontSize: fsMeta}}>
             {cfg.printShowDate && <span>Ngày tạo: {order?.date ? formatDate(order.date) : '20/10/2026 14:30'}</span>}
-            {cfg.printShowInvoiceId && <span>Mã HĐ: {order?.id?.slice(0,6).toUpperCase() || 'HD12345'}</span>}
+            {cfg.printShowInvoiceId && <span>Mã HĐ: {order?.invoiceCode || order?.id?.slice(0,6).toUpperCase() || 'HD12345'}</span>}
           </div>
         </div>
       </div>
@@ -235,6 +245,8 @@ function LoginView({ onLoginSuccess }) {
   const [loading, setLoading] = useState(false);
   const [isForgot, setIsForgot] = useState(false);
   const [resetMsg, setResetMsg] = useState('');
+  const [loginLogo, setLoginLogo] = useState('');
+  useEffect(() => { getDoc(doc(db, 'stores', 'main_store')).then(snap => { if (snap.exists()) setLoginLogo(snap.data().logo || ''); }).catch(() => {}); }, []);
 
   const handleLogin = async (e) => {
     e.preventDefault(); setError(''); setLoading(true);
@@ -293,8 +305,8 @@ function LoginView({ onLoginSuccess }) {
     <div className="min-h-screen bg-gray-100 flex items-center justify-center p-4">
       <div className="bg-white p-8 rounded-2xl shadow-xl w-full max-w-md">
         <div className="text-center mb-8">
-          <div className="bg-blue-100 text-blue-600 w-16 h-16 rounded-full flex items-center justify-center mx-auto mb-4"><Lock size={32} /></div>
-          <h1 className="text-2xl font-bold text-gray-800">SmartPOS Pro</h1>
+          {loginLogo ? <img src={loginLogo} alt="Logo" className="w-20 h-20 object-contain mx-auto mb-4" /> : <div className="bg-blue-100 text-blue-600 w-16 h-16 rounded-full flex items-center justify-center mx-auto mb-4"><Lock size={32} /></div>}
+          <h1 className="text-2xl font-bold text-gray-800">QUẢN LÝ BÁN HÀNG</h1>
           <p className="text-gray-500 text-sm mt-2">{isForgot ? 'Khôi phục mật khẩu' : 'Đăng nhập hệ thống'}</p>
         </div>
         {error && <div className="bg-red-50 text-red-600 p-3 rounded-lg flex items-center gap-2 mb-4 text-sm"><ShieldAlert size={16} /> {error}</div>}
@@ -330,7 +342,7 @@ export default function App() {
   const [userData, setUserData] = useState({ role: null, name: '', perms: {} });
   const [activeTab, setActiveTab] = useState('pos');
   const [storeConfig, setStoreConfig] = useState({
-    name: 'SmartPOS Pro', address: '', phone: '', logo: '', costCalcMethod: 'LATEST',
+    name: 'QUẢN LÝ BÁN HÀNG', address: '', phone: '', logo: '', costCalcMethod: 'LATEST',
     printPaperSize: 'K80',
     K80: { printFontSize: 12, printTablePaddingX: 4, printTablePaddingY: 6, printDetailFontScale: 80, colWidthStt: 5, colWidthProduct: 35, colWidthQty: 8, colWidthPrice: 12, colWidthWarranty: 12, colWidthNote: 13, colWidthTotal: 15, printShowLogo: true, printShowStoreName: true, printShowStoreAddress: true, printShowStorePhone: true, printInvoiceTitle: 'HÓA ĐƠN BÁN HÀNG', printShowInvoiceId: true, printShowDate: true, printShowCashier: true, printShowCustomer: true, printShowCustomerPhone: true, printShowStatus: true, printShowWarranty: true, printShowNote: true, printFooter: 'Cảm ơn quý khách và hẹn gặp lại!', fsStoreNameOffset: 2, fsStoreAddressOffset: 0, fsStorePhoneOffset: 0, fsInvoiceTitleOffset: 4, fsMetaOffset: 0 },
     A4: { printFontSize: 12, printTablePaddingX: 4, printTablePaddingY: 6, printDetailFontScale: 80, colWidthStt: 5, colWidthProduct: 35, colWidthQty: 8, colWidthPrice: 12, colWidthWarranty: 12, colWidthNote: 13, colWidthTotal: 15, printShowLogo: true, printShowStoreName: true, printShowStoreAddress: true, printShowStorePhone: true, printInvoiceTitle: 'HÓA ĐƠN BÁN HÀNG', printShowInvoiceId: true, printShowDate: true, printShowCashier: true, printShowCustomer: true, printShowCustomerPhone: true, printShowStatus: true, printShowWarranty: true, printShowNote: true, printFooter: 'Cảm ơn quý khách và hẹn gặp lại!', fsStoreNameOffset: 2, fsStoreAddressOffset: 0, fsStorePhoneOffset: 0, fsInvoiceTitleOffset: 4, fsMetaOffset: 0 },
@@ -424,7 +436,7 @@ export default function App() {
       <aside className="w-full md:w-64 bg-white border-r border-gray-200 flex flex-col shadow-[2px_0_8px_-3px_rgba(0,0,0,0.05)] z-20 shrink-0">
         <div className="p-5 border-b border-gray-100 flex items-center gap-3">
           {storeConfig.logo ? <img src={storeConfig.logo} alt="Logo" className="w-10 h-10 object-contain rounded bg-white shadow-sm border border-gray-100" /> : <div className="bg-blue-600 text-white p-2.5 rounded-xl shadow-md"><ShoppingBag size={22} /></div>}
-          <div className="min-w-0"><h1 className="text-lg font-black tracking-tight text-gray-800 truncate">{storeConfig.name || 'SmartPOS'}</h1></div>
+          <div className="min-w-0"><h1 className="text-lg font-black tracking-tight text-gray-800 truncate">{storeConfig.name || 'QUẢN LÝ BÁN HÀNG'}</h1></div>
         </div>
         <nav className="flex-1 p-3 flex flex-row md:flex-col gap-1.5 overflow-x-auto md:overflow-visible scrollbar-hide">
           {visibleTabs.map(tab => {
@@ -443,8 +455,8 @@ export default function App() {
       <main className="flex-1 overflow-hidden flex flex-col h-[calc(100vh-80px)] md:h-screen relative">
         {toast && <div className={"absolute top-4 right-4 z-50 px-6 py-3.5 rounded-xl shadow-xl flex items-center gap-2 text-white animate-in slide-in-from-top-2 " + (toast.type === 'success' ? 'bg-emerald-600' : 'bg-red-600')}><div className="bg-white/20 p-1 rounded-full">{toast.type === 'success' ? <Check size={16} /> : <AlertCircle size={16} />}</div><span className="font-bold text-sm tracking-wide">{toast.msg}</span></div>}
         {activeTab === 'dashboard' && <DashboardView orders={orders} imports={imports} expenses={expenses} customers={customers} suppliers={suppliers} showToast={showToast} />}
-        {activeTab === 'pos' && <POSView products={products} customers={customers} db={db} storeId={storeId} user={user} storeConfig={storeConfig} showToast={showToast} userData={userData} />}
-        {activeTab === 'sales_history' && <SalesHistoryView orders={orders} products={products} customers={customers} storeConfig={storeConfig} db={db} storeId={storeId} user={user} showToast={showToast} />}
+        {activeTab === 'pos' && <POSView products={products} orders={orders} customers={customers} db={db} storeId={storeId} user={user} storeConfig={storeConfig} showToast={showToast} userData={userData} />}
+        {activeTab === 'sales_history' && <SalesHistoryView orders={orders} imports={imports} products={products} customers={customers} storeConfig={storeConfig} db={db} storeId={storeId} user={user} showToast={showToast} />}
         {activeTab === 'imports' && <ImportView products={products} suppliers={suppliers} db={db} storeId={storeId} user={user} showToast={showToast} storeConfig={storeConfig} />}
         {activeTab === 'products' && <InventoryView products={products} orders={orders} imports={imports} storeConfig={storeConfig} db={db} storeId={storeId} showToast={showToast} />}
         {activeTab === 'customers' && <ContactManager type="customers" data={customers} orders={orders} storeConfig={storeConfig} db={db} storeId={storeId} showToast={showToast} />}
@@ -730,7 +742,7 @@ function DashboardView({ orders, imports, expenses, customers, suppliers, showTo
   );
 }
 
-function POSView({ products, customers, db, storeId, user, storeConfig, showToast, userData }) {
+function POSView({ products, orders = [], customers, db, storeId, user, storeConfig, showToast, userData }) {
   const [cart, setCart] = useState([]);
   const [customerId, setCustomerId] = useState('');
   const [isDebt, setIsDebt] = useState(false);
@@ -803,6 +815,7 @@ function POSView({ products, customers, db, storeId, user, storeConfig, showToas
     try {
       const c = customers.find(cust => cust.id === customerId);
       const orderData = {
+        invoiceCode: generateInvoiceCode(orders),
         customerId: customerId || null, customerName: c ? c.name : 'Khách lẻ', sellerUid: user.uid, note: orderNote,
         items: cart.map(i => ({ id: i.id, name: i.name, price: i.price, cost: i.cost || 0, quantity: i.quantity, warrantyValue: i.warrantyValue || '', warrantyUnit: i.warrantyUnit || 'tháng', note: i.note || '' })),
         total: cartTotal, totalCost: cart.reduce((s, item) => s + ((item.cost || 0) * item.quantity), 0),
@@ -932,7 +945,7 @@ function POSView({ products, customers, db, storeId, user, storeConfig, showToas
   );
 }
 
-function SalesHistoryView({ orders, products, customers, storeConfig, db, storeId, user, showToast }) {
+function SalesHistoryView({ orders, imports = [], products, customers, storeConfig, db, storeId, user, showToast }) {
   const currentDate = new Date();
   const [filterType, setFilterType] = useState('day');
   const [selectedDate, setSelectedDate] = useState(currentDate.toISOString().split('T')[0]);
@@ -948,6 +961,8 @@ function SalesHistoryView({ orders, products, customers, storeConfig, db, storeI
   const [newOrderForm, setNewOrderForm] = useState({ customerId: '', status: 'PAID', note: '', items: [] });
   const [showAddCusModal, setShowAddCusModal] = useState(false);
   const [newCusForm, setNewCusForm] = useState({ name: '', phone: '', address: '' });
+  const [historyTarget, setHistoryTarget] = useState(null);
+  const [productTarget, setProductTarget] = useState(null);
 
   useEffect(() => { setLocalPrintSize(storeConfig.printPaperSize || 'K80'); }, [storeConfig.printPaperSize]);
   useEffect(() => {
@@ -976,7 +991,7 @@ function SalesHistoryView({ orders, products, customers, storeConfig, db, storeI
       if (filterType === 'day') { matchTime = d.toISOString().split('T')[0] === selectedDate; }
       else if (filterType === 'month') { matchTime = (d.getMonth() + 1).toString() === filterMonth && d.getFullYear().toString() === filterYear; }
       else if (filterType === 'year') { matchTime = d.getFullYear().toString() === filterYear; }
-      const matchSearch = (o.customerName && o.customerName.toLowerCase().includes(searchTerm.toLowerCase())) || (o.id && o.id.toLowerCase().includes(searchTerm.toLowerCase()));
+      const matchSearch = (o.customerName && o.customerName.toLowerCase().includes(searchTerm.toLowerCase())) || ((o.invoiceCode || o.id || '').toLowerCase().includes(searchTerm.toLowerCase()));
       return matchTime && matchSearch;
     }).sort((a, b) => new Date(b.date) - new Date(a.date));
   }, [orders, filterType, selectedDate, filterMonth, filterYear, searchTerm]);
@@ -1047,6 +1062,7 @@ function SalesHistoryView({ orders, products, customers, storeConfig, db, storeI
       });
       const c = customers.find(cust => cust.id === newOrderForm.customerId);
       const orderData = {
+        invoiceCode: generateInvoiceCode(orders),
         customerId: newOrderForm.customerId || null, customerName: c ? c.name : 'Khách lẻ', sellerUid: user.uid, note: newOrderForm.note,
         items: itemsToSave, total: total, totalCost: totalCost, status: newOrderForm.status, date: new Date().toISOString()
       };
@@ -1128,15 +1144,15 @@ function SalesHistoryView({ orders, products, customers, storeConfig, db, storeI
                 const statusClass = o.status === 'PAID' ? 'bg-green-100 text-green-700' : 'bg-orange-100 text-orange-700';
                 return (
                   <tr key={o.id} className="border-b hover:bg-blue-50/50 transition-colors">
-                    <td className="p-4"><p className="font-bold text-blue-600">#{o.id.slice(0,6).toUpperCase()}</p><p className="text-xs text-gray-400 mt-0.5">{formatDate(o.date)}</p></td>
-                    <td className="p-4 font-bold text-gray-800">{o.customerName || 'Khách lẻ'}</td>
+                    <td className="p-4"><p className="font-bold text-blue-600">#{o.invoiceCode || o.id.slice(0,6).toUpperCase()}</p><p className="text-xs text-gray-400 mt-0.5">{formatDate(o.date)}</p></td>
+                    <td className="p-4 font-bold text-gray-800"><button type="button" className="text-blue-600 underline" onClick={() => setHistoryTarget({ id: o.customerId, name: o.customerName || 'Khách lẻ' })}>{o.customerName || 'Khách lẻ'}</button></td>
                     <td className="p-4">
                       <div className="space-y-1.5">
                         {o.items?.map((it, idx) => {
                           const itemQty = Number(it.quantity || 1); const itemPrice = Number(it.price || 0);
                           return (
                             <div key={idx} className="text-xs bg-gray-50 p-2.5 rounded-lg border border-gray-100 flex flex-col gap-1">
-                              <div className="flex justify-between items-center"><span className="font-semibold text-gray-800">{it.name} (x{itemQty})</span><span className="text-blue-600 font-bold">{formatCurrency(itemPrice * itemQty)}</span></div>
+                              <div className="flex justify-between items-center"><button type="button" className="font-semibold text-blue-600 underline text-left" onClick={() => setProductTarget(it)}>{it.name} (x{itemQty})</button><span className="text-blue-600 font-bold">{formatCurrency(itemPrice * itemQty)}</span></div>
                               {(it.warrantyValue || it.note) && ( <div className="text-[11px] text-gray-500 flex gap-3 mt-0.5 border-t pt-1">{it.warrantyValue && <span>🛡️ BH: <strong className="text-gray-700">{it.warrantyValue} {it.warrantyUnit}</strong></span>}{it.note && <span>📝 Ghi chú: <strong className="text-gray-700">{it.note}</strong></span>}</div> )}
                             </div>
                           );
@@ -1259,6 +1275,20 @@ function SalesHistoryView({ orders, products, customers, storeConfig, db, storeI
             </div>
           </div>
         )}
+      </Modal>
+      <Modal isOpen={!!historyTarget} onClose={() => setHistoryTarget(null)} title={`Lịch sử mua hàng: ${historyTarget?.name || ''}`} maxWidth="max-w-4xl">
+        {historyTarget && (() => {
+          const history = (orders || []).filter(o => historyTarget.id ? o.customerId === historyTarget.id : o.customerName === historyTarget.name).sort((a,b) => new Date(b.date)-new Date(a.date));
+          return <div className="space-y-3"><p className="text-sm text-gray-500">Lịch sử sản phẩm khách đã mua theo thời gian.</p><div className="overflow-auto"><table className="w-full text-sm"><thead className="bg-gray-100"><tr><th className="p-2 text-left">Mã hóa đơn</th><th className="p-2 text-left">Thời gian</th><th className="p-2 text-left">Sản phẩm</th><th className="p-2 text-right">Tổng tiền</th></tr></thead><tbody>{history.map(o => <tr key={o.id} className="border-b"><td className="p-2">{o.invoiceCode || o.id}</td><td className="p-2">{formatDate(o.date)}</td><td className="p-2">{(o.items||[]).map((it,i)=><button key={i} className="block text-blue-600 underline" onClick={() => setProductTarget(it)}>{it.name} × {it.quantity}</button>)}</td><td className="p-2 text-right">{formatCurrency(o.total)}</td></tr>)}</tbody></table></div>{history.length===0 && <p className="p-4 text-center text-gray-500">Chưa có lịch sử mua hàng.</p>}</div>;
+        })()}
+      </Modal>
+      <Modal isOpen={!!productTarget} onClose={() => setProductTarget(null)} title={`Lịch sử sản phẩm: ${productTarget?.name || ''}`} maxWidth="max-w-4xl">
+        {productTarget && (() => {
+          const inRange = d => (!productTarget.from || new Date(d) >= new Date(productTarget.from)) && (!productTarget.to || new Date(d) <= new Date(productTarget.to + 'T23:59:59'));
+          const sold = (orders||[]).filter(o => inRange(o.date) && (o.items||[]).some(it => (productTarget.id && it.id === productTarget.id) || it.name === productTarget.name)).sort((a,b)=>new Date(b.date)-new Date(a.date));
+          const bought = (imports||[]).filter(im => inRange(im.date) && (im.items||[]).some(it => (productTarget.id && it.id === productTarget.id) || it.name === productTarget.name)).sort((a,b)=>new Date(b.date)-new Date(a.date));
+          return <div className="space-y-4"><div className="flex gap-3 flex-wrap"><label className="text-sm">Từ ngày <input type="date" className="border rounded p-1" value={productTarget.from||''} onChange={e=>setProductTarget(v=>({...v,from:e.target.value}))}/></label><label className="text-sm">Đến ngày <input type="date" className="border rounded p-1" value={productTarget.to||''} onChange={e=>setProductTarget(v=>({...v,to:e.target.value}))}/></label></div><h4 className="font-bold">Khách hàng đã mua</h4><div className="overflow-auto"><table className="w-full text-sm"><thead className="bg-gray-100"><tr><th className="p-2 text-left">Khách hàng</th><th className="p-2 text-left">Mã hóa đơn</th><th className="p-2 text-left">Thời gian</th><th className="p-2">Số lượng</th></tr></thead><tbody>{sold.map(o=><tr key={o.id} className="border-b"><td className="p-2">{o.customerName||'Khách lẻ'}</td><td className="p-2">{o.invoiceCode||o.id}</td><td className="p-2">{formatDate(o.date)}</td><td className="p-2">{(o.items||[]).filter(it=>(productTarget.id&&it.id===productTarget.id)||it.name===productTarget.name).reduce((n,it)=>n+Number(it.quantity||0),0)}</td></tr>)}</tbody></table></div><h4 className="font-bold">Nhà cung cấp nhập hàng</h4><div className="overflow-auto"><table className="w-full text-sm"><thead className="bg-gray-100"><tr><th className="p-2 text-left">Nhà cung cấp</th><th className="p-2 text-left">Thời gian</th><th className="p-2">Số lượng</th></tr></thead><tbody>{bought.map(im=><tr key={im.id} className="border-b"><td className="p-2">{im.supplierName||'Chưa rõ'}</td><td className="p-2">{formatDate(im.date)}</td><td className="p-2">{(im.items||[]).filter(it=>(productTarget.id&&it.id===productTarget.id)||it.name===productTarget.name).reduce((n,it)=>n+Number(it.qty||it.quantity||0),0)}</td></tr>)}</tbody></table></div></div>;
+        })()}
       </Modal>
     </div>
   );
@@ -1614,6 +1644,19 @@ function ContactManager({ type, data, orders, storeConfig, db, storeId, showToas
 function InventoryView({ products, orders, imports, storeConfig, db, storeId, showToast }) {
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [form, setForm] = useState({ name: '', category: '', price: '', cost: '', stock: '' });
+  const [groups, setGroups] = useState([]);
+  const [showGroups, setShowGroups] = useState(false);
+  const [newGroupName, setNewGroupName] = useState('');
+  const [groupProductIds, setGroupProductIds] = useState([]);
+  useEffect(() => onSnapshot(collection(db, 'stores', storeId, 'product_groups'), snap => setGroups(snap.docs.map(d => ({id:d.id,...d.data()})))), [db, storeId]);
+  const saveGroup = async () => {
+    const name = newGroupName.trim(); if (!name) return;
+    try {
+      await addDoc(collection(db, 'stores', storeId, 'product_groups'), { name, createdAt: new Date().toISOString() });
+      if (groupProductIds.length) { const batch = writeBatch(db); groupProductIds.forEach(id => batch.update(doc(db, 'stores', storeId, 'products', id), { category: name })); await batch.commit(); }
+      setNewGroupName(''); setGroupProductIds([]); showToast('Đã tạo nhóm hàng và cập nhật sản phẩm');
+    } catch(e) { showToast('Lỗi tạo nhóm hàng', 'error'); }
+  };
   const [selectedIds, setSelectedIds] = useState([]);
   const [searchTerm, setSearchTerm] = useState('');
   const [sortConfig, setSortConfig] = useState({ field: null, direction: 'none' });
@@ -1717,7 +1760,7 @@ function InventoryView({ products, orders, imports, storeConfig, db, storeId, sh
   return (
     <div className="flex-1 flex flex-col p-4 md:p-6 bg-gray-50 overflow-hidden h-full">
       <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center mb-4 gap-3">
-        <h2 className="text-2xl font-bold text-gray-800">Kho Hàng</h2>
+        <div><h2 className="text-2xl font-bold text-gray-800">Kho Hàng</h2><p className="text-xs text-gray-500">Nhóm hàng: {groups.length}</p></div><button onClick={() => setShowGroups(true)} className="bg-indigo-600 text-white px-3 py-2 rounded-lg font-bold">Quản lý nhóm hàng</button>
         <div className="flex items-center gap-3 w-full sm:w-auto">
           <div className="relative flex-1 sm:w-64"><Search size={16} className="absolute left-3 top-3 text-gray-400"/><input placeholder="Tìm kiếm trực tiếp sản phẩm..." value={searchTerm} onChange={e=>{ setSearchTerm(e.target.value); setInvCurrentPage(1); }} className="w-full pl-9 pr-3 py-2 border rounded-lg bg-white outline-none text-sm"/></div>
           <button onClick={() => {setForm({name:'', category:'', price:'', cost:'', stock:''}); setIsModalOpen(true);}} className="bg-blue-600 text-white px-4 py-2 rounded-lg font-bold flex items-center gap-2 shrink-0"><Plus size={18}/> Thêm mới</button>
@@ -1828,11 +1871,19 @@ function InventoryView({ products, orders, imports, storeConfig, db, storeId, sh
       <Modal isOpen={isModalOpen} onClose={() => setIsModalOpen(false)} title={form.id ? "Sửa thông tin Hàng hóa" : "Thêm Hàng hóa mới"}>
         <form onSubmit={handleSave} className="space-y-4">
           <input required placeholder="Tên sản phẩm *" value={form.name||''} onChange={e=>setForm({...form,name:e.target.value})} className="w-full p-2.5 border rounded-lg outline-none"/>
-          <input placeholder="Nhóm hàng (VD: Ốp lưng, Điện thoại...)" value={form.category||''} onChange={e=>setForm({...form,category:e.target.value})} className="w-full p-2.5 border rounded-lg outline-none"/>
+          <select value={form.category||''} onChange={e=>setForm({...form,category:e.target.value})} className="w-full p-2.5 border rounded-lg outline-none"><option value="">Chưa phân nhóm</option>{[...new Set([...groups.map(g=>g.name), ...products.map(p=>p.category).filter(Boolean)])].map(g=><option key={g} value={g}>{g}</option>)}</select>
           <div className="grid grid-cols-2 gap-4"><input required type="number" placeholder="Giá vốn *" value={form.cost||''} onChange={e=>setForm({...form,cost:e.target.value})} className="p-2.5 border rounded-lg outline-none"/><input required type="number" placeholder="Giá bán *" value={form.price||''} onChange={e=>setForm({...form,price:e.target.value})} className="p-2.5 border rounded-lg outline-none"/></div>
           <input required type="number" placeholder="Tồn kho *" value={form.stock||''} onChange={e=>setForm({...form,stock:e.target.value})} className="w-full p-2.5 border rounded-lg outline-none"/>
           <button className="w-full bg-blue-600 text-white font-bold p-3 rounded-lg">Lưu lại</button>
         </form>
+      </Modal>
+      <Modal isOpen={showGroups} onClose={() => setShowGroups(false)} title="Quản lý nhóm hàng" maxWidth="max-w-2xl">
+        <div className="space-y-4">
+          <div className="flex gap-2"><input value={newGroupName} onChange={e=>setNewGroupName(e.target.value)} placeholder="Tên nhóm hàng mới" className="flex-1 border rounded-lg p-2"/><button type="button" onClick={saveGroup} className="bg-blue-600 text-white px-4 rounded-lg font-bold">Tạo nhóm</button></div>
+          <p className="text-sm text-gray-500">Chọn các sản phẩm muốn đưa vào nhóm mới trước khi bấm “Tạo nhóm”.</p>
+          <div className="max-h-64 overflow-y-auto border rounded-lg divide-y">{products.map(p=><label key={p.id} className="flex items-center gap-3 p-2 hover:bg-gray-50"><input type="checkbox" checked={groupProductIds.includes(p.id)} onChange={e=>setGroupProductIds(v=>e.target.checked?[...v,p.id]:v.filter(id=>id!==p.id))}/><span className="flex-1">{p.name}</span><span className="text-xs text-gray-500">{p.category||'Chưa phân nhóm'}</span></label>)}</div>
+          <div><p className="font-bold mb-2">Nhóm hiện có</p>{groups.length ? groups.map(g=><div key={g.id} className="p-2 border-b flex justify-between"><span>{g.name}</span><span className="text-xs text-gray-500">{products.filter(p=>p.category===g.name).length} sản phẩm</span></div>) : <p className="text-sm text-gray-500">Chưa có nhóm hàng.</p>}</div>
+        </div>
       </Modal>
     </div>
   );
