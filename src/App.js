@@ -569,12 +569,11 @@ export default function App() {
         </div>
       </aside>
       <main className="flex-1 overflow-hidden flex flex-col h-[calc(100vh-80px)] md:h-screen relative">
-        <div className="fixed top-3 right-3 md:top-4 md:right-5 z-40 w-[190px] md:w-[220px] rounded-2xl border border-blue-100 bg-white/95 px-3 py-2.5 shadow-lg backdrop-blur-sm text-center pointer-events-none">
-          <div className="text-[10px] md:text-[11px] font-bold uppercase tracking-[0.12em] text-blue-600">Giờ Việt Nam · GMT+7</div>
+        {activeTab === 'dashboard' && <div className="fixed top-3 right-3 md:top-4 md:right-5 z-40 w-[190px] md:w-[220px] rounded-2xl border border-blue-100 bg-white/95 px-3 py-2.5 shadow-lg backdrop-blur-sm text-center pointer-events-none">
           <div className="my-0.5 text-xl md:text-2xl leading-tight font-black tracking-wide tabular-nums text-gray-900">{clockTimeText}</div>
           <div className="border-t border-gray-100 pt-1 text-xs md:text-sm font-semibold text-gray-700">{solarDateText}</div>
           <div className="mt-0.5 text-[11px] md:text-xs font-medium text-amber-700">Âm lịch: {lunarDate.day}/{lunarDate.month}{lunarDate.leap ? ' nhuận' : ''}/{lunarDate.year}</div>
-        </div>
+        </div>}
         {toast && <div className={"absolute top-4 right-4 z-50 px-6 py-3.5 rounded-xl shadow-xl flex items-center gap-2 text-white animate-in slide-in-from-top-2 " + (toast.type === 'success' ? 'bg-emerald-600' : 'bg-red-600')}><div className="bg-white/20 p-1 rounded-full">{toast.type === 'success' ? <Check size={16} /> : <AlertCircle size={16} />}</div><span className="font-bold text-sm tracking-wide">{toast.msg}</span></div>}
         {activeTab === 'dashboard' && <DashboardView orders={orders} imports={imports} expenses={expenses} customers={customers} suppliers={suppliers} showToast={showToast} />}
         {activeTab === 'groups' && <GroupManagementView products={products} db={db} storeId={storeId} showToast={showToast} />}
