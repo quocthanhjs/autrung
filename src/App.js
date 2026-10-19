@@ -27,8 +27,18 @@ const PERMISSION_TREE = [
   { module: 'Sổ quỹ', perms: [{ id: 'quy_so_quy', label: 'Sổ quỹ / Chi phí' }] }
 ];
 
+const VIETNAM_TIME_ZONE = 'Asia/Ho_Chi_Minh';
+const getVietnamDateParts = (date = new Date()) => {
+  const parts = new Intl.DateTimeFormat('en-CA', { timeZone: VIETNAM_TIME_ZONE, year: 'numeric', month: '2-digit', day: '2-digit' }).formatToParts(date);
+  return Object.fromEntries(parts.filter(part => part.type !== 'literal').map(part => [part.type, Number(part.value)]));
+};
+const getVietnamDateKey = (date = new Date()) => {
+  const p = getVietnamDateParts(date);
+  return `${p.year}-${String(p.month).padStart(2, '0')}-${String(p.day).padStart(2, '0')}`;
+};
 const generateInvoiceCode = (orders = [], date = new Date()) => {
-  const prefix = `${String(date.getMonth() + 1).padStart(2, '0')}${String(date.getFullYear()).slice(-2)}`;
+  const vietnamDate = getVietnamDateParts(date);
+  const prefix = `${String(vietnamDate.month).padStart(2, '0')}${String(vietnamDate.year).slice(-2)}`;
   const existing = orders.map(o => o.invoiceCode || '').filter(code => code.startsWith(`AT${prefix}`));
   const maxSeq = existing.reduce((max, code) => {
     const seq = Number(code.slice(6));
@@ -37,102 +47,12 @@ const generateInvoiceCode = (orders = [], date = new Date()) => {
   return `AT${prefix}${String(maxSeq + 1).padStart(8, '0')}`;
 };
 
-// Đồng hồ GMT+7 và chuyển đổi ngày âm lịch Việt Nam.
-const jdFromDate = (dd, mm, yy) => {
-  const a = Math.floor((14 - mm) / 12);
-  const y = yy + 4800 - a;
-  const m = mm + 12 * a - 3;
-  let jd = dd + Math.floor((153 * m + 2) / 5) + 365 * y + Math.floor(y / 4) - Math.floor(y / 100) + Math.floor(y / 400) - 32045;
-  if (jd < 2299161) jd = dd + Math.floor((153 * m + 2) / 5) + 365 * y + Math.floor(y / 4) - 32083;
-  return jd;
-};
-const getNewMoonDay = (k, timeZone) => {
-  const T = k / 1236.85;
-  const T2 = T * T;
-  const T3 = T2 * T;
-  const dr = Math.PI / 180;
-  let jd1 = 2415020.75933 + 29.53058868 * k + 0.0001178 * T2 - 0.000000155 * T3;
-  jd1 += 0.00033 * Math.sin((166.56 + 132.87 * T - 0.009173 * T2) * dr);
-  const M = 359.2242 + 29.10535608 * k - 0.0000333 * T2 - 0.00000347 * T3;
-  const Mpr = 306.0253 + 385.81691806 * k + 0.0107306 * T2 + 0.00001236 * T3;
-  const F = 21.2964 + 390.67050646 * k - 0.0016528 * T2 - 0.00000239 * T3;
-  let C1 = (0.1734 - 0.000393 * T) * Math.sin(M * dr) + 0.0021 * Math.sin(2 * dr * M);
-  C1 -= 0.4068 * Math.sin(Mpr * dr) + 0.0161 * Math.sin(2 * dr * Mpr);
-  C1 -= 0.0004 * Math.sin(3 * dr * Mpr);
-  C1 += 0.0104 * Math.sin(2 * dr * F) - 0.0051 * Math.sin((M + Mpr) * dr);
-  C1 -= 0.0074 * Math.sin((M - Mpr) * dr) + 0.0004 * Math.sin((2 * F + M) * dr);
-  C1 -= 0.0004 * Math.sin((2 * F - M) * dr) - 0.0006 * Math.sin((2 * F + Mpr) * dr);
-  C1 += 0.0010 * Math.sin((2 * F - Mpr) * dr) + 0.0005 * Math.sin((2 * Mpr + M) * dr);
-  const deltaT = T < -11 ? 0.001 + 0.000839 * T + 0.0002261 * T2 - 0.00000845 * T3 - 0.000000081 * T * T3 : -0.000278 + 0.000265 * T + 0.000262 * T2;
-  return Math.floor(jd1 + C1 - deltaT + 0.5 + timeZone / 24);
-};
-const getSunLongitude = (jdn, timeZone) => {
-  const T = (jdn - 2451545.5 - timeZone / 24) / 36525;
-  const T2 = T * T;
-  const dr = Math.PI / 180;
-  const M = 357.52910 + 35999.05030 * T - 0.0001559 * T2 - 0.00000048 * T * T2;
-  const L0 = 280.46645 + 36000.76983 * T + 0.0003032 * T2;
-  let delta = (1.914600 - 0.004817 * T - 0.000014 * T2) * Math.sin(dr * M);
-  delta += (0.019993 - 0.000101 * T) * Math.sin(2 * dr * M) + 0.000290 * Math.sin(3 * dr * M);
-  let L = (L0 + delta) * dr;
-  L -= Math.PI * 2 * Math.floor(L / (Math.PI * 2));
-  return Math.floor(L / Math.PI * 6);
-};
-const getLunarMonth11 = (yy, timeZone) => {
-  const off = jdFromDate(31, 12, yy) - 2415021;
-  const k = Math.floor(off / 29.530588853);
-  let nm = getNewMoonDay(k, timeZone);
-  if (getSunLongitude(nm, timeZone) >= 9) nm = getNewMoonDay(k - 1, timeZone);
-  return nm;
-};
-const getLeapMonthOffset = (a11, timeZone) => {
-  const k = Math.floor(0.5 + (a11 - 2415021.076998695) / 29.530588853);
-  let last = 0;
-  let i = 1;
-  let arc = getSunLongitude(getNewMoonDay(k + i, timeZone), timeZone);
-  do {
-    last = arc;
-    i++;
-    arc = getSunLongitude(getNewMoonDay(k + i, timeZone), timeZone);
-  } while (arc !== last && i < 14);
-  return i - 1;
-};
-const solarToVietnameseLunar = (dd, mm, yy) => {
-  const timeZone = 7;
-  const dayNumber = jdFromDate(dd, mm, yy);
-  const k = Math.floor((dayNumber - 2415021.076998695) / 29.530588853);
-  let monthStart = getNewMoonDay(k + 1, timeZone);
-  if (monthStart > dayNumber) monthStart = getNewMoonDay(k, timeZone);
-  let a11 = getLunarMonth11(yy, timeZone);
-  let b11 = a11;
-  let lunarYear;
-  if (a11 >= monthStart) {
-    lunarYear = yy;
-    a11 = getLunarMonth11(yy - 1, timeZone);
-  } else {
-    lunarYear = yy + 1;
-    b11 = getLunarMonth11(yy + 1, timeZone);
-  }
-  const lunarDay = dayNumber - monthStart + 1;
-  const diff = Math.floor((monthStart - a11) / 29);
-  let lunarLeap = 0;
-  let lunarMonth = diff + 11;
-  if (b11 - a11 > 365) {
-    const leapMonthDiff = getLeapMonthOffset(a11, timeZone);
-    if (diff >= leapMonthDiff) lunarMonth = diff + 10;
-    if (diff === leapMonthDiff) lunarLeap = 1;
-  }
-  if (lunarMonth > 12) lunarMonth -= 12;
-  if (lunarMonth >= 11 && diff < 4) lunarYear--;
-  return { day: lunarDay, month: lunarMonth, year: lunarYear, leap: lunarLeap };
-};
-
 const formatCurrency = (amount) => {
   return new Intl.NumberFormat('vi-VN', { style: 'currency', currency: 'VND' }).format(amount || 0);
 };
 
 const formatDate = (iso) => {
-  return new Intl.DateTimeFormat('vi-VN', { dateStyle: 'short', timeStyle: 'short' }).format(new Date(iso));
+  return new Intl.DateTimeFormat('vi-VN', { timeZone: VIETNAM_TIME_ZONE, dateStyle: 'short', timeStyle: 'short' }).format(new Date(iso));
 };
 
 const getDaysDifference = (isoDate) => {
@@ -447,32 +367,6 @@ export default function App() {
   const [expenses, setExpenses] = useState([]);
   const [loading, setLoading] = useState(true);
   const storeId = 'main_store';
-  const [clockNow, setClockNow] = useState(() => Date.now());
-
-  useEffect(() => {
-    let active = true;
-    let offsetMs = 0;
-    let intervalId;
-    const tick = () => { if (active) setClockNow(Date.now() + offsetMs); };
-    fetch('https://worldtimeapi.org/api/timezone/Asia/Ho_Chi_Minh', { cache: 'no-store' })
-      .then(response => { if (!response.ok) throw new Error('Không đồng bộ được giờ Internet'); return response.json(); })
-      .then(data => {
-        if (!active || !data.unixtime) return;
-        offsetMs = Number(data.unixtime) * 1000 - Date.now();
-        tick();
-      })
-      .catch(() => { /* Nếu API không khả dụng, vẫn hiển thị giờ thiết bị theo múi giờ GMT+7. */ });
-    intervalId = window.setInterval(tick, 1000);
-    return () => { active = false; window.clearInterval(intervalId); };
-  }, []);
-
-  const clockDate = new Date(clockNow);
-  const clockParts = new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Ho_Chi_Minh', year: 'numeric', month: 'numeric', day: 'numeric' }).formatToParts(clockDate);
-  const clockPart = (type) => Number(clockParts.find(part => part.type === type)?.value || 0);
-  const lunarDate = solarToVietnameseLunar(clockPart('day'), clockPart('month'), clockPart('year'));
-  const clockTimeText = new Intl.DateTimeFormat('vi-VN', { timeZone: 'Asia/Ho_Chi_Minh', hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: false }).format(clockDate);
-  const solarDateText = new Intl.DateTimeFormat('vi-VN', { timeZone: 'Asia/Ho_Chi_Minh', day: '2-digit', month: '2-digit', year: 'numeric' }).format(clockDate);
-
   useEffect(() => {
     if (!window.html2canvas) {
       const s = document.createElement('script');
@@ -569,11 +463,6 @@ export default function App() {
         </div>
       </aside>
       <main className="flex-1 overflow-hidden flex flex-col h-[calc(100vh-80px)] md:h-screen relative">
-        {activeTab === 'dashboard' && <div className="fixed top-3 right-3 md:top-4 md:right-5 z-40 w-[190px] md:w-[220px] rounded-2xl border border-blue-100 bg-white/95 px-3 py-2.5 shadow-lg backdrop-blur-sm text-center pointer-events-none">
-          <div className="my-0.5 text-xl md:text-2xl leading-tight font-black tracking-wide tabular-nums text-gray-900">{clockTimeText}</div>
-          <div className="border-t border-gray-100 pt-1 text-xs md:text-sm font-semibold text-gray-700">{solarDateText}</div>
-          <div className="mt-0.5 text-[11px] md:text-xs font-medium text-amber-700">Âm lịch: {lunarDate.day}/{lunarDate.month}{lunarDate.leap ? ' nhuận' : ''}/{lunarDate.year}</div>
-        </div>}
         {toast && <div className={"absolute top-4 right-4 z-50 px-6 py-3.5 rounded-xl shadow-xl flex items-center gap-2 text-white animate-in slide-in-from-top-2 " + (toast.type === 'success' ? 'bg-emerald-600' : 'bg-red-600')}><div className="bg-white/20 p-1 rounded-full">{toast.type === 'success' ? <Check size={16} /> : <AlertCircle size={16} />}</div><span className="font-bold text-sm tracking-wide">{toast.msg}</span></div>}
         {activeTab === 'dashboard' && <DashboardView orders={orders} imports={imports} expenses={expenses} customers={customers} suppliers={suppliers} showToast={showToast} />}
         {activeTab === 'groups' && <GroupManagementView products={products} db={db} storeId={storeId} showToast={showToast} />}
@@ -593,9 +482,10 @@ export default function App() {
 
 function DashboardView({ orders, imports, expenses, customers, suppliers, showToast }) {
   const currentDate = new Date();
+  const currentVietnamDate = getVietnamDateParts(currentDate);
   const [activityRows, setActivityRows] = useState('10');
-  const [filterMonth, setFilterMonth] = useState((currentDate.getMonth() + 1).toString());
-  const [filterYear, setFilterYear] = useState(currentDate.getFullYear().toString());
+  const [filterMonth, setFilterMonth] = useState(currentVietnamDate.month.toString());
+  const [filterYear, setFilterYear] = useState(currentVietnamDate.year.toString());
   const [custSortOrder, setCustSortOrder] = useState('desc');
   const [suppSortOrder, setSuppSortOrder] = useState('desc');
   const [showAllCust, setShowAllCust] = useState(false);
@@ -604,16 +494,16 @@ function DashboardView({ orders, imports, expenses, customers, suppliers, showTo
 
   const stats = useMemo(() => {
     const fOrders = orders.filter(o => {
-      const d = new Date(o.date);
-      return (filterMonth === 'ALL' || (d.getMonth() + 1).toString() === filterMonth) && d.getFullYear().toString() === filterYear;
+      const d = getVietnamDateParts(new Date(o.date));
+      return (filterMonth === 'ALL' || d.month.toString() === filterMonth) && d.year.toString() === filterYear;
     });
     const fImports = imports.filter(i => {
-      const d = new Date(i.date);
-      return (filterMonth === 'ALL' || (d.getMonth() + 1).toString() === filterMonth) && d.getFullYear().toString() === filterYear;
+      const d = getVietnamDateParts(new Date(i.date));
+      return (filterMonth === 'ALL' || d.month.toString() === filterMonth) && d.year.toString() === filterYear;
     });
     const fExpenses = expenses.filter(e => {
-      const d = new Date(e.date);
-      return (filterMonth === 'ALL' || (d.getMonth() + 1).toString() === filterMonth) && d.getFullYear().toString() === filterYear;
+      const d = getVietnamDateParts(new Date(e.date));
+      return (filterMonth === 'ALL' || d.month.toString() === filterMonth) && d.year.toString() === filterYear;
     });
 
     const totalRev = fOrders.reduce((s, o) => s + o.total, 0);
@@ -624,8 +514,8 @@ function DashboardView({ orders, imports, expenses, customers, suppliers, showTo
     const filteredCustDebt = (customers || []).filter(c => {
       if (Number(c.totalDebt || 0) <= 0) return false;
       if (!c.createdAt) return filterMonth === 'ALL';
-      const d = new Date(c.createdAt);
-      return (filterMonth === 'ALL' || (d.getMonth() + 1).toString() === filterMonth) && d.getFullYear().toString() === filterYear;
+      const d = getVietnamDateParts(new Date(c.createdAt));
+      return (filterMonth === 'ALL' || d.month.toString() === filterMonth) && d.year.toString() === filterYear;
     }).sort((a, b) => {
       const timeA = new Date(a.createdAt || 0);
       const timeB = new Date(b.createdAt || 0);
@@ -635,8 +525,8 @@ function DashboardView({ orders, imports, expenses, customers, suppliers, showTo
     const filteredSuppDebt = (suppliers || []).filter(s => {
       if (Number(s.totalDebt || 0) <= 0) return false;
       if (!s.createdAt) return filterMonth === 'ALL';
-      const d = new Date(s.createdAt);
-      return (filterMonth === 'ALL' || (d.getMonth() + 1).toString() === filterMonth) && d.getFullYear().toString() === filterYear;
+      const d = getVietnamDateParts(new Date(s.createdAt));
+      return (filterMonth === 'ALL' || d.month.toString() === filterMonth) && d.year.toString() === filterYear;
     }).sort((a, b) => {
       const timeA = new Date(a.createdAt || 0);
       const timeB = new Date(b.createdAt || 0);
@@ -649,22 +539,24 @@ function DashboardView({ orders, imports, expenses, customers, suppliers, showTo
     // Biểu đồ doanh thu cố định theo 10 ngày gần nhất (kết thúc hôm nay).
     const chartData = {};
     const chartDates = [];
-    const chartToday = new Date();
-    chartToday.setHours(23, 59, 59, 999);
-    const chartStart = new Date();
-    chartStart.setHours(0, 0, 0, 0);
-    chartStart.setDate(chartStart.getDate() - 9);
+    const todayParts = getVietnamDateParts(new Date());
+    const chartToday = new Date(Date.UTC(todayParts.year, todayParts.month - 1, todayParts.day));
+    const chartStart = new Date(chartToday);
+    chartStart.setUTCDate(chartStart.getUTCDate() - 9);
+    const chartKeys = new Set();
     for (let i = 0; i < 10; i++) {
       const d = new Date(chartStart);
-      d.setDate(chartStart.getDate() + i);
-      const key = d.getDate() + '/' + (d.getMonth() + 1);
+      d.setUTCDate(chartStart.getUTCDate() + i);
+      const key = d.getUTCDate() + '/' + (d.getUTCMonth() + 1);
       chartData[key] = 0;
-      chartDates.push({ key, date: new Date(d) });
+      chartKeys.add(getVietnamDateKey(d));
+      chartDates.push({ key, date: d });
     }
     orders.forEach(o => {
-      const d = new Date(o.date);
-      if (d >= chartStart && d <= chartToday) {
-        const dayKey = d.getDate() + '/' + (d.getMonth() + 1);
+      const orderDateKey = getVietnamDateKey(new Date(o.date));
+      if (chartKeys.has(orderDateKey)) {
+        const d = new Date(orderDateKey + 'T00:00:00Z');
+        const dayKey = d.getUTCDate() + '/' + (d.getUTCMonth() + 1);
         if (chartData[dayKey] !== undefined) chartData[dayKey] += Number(o.total) || 0;
       }
     });
@@ -684,7 +576,7 @@ function DashboardView({ orders, imports, expenses, customers, suppliers, showTo
     return { totalRev, totalCost, totalExp, netProfit, overdueCust, overdueCust1Week, chartData, topProducts, filteredCustDebt, filteredSuppDebt };
   }, [orders, imports, expenses, customers, suppliers, filterMonth, filterYear, custSortOrder, suppSortOrder, chartFilter]);
 
-  const years = Array.from({length: 5}, (_, i) => currentDate.getFullYear() - i);
+  const years = Array.from({length: 5}, (_, i) => currentVietnamDate.year - i);
   const StatCard = ({ icon, title, value, color, highlight = false }) => {
     const borderClass = highlight ? 'border-green-300 ring-2 ring-green-100 shadow-md' : 'border-gray-200';
     const textClass = highlight ? 'text-green-700' : 'text-gray-900';
@@ -1079,10 +971,11 @@ function POSView({ products, orders = [], customers, db, storeId, user, storeCon
 
 function SalesHistoryView({ orders, imports = [], products, customers, storeConfig, db, storeId, user, userData, showToast }) {
   const currentDate = new Date();
+  const currentVietnamDate = getVietnamDateParts(currentDate);
   const [filterType, setFilterType] = useState('day');
-  const [selectedDate, setSelectedDate] = useState(currentDate.toISOString().split('T')[0]);
-  const [filterMonth, setFilterMonth] = useState((currentDate.getMonth() + 1).toString());
-  const [filterYear, setFilterYear] = useState(currentDate.getFullYear().toString());
+  const [selectedDate, setSelectedDate] = useState(getVietnamDateKey(currentDate));
+  const [filterMonth, setFilterMonth] = useState(currentVietnamDate.month.toString());
+  const [filterYear, setFilterYear] = useState(currentVietnamDate.year.toString());
   const [searchTerm, setSearchTerm] = useState('');
   const [salesRowsPerPage, setSalesRowsPerPage] = useState('10');
   const [salesCurrentPage, setSalesCurrentPage] = useState(1);
@@ -1118,11 +1011,11 @@ function SalesHistoryView({ orders, imports = [], products, customers, storeConf
 
   const filteredOrders = useMemo(() => {
     return (orders || []).filter(o => {
-      const d = new Date(o.date);
+      const d = getVietnamDateParts(new Date(o.date));
       let matchTime = true;
-      if (filterType === 'day') { matchTime = d.toISOString().split('T')[0] === selectedDate; }
-      else if (filterType === 'month') { matchTime = (d.getMonth() + 1).toString() === filterMonth && d.getFullYear().toString() === filterYear; }
-      else if (filterType === 'year') { matchTime = d.getFullYear().toString() === filterYear; }
+      if (filterType === 'day') { matchTime = getVietnamDateKey(new Date(o.date)) === selectedDate; }
+      else if (filterType === 'month') { matchTime = d.month.toString() === filterMonth && d.year.toString() === filterYear; }
+      else if (filterType === 'year') { matchTime = d.year.toString() === filterYear; }
       const matchSearch = (o.customerName && o.customerName.toLowerCase().includes(searchTerm.toLowerCase())) || ((o.invoiceCode || o.id || '').toLowerCase().includes(searchTerm.toLowerCase()));
       return matchTime && matchSearch;
     }).sort((a, b) => new Date(b.date) - new Date(a.date));
