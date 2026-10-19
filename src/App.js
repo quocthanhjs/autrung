@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { LayoutDashboard, ShoppingCart, Package, Users, Truck, Plus, Edit, Trash2, Check, X, Image as ImageIcon, ShoppingBag, TrendingUp, AlertCircle, ArrowDownToLine, Phone, DollarSign, CheckCircle2, Printer, FileText, CreditCard, Lock, LogOut, ShieldAlert, User as UserIcon, Database, UserCog, KeyRound, MonitorSmartphone, Mail, Download, Upload, ArrowUpDown, Search, Eye, EyeOff, Bell, Award, BarChart3, Receipt, ChevronDown, ChevronUp, Image, Store, Sliders, HardDrive, ChevronLeft, ChevronRight } from 'lucide-react';
 import { initializeApp } from 'firebase/app';
-import { getAuth, signInWithEmailAndPassword, signOut, onAuthStateChanged, sendPasswordResetEmail } from 'firebase/auth';
+import { getAuth, signInWithEmailAndPassword, signOut, onAuthStateChanged, sendPasswordResetEmail, EmailAuthProvider, reauthenticateWithCredential } from 'firebase/auth';
 import { getFirestore, doc, setDoc, getDoc, getDocs, addDoc, updateDoc, deleteDoc, onSnapshot, collection, writeBatch, query, orderBy, where } from 'firebase/firestore';
 
 const firebaseConfig = {
@@ -2186,6 +2186,10 @@ function SettingsView({ db, storeId, showToast, storeConfig }) {
 
   const [loadingFile, setLoadingFile] = useState(false);
   const [saving, setSaving] = useState(false);
+  const [deleteTarget, setDeleteTarget] = useState(null);
+  const [deletePassword, setDeletePassword] = useState('');
+  const [deletePasswordConfirm, setDeletePasswordConfirm] = useState('');
+  const [deletingData, setDeletingData] = useState(false);
 
   useEffect(() => {
     if (storeConfig) {
@@ -2301,6 +2305,66 @@ function SettingsView({ db, storeId, showToast, storeConfig }) {
   };
 
   const menuItems = [{ id: 'customers', label: 'Khách hàng (Nợ phải thu)' }, { id: 'suppliers', label: 'Nhà cung cấp (Nợ phải trả)' }, { id: 'products', label: 'Hàng hóa & Kho' }, { id: 'expenses', label: 'Lịch sử Chi phí' }];
+
+  const openDeleteConfirmation = (target) => {
+    setDeleteTarget(target);
+    setDeletePassword('');
+    setDeletePasswordConfirm('');
+  };
+
+  const handleConfirmedDelete = async (e) => {
+    e?.preventDefault?.();
+    if (!deleteTarget || deletingData) return;
+    if (!deletePassword || !deletePasswordConfirm) {
+      showToast('Vui lòng nhập và xác nhận mật khẩu.', 'error');
+      return;
+    }
+    if (deletePassword !== deletePasswordConfirm) {
+      showToast('Mật khẩu xác nhận không khớp.', 'error');
+      return;
+    }
+    const currentUser = auth.currentUser;
+    if (!currentUser?.email) {
+      showToast('Không xác định được tài khoản quản trị đang đăng nhập. Vui lòng đăng nhập lại.', 'error');
+      return;
+    }
+    setDeletingData(true);
+    try {
+      // Re-authenticate with Firebase Auth; matching two text fields alone is not sufficient.
+      const credential = EmailAuthProvider.credential(currentUser.email, deletePassword);
+      await reauthenticateWithCredential(currentUser, credential);
+
+      const collectionsToDelete = deleteTarget === 'all'
+        ? ['products', 'orders', 'imports', 'customers', 'suppliers', 'expenses']
+        : [deleteTarget];
+
+      for (const collectionName of collectionsToDelete) {
+        const snapshot = await getDocs(collection(db, 'stores', storeId, collectionName));
+        const docs = snapshot.docs;
+        for (let i = 0; i < docs.length; i += 400) {
+          const batch = writeBatch(db);
+          docs.slice(i, i + 400).forEach((item) => batch.delete(item.ref));
+          await batch.commit();
+        }
+      }
+      const deletedLabel = deleteTarget === 'all' ? 'toàn bộ dữ liệu' : ({ orders: 'đơn hàng', customers: 'khách hàng', suppliers: 'nhà cung cấp' }[deleteTarget] || deleteTarget);
+      showToast(`Đã xóa ${deletedLabel} thành công.`);
+      setDeleteTarget(null);
+      setDeletePassword('');
+      setDeletePasswordConfirm('');
+    } catch (err) {
+      console.error('Delete data failed:', err);
+      if (err?.code === 'auth/invalid-credential' || err?.code === 'auth/wrong-password' || err?.code === 'auth/invalid-login-credentials') {
+        showToast('Mật khẩu tài khoản Firebase không đúng.', 'error');
+      } else if (err?.code === 'auth/requires-recent-login') {
+        showToast('Phiên đăng nhập đã cũ. Vui lòng đăng xuất, đăng nhập lại rồi thử lại.', 'error');
+      } else {
+        showToast('Không thể xóa dữ liệu. Vui lòng kiểm tra quyền Firebase và thử lại.', 'error');
+      }
+    } finally {
+      setDeletingData(false);
+    }
+  };
 
   const activeCfg = form[editPaperSize] || {};
   const isA4A5 = editPaperSize === 'A4' || editPaperSize === 'A5';
@@ -2450,22 +2514,13 @@ function SettingsView({ db, storeId, showToast, storeConfig }) {
               <div className="absolute -right-4 -top-4 text-red-100 rotate-12"><HardDrive size={120} /></div>
               <div className="relative z-10">
                 <h3 className="text-lg font-black text-red-800 mb-2 flex items-center gap-2"><ShieldAlert size={20}/> KHU VỰC NGUY HIỂM</h3>
-                <p className="text-sm text-red-700 mb-5 font-medium max-w-lg">Thao tác này sẽ xóa sạch toàn bộ sản phẩm, hóa đơn, khách hàng, nhà cung cấp và chi phí trên cửa hàng. Dữ liệu KHÔNG THỂ KHÔI PHỤC.</p>
-                <button onClick={async () => {
-                  if (window.confirm("CẢNH BÁO TUYỆT ĐỐI: Bạn có chắc chắn muốn XÓA TRẮNG toàn bộ cơ sở dữ liệu không? Thao tác này không thể hoàn tác!")) {
-                    try {
-                      showToast("Đang tiến hành xóa dữ liệu...", "error");
-                      const collections = ['products', 'orders', 'imports', 'customers', 'suppliers', 'expenses'];
-                      for (let col of collections) {
-                        const snap = await getDocs(collection(db, 'stores', storeId, col));
-                        let batch = writeBatch(db); let count = 0;
-                        snap.docs.forEach((d) => { batch.delete(d.ref); count++; if (count >= 400) { batch.commit(); batch = writeBatch(db); count = 0; } });
-                        if (count > 0) await batch.commit();
-                      }
-                      showToast("Đã xóa trắng toàn bộ dữ liệu thành công!");
-                    } catch(err) { showToast("Lỗi khi xóa dữ liệu", "error"); }
-                  }
-                }} className="bg-red-600 hover:bg-red-700 text-white font-bold py-2.5 px-6 rounded-xl shadow-md transition-colors" > Xóa Trắng Toàn Bộ Dữ Liệu </button>
+                <p className="text-sm text-red-700 mb-5 font-medium max-w-lg">Mọi thao tác xóa đều yêu cầu nhập mật khẩu tài khoản đang đăng nhập và xác nhận lại mật khẩu. Dữ liệu đã xóa không thể khôi phục.</p>
+                <button type="button" onClick={() => openDeleteConfirmation('all')} className="bg-red-600 hover:bg-red-700 text-white font-bold py-2.5 px-6 rounded-xl shadow-md transition-colors">Xóa sạch toàn bộ dữ liệu</button>
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 mt-4">
+                  <button type="button" onClick={() => openDeleteConfirmation('orders')} className="bg-white border border-red-300 text-red-700 hover:bg-red-100 font-bold py-2.5 px-4 rounded-xl transition-colors">Xóa đơn hàng</button>
+                  <button type="button" onClick={() => openDeleteConfirmation('customers')} className="bg-white border border-red-300 text-red-700 hover:bg-red-100 font-bold py-2.5 px-4 rounded-xl transition-colors">Xóa khách hàng</button>
+                  <button type="button" onClick={() => openDeleteConfirmation('suppliers')} className="bg-white border border-red-300 text-red-700 hover:bg-red-100 font-bold py-2.5 px-4 rounded-xl transition-colors">Xóa nhà cung cấp</button>
+                </div>
               </div>
             </div>
             <div className="bg-white p-6 rounded-2xl border shadow-sm">
@@ -2485,6 +2540,33 @@ function SettingsView({ db, storeId, showToast, storeConfig }) {
             </div>
           </div>
         )}
+            {deleteTarget && (
+              <div className="fixed inset-0 z-[100] bg-black/60 flex items-center justify-center p-4" role="dialog" aria-modal="true" aria-labelledby="delete-confirm-title">
+                <form onSubmit={handleConfirmedDelete} className="bg-white w-full max-w-md rounded-2xl shadow-2xl p-6 space-y-4">
+                  <div className="flex items-start gap-3">
+                    <div className="bg-red-100 text-red-600 p-3 rounded-xl"><ShieldAlert size={24}/></div>
+                    <div className="flex-1">
+                      <h3 id="delete-confirm-title" className="text-lg font-black text-gray-900">Xác nhận xóa dữ liệu</h3>
+                      <p className="text-sm text-gray-600 mt-1">Bạn đang chọn: <strong>{({ all: 'Xóa sạch toàn bộ dữ liệu', orders: 'Xóa toàn bộ đơn hàng', customers: 'Xóa toàn bộ khách hàng', suppliers: 'Xóa toàn bộ nhà cung cấp' })[deleteTarget]}</strong>. Thao tác này không thể hoàn tác.</p>
+                    </div>
+                  </div>
+                  <div>
+                    <label className="block text-sm font-bold text-gray-700 mb-1">Mật khẩu tài khoản quản trị đang đăng nhập</label>
+                    <input type="password" autoComplete="current-password" value={deletePassword} onChange={e => setDeletePassword(e.target.value)} required className="w-full border border-gray-300 rounded-xl p-3 outline-none focus:ring-2 focus:ring-red-500" placeholder="Nhập mật khẩu hiện tại" />
+                  </div>
+                  <div>
+                    <label className="block text-sm font-bold text-gray-700 mb-1">Nhập lại mật khẩu để xác nhận</label>
+                    <input type="password" autoComplete="current-password" value={deletePasswordConfirm} onChange={e => setDeletePasswordConfirm(e.target.value)} required className="w-full border border-gray-300 rounded-xl p-3 outline-none focus:ring-2 focus:ring-red-500" placeholder="Nhập lại mật khẩu" />
+                  </div>
+                  <p className="text-xs text-gray-500">Mật khẩu sẽ được xác thực với Firebase Authentication trước khi xóa. Mật khẩu không được lưu vào cơ sở dữ liệu.</p>
+                  <div className="flex gap-3 pt-1">
+                    <button type="button" disabled={deletingData} onClick={() => setDeleteTarget(null)} className="flex-1 border border-gray-300 text-gray-700 font-bold py-3 rounded-xl hover:bg-gray-50 disabled:opacity-50">Hủy</button>
+                    <button type="submit" disabled={deletingData} className="flex-1 bg-red-600 hover:bg-red-700 text-white font-bold py-3 rounded-xl disabled:opacity-50">{deletingData ? 'Đang xóa...' : 'Xác nhận xóa'}</button>
+                  </div>
+                </form>
+              </div>
+            )}
+
       </div>
     </div>
   );
