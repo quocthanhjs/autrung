@@ -526,43 +526,26 @@ function DashboardView({ orders, imports, expenses, customers, suppliers, showTo
     const overdueCust = orders.filter(o => o.status === 'DEBT').sort((a,b) => new Date(b.date) - new Date(a.date));
     const overdueCust1Week = overdueCust.filter(o => getDaysDifference(o.date) >= 7);
 
-    let chartData = {};
-    if (chartFilter === '7days') {
-      for (let i = 6; i >= 0; i--) {
-        const d = new Date(); d.setDate(d.getDate() - i);
-        chartData[d.getDate() + '/' + (d.getMonth() + 1)] = 0;
-      }
-    } else if (chartFilter === 'month') {
-      const targetMonth = filterMonth !== 'ALL' ? parseInt(filterMonth) : currentDate.getMonth() + 1;
-      const targetYear = parseInt(filterYear);
-      const daysInMonth = new Date(targetYear, targetMonth, 0).getDate();
-      for (let i = 1; i <= daysInMonth; i++) { chartData[i + '/' + targetMonth] = 0; }
-    } else if (chartFilter === 'year') {
-      ['Th 1', 'Th 2', 'Th 3', 'Th 4', 'Th 5', 'Th 6', 'Th 7', 'Th 8', 'Th 9', 'Th 10', 'Th 11', 'Th 12'].forEach(m => chartData[m] = 0);
+    // Biểu đồ doanh thu cố định theo 10 ngày gần nhất (kết thúc hôm nay).
+    const chartData = {};
+    const chartDates = [];
+    const chartToday = new Date();
+    chartToday.setHours(23, 59, 59, 999);
+    const chartStart = new Date();
+    chartStart.setHours(0, 0, 0, 0);
+    chartStart.setDate(chartStart.getDate() - 9);
+    for (let i = 0; i < 10; i++) {
+      const d = new Date(chartStart);
+      d.setDate(chartStart.getDate() + i);
+      const key = d.getDate() + '/' + (d.getMonth() + 1);
+      chartData[key] = 0;
+      chartDates.push({ key, date: new Date(d) });
     }
-
     orders.forEach(o => {
       const d = new Date(o.date);
-      const oDay = d.getDate(); const oMonth = d.getMonth() + 1; const oYear = d.getFullYear();
-      if (chartFilter === '7days') {
-        const today = new Date(); today.setHours(23, 59, 59, 999);
-        const sevenDaysAgo = new Date(); sevenDaysAgo.setDate(today.getDate() - 6); sevenDaysAgo.setHours(0, 0, 0, 0);
-        if (d >= sevenDaysAgo && d <= today) {
-          const dayKey = oDay + '/' + oMonth;
-          if (chartData[dayKey] !== undefined) chartData[dayKey] += o.total;
-        }
-      } else if (chartFilter === 'month') {
-        const targetMonth = filterMonth !== 'ALL' ? parseInt(filterMonth) : currentDate.getMonth() + 1;
-        const targetYear = parseInt(filterYear);
-        if (oMonth === targetMonth && oYear === targetYear) {
-          const dayKey = oDay + '/' + targetMonth;
-          if (chartData[dayKey] !== undefined) chartData[dayKey] += o.total;
-        }
-      } else if (chartFilter === 'year') {
-        if (oYear === parseInt(filterYear)) {
-          const mKey = 'Th ' + oMonth;
-          if (chartData[mKey] !== undefined) chartData[mKey] += o.total;
-        }
+      if (d >= chartStart && d <= chartToday) {
+        const dayKey = d.getDate() + '/' + (d.getMonth() + 1);
+        if (chartData[dayKey] !== undefined) chartData[dayKey] += Number(o.total) || 0;
       }
     });
 
@@ -605,6 +588,85 @@ function DashboardView({ orders, imports, expenses, customers, suppliers, showTo
           <select value={filterYear} onChange={e=>setFilterYear(e.target.value)} className="bg-transparent font-medium outline-none">
             {years.map(y => (<option key={y} value={y}>Năm {y}</option>))}
           </select>
+        </div>
+      </div>
+
+
+
+      {stats.overdueCust1Week.length > 0 && (
+        <div className="bg-red-50 border-2 border-red-500 rounded-2xl shadow-sm overflow-hidden">
+          <div className="p-4 bg-red-600 flex justify-between items-center text-white"> <h3 className="font-bold flex items-center gap-2 text-lg"><Bell size={24}/> CẢNH BÁO: KHÁCH HÀNG NỢ QUÁ HẠN 1 TUẦN ({stats.overdueCust1Week.length})</h3> </div>
+          <div className="max-h-60 overflow-y-auto">
+            <table className="w-full text-left text-sm bg-white">
+              <thead className="bg-red-50 sticky top-0 border-b border-red-200">
+                <tr><th className="p-3 text-red-800">Khách hàng</th><th className="p-3 text-red-800">Ngày mua</th><th className="p-3 text-red-800">Số ngày nợ</th><th className="p-3 text-red-800">Số tiền</th></tr>
+              </thead>
+              <tbody>
+                {stats.overdueCust1Week.map(o => (
+                  <tr key={o.id} className="border-b hover:bg-red-50/50">
+                    <td className="p-3 font-bold text-gray-800">{o.customerName}</td>
+                    <td className="p-3 text-gray-600">{formatDate(o.date)}</td>
+                    <td className="p-3 font-bold text-red-600">{getDaysDifference(o.date)} ngày</td>
+                    <td className="p-3 font-bold text-red-600 text-lg">{formatCurrency(o.total)}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      )}
+
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+        <StatCard icon={<TrendingUp />} title={"Doanh Thu (T" + (filterMonth==='ALL'?'ổng':filterMonth) + ")"} value={formatCurrency(stats.totalRev)} color="bg-blue-100 text-blue-600" />
+        <StatCard icon={<Package />} title="Tổng Giá Vốn" value={formatCurrency(stats.totalCost)} color="bg-gray-200 text-gray-700" />
+        <StatCard icon={<CreditCard />} title="Tổng Chi Phí" value={formatCurrency(stats.totalExp)} color="bg-orange-100 text-orange-600" />
+        <StatCard icon={<DollarSign />} title="Lãi Ròng (Đã trừ phí)" value={formatCurrency(stats.netProfit)} color="bg-green-100 text-green-600" highlight={true} />
+      </div>
+
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+        <div className="bg-white p-6 rounded-2xl shadow-sm border border-gray-200 lg:col-span-2 flex flex-col">
+          <div className="mb-4 border-b border-gray-100 pb-3">
+            <h3 className="font-bold text-gray-800 flex items-center gap-2"><BarChart3 size={20} className="text-blue-600"/> Biểu đồ doanh thu — 10 ngày gần nhất</h3>
+          </div>
+          <div className="h-[300px] flex min-w-0 gap-2 pt-2">
+            <div className="w-16 shrink-0 flex flex-col justify-between text-[10px] text-gray-500 text-right pb-6 pr-1">
+              {[100, 90, 80, 70, 60, 50, 40, 30, 20, 10, 0].map(v => (
+                <span key={v} className="leading-none">{v === 0 ? '0' : v + 'tr'}</span>
+              ))}
+            </div>
+            <div className="relative flex-1 min-w-0 flex items-stretch border-b border-gray-200">
+              <div className="absolute inset-0 flex flex-col justify-between pointer-events-none">
+                {Array.from({ length: 11 }, (_, i) => <div key={i} className="border-t border-gray-100 w-full" />)}
+              </div>
+              <div className="relative z-[1] w-full flex items-end justify-around gap-1 px-1">
+                {Object.entries(stats.chartData).map(([label, val], idx) => {
+                  const heightPercent = Math.min((Number(val) / 100000000) * 100, 100);
+                  return (
+                    <div key={idx} className="h-full flex-1 min-w-0 flex flex-col justify-end items-center group relative">
+                      <div className="absolute bottom-[calc(100%+4px)] bg-gray-900 text-white text-[10px] px-2 py-1 rounded opacity-0 group-hover:opacity-100 transition whitespace-nowrap shadow-md z-10 pointer-events-none">{label}: {formatCurrency(val)}</div>
+                      <div className={"w-full max-w-10 rounded-t-md transition-all duration-300 " + (val > 0 ? "bg-blue-500 hover:bg-blue-600" : "bg-gray-200")} style={{ height: heightPercent + '%', minHeight: val > 0 ? '2px' : '0px' }} />
+                      <span className="absolute top-full pt-2 text-[10px] text-gray-500 whitespace-nowrap">{label}</span>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          </div>
+        </div>
+        <div className="bg-white p-6 rounded-2xl shadow-sm border border-gray-200 flex flex-col">
+          <h3 className="font-bold text-gray-800 mb-4 flex items-center gap-2"><Award size={20} className="text-amber-500"/> Hàng bán chạy nhất</h3>
+          <div className="flex-1 overflow-y-auto space-y-3">
+            {stats.topProducts.map((p, idx) => (
+              <div key={idx} className="flex items-center justify-between p-3 bg-gray-50 rounded-xl border border-gray-100">
+                <div className="flex items-center gap-3">
+                  <div className={"w-7 h-7 rounded-full flex items-center justify-center font-bold text-xs shadow-sm " + (idx === 0 ? 'bg-amber-100 text-amber-700' : idx === 1 ? 'bg-gray-200 text-gray-700' : 'bg-orange-100 text-orange-700')}>{idx + 1}</div>
+                  <div><p className="font-bold text-gray-800 text-sm truncate max-w-[120px]">{p.name}</p><p className="text-xs text-gray-500">Đã bán: <strong className="text-blue-600">{p.totalQty}</strong></p></div>
+                </div>
+                <span className="font-bold text-sm text-green-700">{formatCurrency(p.totalRev)}</span>
+              </div>
+            ))}
+            {stats.topProducts.length === 0 && (<div className="text-center text-gray-400 py-12">Chưa có sản phẩm nào</div>)}
+          </div>
         </div>
       </div>
 
@@ -667,80 +729,6 @@ function DashboardView({ orders, imports, expenses, customers, suppliers, showTo
           {stats.filteredSuppDebt.length > 10 && (
             <button onClick={() => setShowAllSupp(!showAllSupp)} className="mt-3 text-xs text-orange-600 font-bold hover:underline flex items-center justify-center gap-1 py-1" > {showAllSupp ? <><ChevronUp size={14}/> Thu gọn</> : <><ChevronDown size={14}/> Xem thêm ({stats.filteredSuppDebt.length - 10} nhà cung cấp khác)</>} </button>
           )}
-        </div>
-      </div>
-
-      {stats.overdueCust1Week.length > 0 && (
-        <div className="bg-red-50 border-2 border-red-500 rounded-2xl shadow-sm overflow-hidden">
-          <div className="p-4 bg-red-600 flex justify-between items-center text-white"> <h3 className="font-bold flex items-center gap-2 text-lg"><Bell size={24}/> CẢNH BÁO: KHÁCH HÀNG NỢ QUÁ HẠN 1 TUẦN ({stats.overdueCust1Week.length})</h3> </div>
-          <div className="max-h-60 overflow-y-auto">
-            <table className="w-full text-left text-sm bg-white">
-              <thead className="bg-red-50 sticky top-0 border-b border-red-200">
-                <tr><th className="p-3 text-red-800">Khách hàng</th><th className="p-3 text-red-800">Ngày mua</th><th className="p-3 text-red-800">Số ngày nợ</th><th className="p-3 text-red-800">Số tiền</th></tr>
-              </thead>
-              <tbody>
-                {stats.overdueCust1Week.map(o => (
-                  <tr key={o.id} className="border-b hover:bg-red-50/50">
-                    <td className="p-3 font-bold text-gray-800">{o.customerName}</td>
-                    <td className="p-3 text-gray-600">{formatDate(o.date)}</td>
-                    <td className="p-3 font-bold text-red-600">{getDaysDifference(o.date)} ngày</td>
-                    <td className="p-3 font-bold text-red-600 text-lg">{formatCurrency(o.total)}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        </div>
-      )}
-
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-        <StatCard icon={<TrendingUp />} title={"Doanh Thu (T" + (filterMonth==='ALL'?'ổng':filterMonth) + ")"} value={formatCurrency(stats.totalRev)} color="bg-blue-100 text-blue-600" />
-        <StatCard icon={<Package />} title="Tổng Giá Vốn" value={formatCurrency(stats.totalCost)} color="bg-gray-200 text-gray-700" />
-        <StatCard icon={<CreditCard />} title="Tổng Chi Phí" value={formatCurrency(stats.totalExp)} color="bg-orange-100 text-orange-600" />
-        <StatCard icon={<DollarSign />} title="Lãi Ròng (Đã trừ phí)" value={formatCurrency(stats.netProfit)} color="bg-green-100 text-green-600" highlight={true} />
-      </div>
-
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-        <div className="bg-white p-6 rounded-2xl shadow-sm border border-gray-200 lg:col-span-2 flex flex-col">
-          <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center mb-4 border-b border-gray-100 pb-3 gap-3">
-            <h3 className="font-bold text-gray-800 flex items-center gap-2"><BarChart3 size={20} className="text-blue-600"/> Biểu đồ doanh thu</h3>
-            <select value={chartFilter} onChange={e=>setChartFilter(e.target.value)} className="text-xs bg-gray-50 border border-gray-200 text-gray-700 font-bold rounded-lg px-2.5 py-2 outline-none focus:border-blue-500 w-full sm:w-auto">
-              <option value="7days">7 ngày gần nhất</option>
-              <option value="month">Theo ngày trong Tháng {filterMonth !== 'ALL' ? filterMonth : (new Date().getMonth() + 1)}/{filterYear}</option>
-              <option value="year">Theo tháng trong Năm {filterYear}</option>
-            </select>
-          </div>
-          <div className="flex-1 min-h-[220px] flex items-end gap-1 overflow-x-auto pt-6 pb-2 px-2 border-b border-gray-100 scrollbar-hide">
-            {(() => {
-              const values = Object.values(stats.chartData);
-              const maxVal = Math.max(...values, 1000);
-              return Object.entries(stats.chartData).map(([label, val], idx) => {
-                const heightPercent = Math.max((val / maxVal) * 100, 4);
-                return (
-                  <div key={idx} className="flex-1 flex flex-col items-center gap-2 min-w-[24px] group relative">
-                    <div className="absolute -top-8 bg-gray-900 text-white text-[10px] px-2 py-1 rounded opacity-0 group-hover:opacity-100 transition whitespace-nowrap shadow-md z-10">{label}: {formatCurrency(val)}</div>
-                    <div className={"w-full rounded-t-lg transition-all duration-500 hover:bg-blue-600 " + (val > 0 ? "bg-blue-500" : "bg-gray-200")} style={{ height: heightPercent + '%' }}></div>
-                    <span className="text-[10px] text-gray-500 truncate w-full text-center" style={{fontSize: chartFilter === 'month' ? '8px' : '10px'}}>{label}</span>
-                  </div>
-                );
-              });
-            })()}
-          </div>
-        </div>
-        <div className="bg-white p-6 rounded-2xl shadow-sm border border-gray-200 flex flex-col">
-          <h3 className="font-bold text-gray-800 mb-4 flex items-center gap-2"><Award size={20} className="text-amber-500"/> Hàng bán chạy nhất</h3>
-          <div className="flex-1 overflow-y-auto space-y-3">
-            {stats.topProducts.map((p, idx) => (
-              <div key={idx} className="flex items-center justify-between p-3 bg-gray-50 rounded-xl border border-gray-100">
-                <div className="flex items-center gap-3">
-                  <div className={"w-7 h-7 rounded-full flex items-center justify-center font-bold text-xs shadow-sm " + (idx === 0 ? 'bg-amber-100 text-amber-700' : idx === 1 ? 'bg-gray-200 text-gray-700' : 'bg-orange-100 text-orange-700')}>{idx + 1}</div>
-                  <div><p className="font-bold text-gray-800 text-sm truncate max-w-[120px]">{p.name}</p><p className="text-xs text-gray-500">Đã bán: <strong className="text-blue-600">{p.totalQty}</strong></p></div>
-                </div>
-                <span className="font-bold text-sm text-green-700">{formatCurrency(p.totalRev)}</span>
-              </div>
-            ))}
-            {stats.topProducts.length === 0 && (<div className="text-center text-gray-400 py-12">Chưa có sản phẩm nào</div>)}
-          </div>
         </div>
       </div>
 
