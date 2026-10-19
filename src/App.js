@@ -412,10 +412,11 @@ export default function App() {
   if (!user) return <LoginView onLoginSuccess={(userInfo) => { setUser(userInfo); setUserData({ role: userInfo.role, name: userInfo.name, perms: userInfo.perms }); setActiveTab(userInfo.role === 'admin' ? 'dashboard' : 'pos'); }} />;
 
   const allTabs = [
-    { id: 'dashboard', icon: LayoutDashboard, label: 'Báo cáo & Nhắc nợ', permId: 'tong_quan_xem' },
-    { id: 'pos', icon: ShoppingCart, label: 'Bán hàng (POS)', permId: 'ALWAYS' },
-    { id: 'sales_history', icon: Receipt, label: 'Quản lý Bán Hàng', permId: 'ban_hang' },
+    { id: 'dashboard', icon: LayoutDashboard, label: 'Tổng quan', permId: 'tong_quan_xem' },
+    { id: 'pos', icon: ShoppingCart, label: 'Bán hàng nhanh', permId: 'ALWAYS' },
+    { id: 'sales_history', icon: Receipt, label: 'Bán hàng', permId: 'ban_hang' },
     { id: 'imports', icon: ArrowDownToLine, label: 'Nhập hàng', permId: 'mua_nhap_hang' },
+    { id: 'groups', icon: Package, label: 'Nhóm hàng', permId: 'hh_danh_sach' },
     { id: 'products', icon: Package, label: 'Kho hàng', permId: 'hh_danh_sach' },
     { id: 'customers', icon: Users, label: 'Khách hàng', permId: 'kh_danh_sach' },
     { id: 'suppliers', icon: Truck, label: 'Nhà cung cấp', permId: 'mua_ncc' },
@@ -455,9 +456,10 @@ export default function App() {
       <main className="flex-1 overflow-hidden flex flex-col h-[calc(100vh-80px)] md:h-screen relative">
         {toast && <div className={"absolute top-4 right-4 z-50 px-6 py-3.5 rounded-xl shadow-xl flex items-center gap-2 text-white animate-in slide-in-from-top-2 " + (toast.type === 'success' ? 'bg-emerald-600' : 'bg-red-600')}><div className="bg-white/20 p-1 rounded-full">{toast.type === 'success' ? <Check size={16} /> : <AlertCircle size={16} />}</div><span className="font-bold text-sm tracking-wide">{toast.msg}</span></div>}
         {activeTab === 'dashboard' && <DashboardView orders={orders} imports={imports} expenses={expenses} customers={customers} suppliers={suppliers} showToast={showToast} />}
+        {activeTab === 'groups' && <GroupManagementView products={products} db={db} storeId={storeId} showToast={showToast} />}
         {activeTab === 'pos' && <POSView products={products} orders={orders} customers={customers} db={db} storeId={storeId} user={user} storeConfig={storeConfig} showToast={showToast} userData={userData} />}
-        {activeTab === 'sales_history' && <SalesHistoryView orders={orders} imports={imports} products={products} customers={customers} storeConfig={storeConfig} db={db} storeId={storeId} user={user} showToast={showToast} />}
-        {activeTab === 'imports' && <ImportView products={products} suppliers={suppliers} db={db} storeId={storeId} user={user} showToast={showToast} storeConfig={storeConfig} />}
+        {activeTab === 'sales_history' && <SalesHistoryView orders={orders} imports={imports} products={products} customers={customers} storeConfig={storeConfig} db={db} storeId={storeId} user={user} userData={userData} showToast={showToast} />}
+        {activeTab === 'imports' && <ImportView products={products} suppliers={suppliers} db={db} storeId={storeId} user={user} userData={userData} showToast={showToast} storeConfig={storeConfig} />}
         {activeTab === 'products' && <InventoryView products={products} orders={orders} imports={imports} storeConfig={storeConfig} db={db} storeId={storeId} showToast={showToast} />}
         {activeTab === 'customers' && <ContactManager type="customers" data={customers} orders={orders} storeConfig={storeConfig} db={db} storeId={storeId} showToast={showToast} />}
         {activeTab === 'suppliers' && <ContactManager type="suppliers" data={suppliers} orders={imports} storeConfig={storeConfig} db={db} storeId={storeId} showToast={showToast} />}
@@ -471,6 +473,7 @@ export default function App() {
 
 function DashboardView({ orders, imports, expenses, customers, suppliers, showToast }) {
   const currentDate = new Date();
+  const [activityRows, setActivityRows] = useState('10');
   const [filterMonth, setFilterMonth] = useState((currentDate.getMonth() + 1).toString());
   const [filterYear, setFilterYear] = useState(currentDate.getFullYear().toString());
   const [custSortOrder, setCustSortOrder] = useState('desc');
@@ -593,7 +596,7 @@ function DashboardView({ orders, imports, expenses, customers, suppliers, showTo
   return (
     <div className="flex-1 overflow-y-auto p-4 md:p-6 bg-gray-50/50 space-y-6">
       <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
-        <h2 className="text-2xl font-bold text-gray-800">Báo cáo Kinh doanh & Biểu đồ Nhắc nợ</h2>
+        <h2 className="text-2xl font-bold text-gray-800">Tổng quan kinh doanh & Nhắc nợ</h2>
         <div className="flex items-center gap-3 bg-white p-2 rounded-xl shadow-sm border border-gray-200">
           <select value={filterMonth} onChange={e=>setFilterMonth(e.target.value)} className="bg-transparent font-medium outline-none">
             <option value="ALL">Cả năm</option>{Array.from({length: 12}, (_, i) => (<option key={i+1} value={i+1}>Tháng {i+1}</option>))}
@@ -740,6 +743,25 @@ function DashboardView({ orders, imports, expenses, customers, suppliers, showTo
           </div>
         </div>
       </div>
+
+      <section className="bg-white p-5 rounded-2xl shadow-sm border border-gray-200 space-y-4">
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+          <div><h3 className="font-bold text-gray-800 text-lg">Theo dõi bán hàng và nhập hàng</h3><p className="text-xs text-gray-500 mt-1">Lịch sử giao dịch mới nhất, gồm nhân viên, khách hàng/nhà cung cấp, hàng hóa, số lượng và số tiền.</p></div>
+          <label className="flex items-center gap-2 text-sm font-semibold text-gray-600">Hiển thị
+            <select value={activityRows} onChange={e=>setActivityRows(e.target.value)} className="border rounded-lg px-3 py-2 bg-white">
+              <option value="10">10 dòng mới nhất</option><option value="20">20 dòng</option><option value="50">50 dòng</option><option value="all">Tất cả</option>
+            </select>
+          </label>
+        </div>
+        {(() => {
+          const activity = [
+            ...(orders || []).map(o => ({ ...o, activityType: 'Bán hàng', activityName: o.sellerName || o.sellerUid || 'Chưa lưu nhân viên', partner: o.customerName || 'Khách lẻ', amount: Number(o.total) || 0, date: o.date, rowKey: `sale-${o.id}` })),
+            ...(imports || []).map(i => ({ ...i, activityType: 'Nhập hàng', activityName: i.createdByName || i.createdByUid || 'Chưa lưu nhân viên', partner: i.supplierName || 'Chưa rõ nhà cung cấp', amount: Number(i.total) || 0, date: i.date, rowKey: `import-${i.id}` }))
+          ].sort((a,b) => new Date(b.date || 0) - new Date(a.date || 0));
+          const visibleActivity = activityRows === 'all' ? activity : activity.slice(0, Number(activityRows) || 10);
+          return <div className="overflow-auto border rounded-xl"><table className="w-full text-left text-sm min-w-[900px]"><thead className="bg-gray-100 text-gray-600"><tr><th className="p-3">Thời gian</th><th className="p-3">Loại giao dịch</th><th className="p-3">Người thực hiện</th><th className="p-3">Khách hàng / Nhà cung cấp</th><th className="p-3">Chi tiết hàng hóa & số lượng</th><th className="p-3 text-right">Thành tiền</th></tr></thead><tbody>{visibleActivity.map(a => <tr key={a.rowKey} className="border-t hover:bg-gray-50 align-top"><td className="p-3 whitespace-nowrap">{a.date ? formatDate(a.date) : '—'}</td><td className="p-3"><span className={`px-2 py-1 rounded-lg text-xs font-bold ${a.activityType === 'Bán hàng' ? 'bg-blue-50 text-blue-700' : 'bg-orange-50 text-orange-700'}`}>{a.activityType}</span></td><td className="p-3 font-medium">{a.activityName}</td><td className="p-3">{a.partner}</td><td className="p-3">{(a.items || []).length ? <div className="space-y-1">{a.items.map((it, idx) => <div key={`${a.rowKey}-item-${idx}`}>{it.name || 'Sản phẩm'} × {Number(it.quantity ?? it.qty ?? 1)}</div>)}</div> : 'Không có chi tiết hàng hóa'}</td><td className="p-3 text-right font-bold whitespace-nowrap">{formatCurrency(a.amount)}</td></tr>)}{visibleActivity.length === 0 && <tr><td colSpan="6" className="p-8 text-center text-gray-400">Chưa có giao dịch bán hàng hoặc nhập hàng.</td></tr>}</tbody></table></div>;
+        })()}
+      </section>
     </div>
   );
 }
@@ -818,7 +840,7 @@ function POSView({ products, orders = [], customers, db, storeId, user, storeCon
       const c = customers.find(cust => cust.id === customerId);
       const orderData = {
         invoiceCode: generateInvoiceCode(orders),
-        customerId: customerId || null, customerName: c ? c.name : 'Khách lẻ', sellerUid: user.uid, note: orderNote,
+        customerId: customerId || null, customerName: c ? c.name : 'Khách lẻ', sellerUid: user.uid, sellerName: userData?.name || user?.displayName || user?.email || 'Nhân viên', note: orderNote,
         items: cart.map(i => ({ id: i.id, name: i.name, price: i.price, cost: i.cost || 0, quantity: i.quantity, warrantyValue: i.warrantyValue || '', warrantyUnit: i.warrantyUnit || 'tháng', note: i.note || '' })),
         total: cartTotal, totalCost: cart.reduce((s, item) => s + ((item.cost || 0) * item.quantity), 0),
         status: isDebt ? 'DEBT' : 'PAID', date: new Date().toISOString()
@@ -947,7 +969,7 @@ function POSView({ products, orders = [], customers, db, storeId, user, storeCon
   );
 }
 
-function SalesHistoryView({ orders, imports = [], products, customers, storeConfig, db, storeId, user, showToast }) {
+function SalesHistoryView({ orders, imports = [], products, customers, storeConfig, db, storeId, user, userData, showToast }) {
   const currentDate = new Date();
   const [filterType, setFilterType] = useState('day');
   const [selectedDate, setSelectedDate] = useState(currentDate.toISOString().split('T')[0]);
@@ -1065,7 +1087,7 @@ function SalesHistoryView({ orders, imports = [], products, customers, storeConf
       const c = customers.find(cust => cust.id === newOrderForm.customerId);
       const orderData = {
         invoiceCode: generateInvoiceCode(orders),
-        customerId: newOrderForm.customerId || null, customerName: c ? c.name : 'Khách lẻ', sellerUid: user.uid, note: newOrderForm.note,
+        customerId: newOrderForm.customerId || null, customerName: c ? c.name : 'Khách lẻ', sellerUid: user.uid, sellerName: userData?.name || user?.displayName || user?.email || 'Nhân viên', note: newOrderForm.note,
         items: itemsToSave, total: total, totalCost: totalCost, status: newOrderForm.status, date: new Date().toISOString()
       };
       await addDoc(collection(db, 'stores', storeId, 'orders'), orderData);
@@ -1643,22 +1665,41 @@ function ContactManager({ type, data, orders, storeConfig, db, storeId, showToas
   );
 }
 
-function InventoryView({ products, orders, imports, storeConfig, db, storeId, showToast }) {
-  const [isModalOpen, setIsModalOpen] = useState(false);
-  const [form, setForm] = useState({ name: '', category: '', price: '', cost: '', stock: '' });
+function GroupManagementView({ products, db, storeId, showToast }) {
   const [groups, setGroups] = useState([]);
-  const [showGroups, setShowGroups] = useState(false);
   const [newGroupName, setNewGroupName] = useState('');
   const [groupProductIds, setGroupProductIds] = useState([]);
-  useEffect(() => onSnapshot(collection(db, 'stores', storeId, 'product_groups'), snap => setGroups(snap.docs.map(d => ({id:d.id,...d.data()})))), [db, storeId]);
+  useEffect(() => onSnapshot(collection(db, 'stores', storeId, 'product_groups'), snap => setGroups(snap.docs.map(d => ({ id: d.id, ...d.data() }))), () => showToast('Không tải được danh sách nhóm hàng', 'error')), [db, storeId]);
   const saveGroup = async () => {
-    const name = newGroupName.trim(); if (!name) return;
+    const name = newGroupName.trim();
+    if (!name) return showToast('Vui lòng nhập tên nhóm hàng', 'error');
     try {
       await addDoc(collection(db, 'stores', storeId, 'product_groups'), { name, createdAt: new Date().toISOString() });
-      if (groupProductIds.length) { const batch = writeBatch(db); groupProductIds.forEach(id => batch.update(doc(db, 'stores', storeId, 'products', id), { category: name })); await batch.commit(); }
+      if (groupProductIds.length) {
+        const batch = writeBatch(db);
+        groupProductIds.forEach(id => batch.update(doc(db, 'stores', storeId, 'products', id), { category: name }));
+        await batch.commit();
+      }
       setNewGroupName(''); setGroupProductIds([]); showToast('Đã tạo nhóm hàng và cập nhật sản phẩm');
-    } catch(e) { showToast('Lỗi tạo nhóm hàng', 'error'); }
+    } catch (e) { showToast('Lỗi tạo nhóm hàng', 'error'); }
   };
+  return <div className="flex-1 overflow-y-auto p-4 md:p-6 bg-gray-50/50 space-y-5">
+    <div><h2 className="text-2xl font-bold text-gray-800">Quản lý nhóm hàng</h2><p className="text-sm text-gray-500 mt-1">Tạo nhóm và chọn sản phẩm để đưa vào nhóm.</p></div>
+    <section className="bg-white rounded-2xl border shadow-sm p-5 space-y-4">
+      <h3 className="font-bold text-gray-800">Tạo nhóm hàng mới</h3>
+      <div className="flex flex-col sm:flex-row gap-2"><input value={newGroupName} onChange={e=>setNewGroupName(e.target.value)} placeholder="Tên nhóm hàng mới" className="flex-1 border rounded-lg p-2.5"/><button type="button" onClick={saveGroup} className="bg-blue-600 hover:bg-blue-700 text-white px-5 py-2.5 rounded-lg font-bold">Tạo nhóm</button></div>
+      <p className="text-sm text-gray-500">Chọn sản phẩm bên dưới trước khi bấm “Tạo nhóm”. Sản phẩm đã chọn sẽ được cập nhật nhóm tương ứng.</p>
+      <div className="max-h-80 overflow-y-auto border rounded-xl divide-y">{products.map(p=><label key={p.id} className="flex items-center gap-3 p-3 hover:bg-gray-50"><input type="checkbox" checked={groupProductIds.includes(p.id)} onChange={e=>setGroupProductIds(v=>e.target.checked?[...v,p.id]:v.filter(id=>id!==p.id))} className="w-4 h-4"/><span className="flex-1 font-medium">{p.name}</span><span className="text-xs text-gray-500">{p.category||'Chưa phân nhóm'}</span></label>)}{products.length===0&&<p className="p-5 text-center text-gray-400">Chưa có sản phẩm trong kho.</p>}</div>
+    </section>
+    <section className="bg-white rounded-2xl border shadow-sm p-5"><h3 className="font-bold text-gray-800 mb-3">Nhóm hàng hiện có ({groups.length})</h3>{groups.length ? <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">{groups.map(g=><div key={g.id} className="p-4 border rounded-xl"><p className="font-bold text-gray-800">{g.name}</p><p className="text-sm text-gray-500 mt-1">{products.filter(p=>p.category===g.name).length} sản phẩm</p></div>)}</div> : <p className="text-sm text-gray-500">Chưa có nhóm hàng.</p>}</section>
+  </div>;
+}
+
+function InventoryView({ products, orders, imports, storeConfig, db, storeId, showToast }) {
+  const [groups, setGroups] = useState([]);
+  useEffect(() => onSnapshot(collection(db, 'stores', storeId, 'product_groups'), snap => setGroups(snap.docs.map(d => ({ id: d.id, ...d.data() })))), [db, storeId]);
+  const [isModalOpen, setIsModalOpen] = useState(false);
+  const [form, setForm] = useState({ name: '', category: '', price: '', cost: '', stock: '' });
   const [selectedIds, setSelectedIds] = useState([]);
   const [searchTerm, setSearchTerm] = useState('');
   const [sortConfig, setSortConfig] = useState({ field: null, direction: 'none' });
@@ -1762,7 +1803,7 @@ function InventoryView({ products, orders, imports, storeConfig, db, storeId, sh
   return (
     <div className="flex-1 flex flex-col p-4 md:p-6 bg-gray-50 overflow-hidden h-full">
       <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center mb-4 gap-3">
-        <div><h2 className="text-2xl font-bold text-gray-800">Kho Hàng</h2><p className="text-xs text-gray-500">Nhóm hàng: {groups.length}</p></div><button onClick={() => setShowGroups(true)} className="bg-indigo-600 text-white px-3 py-2 rounded-lg font-bold">Quản lý nhóm hàng</button>
+        <div><h2 className="text-2xl font-bold text-gray-800">Kho Hàng</h2></div>
         <div className="flex items-center gap-3 w-full sm:w-auto">
           <div className="relative flex-1 sm:w-64"><Search size={16} className="absolute left-3 top-3 text-gray-400"/><input placeholder="Tìm kiếm trực tiếp sản phẩm..." value={searchTerm} onChange={e=>{ setSearchTerm(e.target.value); setInvCurrentPage(1); }} className="w-full pl-9 pr-3 py-2 border rounded-lg bg-white outline-none text-sm"/></div>
           <button onClick={() => {setForm({name:'', category:'', price:'', cost:'', stock:''}); setIsModalOpen(true);}} className="bg-blue-600 text-white px-4 py-2 rounded-lg font-bold flex items-center gap-2 shrink-0"><Plus size={18}/> Thêm mới</button>
@@ -1879,14 +1920,6 @@ function InventoryView({ products, orders, imports, storeConfig, db, storeId, sh
           <button className="w-full bg-blue-600 text-white font-bold p-3 rounded-lg">Lưu lại</button>
         </form>
       </Modal>
-      <Modal isOpen={showGroups} onClose={() => setShowGroups(false)} title="Quản lý nhóm hàng" maxWidth="max-w-2xl">
-        <div className="space-y-4">
-          <div className="flex gap-2"><input value={newGroupName} onChange={e=>setNewGroupName(e.target.value)} placeholder="Tên nhóm hàng mới" className="flex-1 border rounded-lg p-2"/><button type="button" onClick={saveGroup} className="bg-blue-600 text-white px-4 rounded-lg font-bold">Tạo nhóm</button></div>
-          <p className="text-sm text-gray-500">Chọn các sản phẩm muốn đưa vào nhóm mới trước khi bấm “Tạo nhóm”.</p>
-          <div className="max-h-64 overflow-y-auto border rounded-lg divide-y">{products.map(p=><label key={p.id} className="flex items-center gap-3 p-2 hover:bg-gray-50"><input type="checkbox" checked={groupProductIds.includes(p.id)} onChange={e=>setGroupProductIds(v=>e.target.checked?[...v,p.id]:v.filter(id=>id!==p.id))}/><span className="flex-1">{p.name}</span><span className="text-xs text-gray-500">{p.category||'Chưa phân nhóm'}</span></label>)}</div>
-          <div><p className="font-bold mb-2">Nhóm hiện có</p>{groups.length ? groups.map(g=><div key={g.id} className="p-2 border-b flex justify-between"><span>{g.name}</span><span className="text-xs text-gray-500">{products.filter(p=>p.category===g.name).length} sản phẩm</span></div>) : <p className="text-sm text-gray-500">Chưa có nhóm hàng.</p>}</div>
-        </div>
-      </Modal>
     </div>
   );
 }
@@ -1971,7 +2004,7 @@ function ExpenseView({ expenses, db, storeId, showToast }) {
   );
 }
 
-function ImportView({ products, suppliers, db, storeId, user, showToast, storeConfig }) {
+function ImportView({ products, suppliers, db, storeId, user, userData, showToast, storeConfig }) {
   const [cart, setCart] = useState([]);
   const [supplierId, setSupplierId] = useState('');
   const [isDebt, setIsDebt] = useState(false);
@@ -2020,7 +2053,7 @@ function ImportView({ products, suppliers, db, storeId, user, showToast, storeCo
     try {
       const s = suppliers.find(sup => sup.id === supplierId);
       const total = cart.reduce((sum, i) => sum + Number(i.importCost || 0) * Number(i.qty || 1), 0);
-      await addDoc(collection(db, 'stores', storeId, 'imports'), { supplierId: supplierId, supplierName: s.name, items: cart, total: total, status: isDebt ? 'DEBT' : 'PAID', date: new Date().toISOString() });
+      await addDoc(collection(db, 'stores', storeId, 'imports'), { supplierId: supplierId, supplierName: s.name, createdByUid: user?.uid || '', createdByName: userData?.name || user?.displayName || user?.email || 'Nhân viên', items: cart, total: total, status: isDebt ? 'DEBT' : 'PAID', date: new Date().toISOString() });
       
       let batch = writeBatch(db);
       cart.forEach(item => {
