@@ -130,7 +130,7 @@ const ReceiptTemplate = ({ order, storeConfig, isA4A5, baseFontSize }) => {
   return (
     <>
       <div className="border-b border-dashed border-gray-400 pb-3 mb-3">
-        {/* Căn giữa toàn bộ phần đầu trang và logo thẳng hàng căn giữa */}
+        {/* Đưa Logo vào chung khối flex column căn giữa thẳng hàng tuyệt đối với Tên, Địa chỉ, SĐT */}
         <div className="flex flex-col items-center text-center">
           {cfg.printShowLogo && storeConfig.logo && (
             <img src={storeConfig.logo} alt="Logo" className="max-h-16 object-contain mb-2" />
