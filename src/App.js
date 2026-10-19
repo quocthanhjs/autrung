@@ -2275,4 +2275,3 @@ function SettingsView({ db, storeId, showToast, storeConfig }) {
   );
 }
 
-export default EnhancedPOS;
