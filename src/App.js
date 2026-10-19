@@ -499,6 +499,7 @@ function DashboardView({ orders, imports, expenses, customers, suppliers, showTo
     const netProfit = totalRev - totalCost - totalExp;
 
     const filteredCustDebt = (customers || []).filter(c => {
+      if (Number(c.totalDebt || 0) <= 0) return false;
       if (!c.createdAt) return filterMonth === 'ALL';
       const d = new Date(c.createdAt);
       return (filterMonth === 'ALL' || (d.getMonth() + 1).toString() === filterMonth) && d.getFullYear().toString() === filterYear;
@@ -509,6 +510,7 @@ function DashboardView({ orders, imports, expenses, customers, suppliers, showTo
     });
 
     const filteredSuppDebt = (suppliers || []).filter(s => {
+      if (Number(s.totalDebt || 0) <= 0) return false;
       if (!s.createdAt) return filterMonth === 'ALL';
       const d = new Date(s.createdAt);
       return (filterMonth === 'ALL' || (d.getMonth() + 1).toString() === filterMonth) && d.getFullYear().toString() === filterYear;
