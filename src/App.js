@@ -414,7 +414,7 @@ export default function App() {
   const allTabs = [
     { id: 'dashboard', icon: LayoutDashboard, label: 'Tổng quan', permId: 'tong_quan_xem' },
     { id: 'pos', icon: ShoppingCart, label: 'Bán hàng nhanh', permId: 'ALWAYS' },
-    { id: 'sales_history', icon: Receipt, label: 'Bán hàng', permId: 'ban_hang' },
+    { id: 'sales_history', icon: Receipt, label: 'Đơn hàng', permId: 'ban_hang' },
     { id: 'imports', icon: ArrowDownToLine, label: 'Nhập hàng', permId: 'mua_nhap_hang' },
     { id: 'groups', icon: Package, label: 'Nhóm hàng', permId: 'hh_danh_sach' },
     { id: 'products', icon: Package, label: 'Kho hàng', permId: 'hh_danh_sach' },
@@ -2274,6 +2274,24 @@ function SettingsView({ db, storeId, showToast, storeConfig }) {
             else if (type === 'customers' && row['Tên khách hàng']) { const rawPhone = row['Điện thoại'] ? String(row['Điện thoại']) : ''; p = { name: String(row['Tên khách hàng']), phone: rawPhone.replace('.0', ''), totalDebt: Number(row['Nợ cần thu hiện tại']) || 0, createdAt: nowIso }; }
             else if (type === 'suppliers' && row['Tên nhà cung cấp']) { const rawPhone = row['Điện thoại'] ? String(row['Điện thoại']) : ''; p = { name: String(row['Tên nhà cung cấp']), phone: rawPhone.replace('.0', ''), totalDebt: Number(row['Nợ cần trả hiện tại']) || 0, createdAt: nowIso }; }
             else if (type === 'expenses' && row['Số tiền']) p = { amount: Number(row['Số tiền']), note: row['Nội dung'] || '', date: nowIso };
+            else if (type === 'orders' && row['Chi tiết hàng hóa (JSON)']) {
+              let items = [];
+              try { items = JSON.parse(String(row['Chi tiết hàng hóa (JSON)'])); } catch { items = []; }
+              const importedDate = row['Ngày giờ'] ? new Date(row['Ngày giờ']) : new Date(nowIso);
+              p = {
+                invoiceCode: String(row['Mã hóa đơn'] || '').trim() || generateInvoiceCode([]),
+                date: Number.isNaN(importedDate.getTime()) ? nowIso : importedDate.toISOString(),
+                customerId: String(row['Mã khách hàng'] || '').trim() || null,
+                customerName: String(row['Khách hàng'] || 'Khách lẻ'),
+                sellerUid: String(row['Mã nhân viên'] || ''),
+                sellerName: String(row['Nhân viên'] || 'Nhập từ Excel'),
+                status: String(row['Trạng thái'] || 'PAID').toUpperCase() === 'DEBT' ? 'DEBT' : 'PAID',
+                note: String(row['Ghi chú'] || ''),
+                total: Number(row['Tổng tiền']) || 0,
+                totalCost: Number(row['Tổng giá vốn']) || 0,
+                items: Array.isArray(items) ? items : []
+              };
+            }
             if (p) { batch.set(doc(collection(db, 'stores', storeId, type)), p); count++; success++; }
             if (count === 400 || i === data.length - 1) { if (count > 0) { await batch.commit(); batch = writeBatch(db); count = 0; } }
           }
@@ -2297,6 +2315,7 @@ function SettingsView({ db, storeId, showToast, storeConfig }) {
         if (type === 'customers') exportData.push({ 'Tên khách hàng': item.name, 'Điện thoại': item.phone, 'Nợ cần thu hiện tại': item.totalDebt });
         if (type === 'suppliers') exportData.push({ 'Tên nhà cung cấp': item.name, 'Điện thoại': item.phone, 'Nợ cần trả hiện tại': item.totalDebt });
         if (type === 'expenses') exportData.push({ 'Ngày': formatDate(item.date), 'Nội dung': item.note, 'Số tiền': item.amount });
+        if (type === 'orders') exportData.push({ 'Mã hóa đơn': item.invoiceCode || '', 'Ngày giờ': item.date || '', 'Mã khách hàng': item.customerId || '', 'Khách hàng': item.customerName || 'Khách lẻ', 'Mã nhân viên': item.sellerUid || '', 'Nhân viên': item.sellerName || '', 'Trạng thái': item.status || 'PAID', 'Ghi chú': item.note || '', 'Tổng tiền': Number(item.total) || 0, 'Tổng giá vốn': Number(item.totalCost) || 0, 'Chi tiết hàng hóa (JSON)': JSON.stringify(item.items || []) });
       });
       const ws = window.XLSX.utils.json_to_sheet(exportData); const wb = window.XLSX.utils.book_new();
       window.XLSX.utils.book_append_sheet(wb, ws, "Data"); window.XLSX.writeFile(wb, "Xuat_Du_Lieu_" + type + ".xlsx");
@@ -2304,7 +2323,7 @@ function SettingsView({ db, storeId, showToast, storeConfig }) {
     } catch(e) { showToast("Lỗi xuất file", "error"); } setLoadingFile(false);
   };
 
-  const menuItems = [{ id: 'customers', label: 'Khách hàng (Nợ phải thu)' }, { id: 'suppliers', label: 'Nhà cung cấp (Nợ phải trả)' }, { id: 'products', label: 'Hàng hóa & Kho' }, { id: 'expenses', label: 'Lịch sử Chi phí' }];
+  const menuItems = [{ id: 'customers', label: 'Khách hàng (Nợ phải thu)' }, { id: 'suppliers', label: 'Nhà cung cấp (Nợ phải trả)' }, { id: 'products', label: 'Hàng hóa & Kho' }, { id: 'expenses', label: 'Lịch sử Chi phí' }, { id: 'orders', label: 'Đơn hàng' }];
 
   const openDeleteConfirmation = (target) => {
     setDeleteTarget(target);
