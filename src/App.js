@@ -97,60 +97,69 @@ const Modal = ({ isOpen, onClose, title, children, maxWidth = "max-w-md", hideHe
 };
 
 const ReceiptTemplate = ({ order, storeConfig, isA4A5, baseFontSize }) => {
-  const padX = storeConfig.printTablePaddingX ?? 4;
-  const padY = storeConfig.printTablePaddingY ?? 6;
-  const detailFontScale = (storeConfig.printDetailFontScale ?? 80) / 100;
+  const sizeKey = storeConfig?.printPaperSize || 'K80';
+  const cfg = storeConfig?.[sizeKey] || storeConfig || {};
+
+  const padX = cfg.printTablePaddingX ?? 4;
+  const padY = cfg.printTablePaddingY ?? 6;
+  const detailFontScale = (cfg.printDetailFontScale ?? 80) / 100;
   const detailFontSize = `${baseFontSize * detailFontScale}px`;
   
   const thStyle = { padding: `${padY}px ${padX}px`, fontSize: detailFontSize, textAlign: 'center' };
   const tdStyle = { padding: `${padY}px ${padX}px`, fontSize: detailFontSize };
 
-  const showBH = isA4A5 && storeConfig.printShowWarranty !== false;
-  const showGC = isA4A5 && storeConfig.printShowNote !== false;
+  const showBH = isA4A5 && cfg.printShowWarranty !== false;
+  const showGC = isA4A5 && cfg.printShowNote !== false;
   const a4a5ColSpan = 4 + (showBH ? 1 : 0) + (showGC ? 1 : 0);
 
-  const wStt = isA4A5 ? `${storeConfig.colWidthStt ?? 5}%` : 'auto';
-  const wProd = isA4A5 ? `${storeConfig.colWidthProduct ?? 35}%` : '45%';
-  const wQty = isA4A5 ? `${storeConfig.colWidthQty ?? 8}%` : '10%';
-  const wPrice = isA4A5 ? `${storeConfig.colWidthPrice ?? 12}%` : '20%';
-  const wWarranty = isA4A5 ? `${storeConfig.colWidthWarranty ?? 12}%` : 'auto';
-  const wNote = isA4A5 ? `${storeConfig.colWidthNote ?? 13}%` : 'auto';
-  const wTotal = isA4A5 ? `${storeConfig.colWidthTotal ?? 15}%` : '25%';
+  const wStt = isA4A5 ? `${cfg.colWidthStt ?? 5}%` : 'auto';
+  const wProd = isA4A5 ? `${cfg.colWidthProduct ?? 35}%` : '45%';
+  const wQty = isA4A5 ? `${cfg.colWidthQty ?? 8}%` : '10%';
+  const wPrice = isA4A5 ? `${cfg.colWidthPrice ?? 12}%` : '20%';
+  const wWarranty = isA4A5 ? `${cfg.colWidthWarranty ?? 12}%` : 'auto';
+  const wNote = isA4A5 ? `${cfg.colWidthNote ?? 13}%` : 'auto';
+  const wTotal = isA4A5 ? `${cfg.colWidthTotal ?? 15}%` : '25%';
+
+  // Cỡ chữ độc lập cho từng dòng ở phần đầu trang
+  const fsStoreName = `${baseFontSize + (cfg.fsStoreNameOffset ?? 2)}px`;
+  const fsStoreAddress = `${baseFontSize + (cfg.fsStoreAddressOffset ?? 0)}px`;
+  const fsStorePhone = `${baseFontSize + (cfg.fsStorePhoneOffset ?? 0)}px`;
+  const fsInvoiceTitle = `${baseFontSize + (cfg.fsInvoiceTitleOffset ?? 4)}px`;
+  const fsMeta = `${baseFontSize + (cfg.fsMetaOffset ?? 0)}px`;
 
   return (
     <>
       <div className="border-b border-dashed border-gray-400 pb-3 mb-3">
-        <div className="flex items-center gap-3">
-          {storeConfig.printShowLogo && storeConfig.logo && (
-            <img src={storeConfig.logo} alt="Logo" className="max-h-16 object-contain" />
+        {/* Căn giữa toàn bộ phần đầu trang và logo thẳng hàng căn giữa */}
+        <div className="flex flex-col items-center text-center">
+          {cfg.printShowLogo && storeConfig.logo && (
+            <img src={storeConfig.logo} alt="Logo" className="max-h-16 object-contain mb-2" />
           )}
-          <div className="text-left flex-1">
-            {storeConfig.printShowStoreName && (
-              <h2 className="font-bold uppercase" style={{fontSize: `${baseFontSize + 2}px`}}>
-                {storeConfig.name || 'SmartPOS Pro'}
-              </h2>
-            )}
-            {storeConfig.printShowStoreAddress && <p className="mt-0.5">ĐC: {storeConfig.address}</p>}
-            {storeConfig.printShowStorePhone && <p>SĐT: {storeConfig.phone}</p>}
-          </div>
+          {cfg.printShowStoreName && (
+            <h2 className="font-bold uppercase" style={{fontSize: fsStoreName}}>
+              {storeConfig.name || 'SmartPOS Pro'}
+            </h2>
+          )}
+          {cfg.printShowStoreAddress && <p className="mt-0.5" style={{fontSize: fsStoreAddress}}>ĐC: {storeConfig.address}</p>}
+          {cfg.printShowStorePhone && <p style={{fontSize: fsStorePhone}}>SĐT: {storeConfig.phone}</p>}
         </div>
 
         <div className="text-center mt-3">
-          <h1 className="font-bold uppercase" style={{fontSize: `${baseFontSize + 4}px`}}>
-            {storeConfig.printInvoiceTitle || 'HÓA ĐƠN BÁN HÀNG'}
+          <h1 className="font-bold uppercase" style={{fontSize: fsInvoiceTitle}}>
+            {cfg.printInvoiceTitle || 'HÓA ĐƠN BÁN HÀNG'}
           </h1>
-          <div className="flex justify-center items-center gap-3 mt-1 text-gray-800">
-            {storeConfig.printShowDate && <span>Ngày tạo: {order?.date ? formatDate(order.date) : '20/10/2026 14:30'}</span>}
-            {storeConfig.printShowInvoiceId && <span>Mã HĐ: {order?.id?.slice(0,6).toUpperCase() || 'HD12345'}</span>}
+          <div className="flex justify-center items-center gap-3 mt-1 text-gray-800" style={{fontSize: fsMeta}}>
+            {cfg.printShowDate && <span>Ngày tạo: {order?.date ? formatDate(order.date) : '20/10/2026 14:30'}</span>}
+            {cfg.printShowInvoiceId && <span>Mã HĐ: {order?.id?.slice(0,6).toUpperCase() || 'HD12345'}</span>}
           </div>
         </div>
       </div>
 
-      <div className="mb-3 space-y-1">
-        {storeConfig.printShowCustomer && <p><strong>Khách hàng:</strong> {order?.customerName || 'Anh Nguyễn Văn A'}</p>}
-        {storeConfig.printShowCustomerPhone && <p><strong>SĐT:</strong> {order?.phone || '0987.654.321'}</p>}
-        {storeConfig.printShowCashier && <p><strong>Thu ngân:</strong> Bán hàng</p>}
-        {storeConfig.printShowStatus && <p><strong>Trạng thái:</strong> {order?.status === 'PAID' ? 'Đã thanh toán' : (order?.status === 'DEBT' ? 'Ghi nợ' : 'Đã thanh toán')}</p>}
+      <div className="mb-3 space-y-1" style={{fontSize: `${baseFontSize}px`}}>
+        {cfg.printShowCustomer && <p><strong>Khách hàng:</strong> {order?.customerName || 'Anh Nguyễn Văn A'}</p>}
+        {cfg.printShowCustomerPhone && <p><strong>SĐT:</strong> {order?.phone || '0987.654.321'}</p>}
+        {cfg.printShowCashier && <p><strong>Thu ngân:</strong> Bán hàng</p>}
+        {cfg.printShowStatus && <p><strong>Trạng thái:</strong> {order?.status === 'PAID' ? 'Đã thanh toán' : (order?.status === 'DEBT' ? 'Ghi nợ' : 'Đã thanh toán')}</p>}
       </div>
 
       <table className="w-full mb-3 border-collapse">
@@ -173,8 +182,8 @@ const ReceiptTemplate = ({ order, storeConfig, isA4A5, baseFontSize }) => {
                 <strong>{i.name}</strong>
                 {!isA4A5 && (
                   <div className="text-[0.85em] text-gray-700 mt-1 space-y-0.5">
-                    {storeConfig.printShowWarranty !== false && i.warrantyValue && <div>- BH: {i.warrantyValue} {i.warrantyUnit}</div>}
-                    {storeConfig.printShowNote !== false && i.note && <div>- GC: {i.note}</div>}
+                    {cfg.printShowWarranty !== false && i.warrantyValue && <div>- BH: {i.warrantyValue} {i.warrantyUnit}</div>}
+                    {cfg.printShowNote !== false && i.note && <div>- GC: {i.note}</div>}
                   </div>
                 )}
               </td>
@@ -194,10 +203,10 @@ const ReceiptTemplate = ({ order, storeConfig, isA4A5, baseFontSize }) => {
         </tfoot>
       </table>
 
-      {storeConfig.printFooter && <div className="text-center mt-4 pt-3 border-t border-dashed border-gray-400"><p className="italic font-medium">{storeConfig.printFooter}</p></div>}
+      {cfg.printFooter && <div className="text-center mt-4 pt-3 border-t border-dashed border-gray-400" style={{fontSize: `${baseFontSize}px`}}><p className="italic font-medium">{cfg.printFooter}</p></div>}
     </>
   );
-};
+}
 
 function LoginView({ onLoginSuccess }) {
   const [loginInput, setLoginInput] = useState('');
@@ -296,20 +305,17 @@ function LoginView({ onLoginSuccess }) {
     </div>
   );
 }
+
 export default function EnhancedPOS() {
   const [user, setUser] = useState(null);
   const [userData, setUserData] = useState({ role: null, name: '', perms: {} });
   const [activeTab, setActiveTab] = useState('pos');
   const [storeConfig, setStoreConfig] = useState({
     name: 'SmartPOS Pro', address: '', phone: '', logo: '', costCalcMethod: 'LATEST',
-    printPaperSize: 'K80', printFontSize: 12, printTablePaddingX: 4, printTablePaddingY: 6,
-    printDetailFontScale: 80, colWidthStt: 5, colWidthProduct: 35, colWidthQty: 8,
-    colWidthPrice: 12, colWidthWarranty: 12, colWidthNote: 13, colWidthTotal: 15,
-    printShowLogo: true, printShowStoreName: true, printShowStoreAddress: true,
-    printShowStorePhone: true, printInvoiceTitle: 'HÓA ĐƠN BÁN HÀNG', printShowInvoiceId: true,
-    printShowDate: true, printShowCashier: true, printShowCustomer: true,
-    printShowCustomerPhone: true, printShowStatus: true, printShowWarranty: true,
-    printShowNote: true, printFooter: 'Cảm ơn quý khách và hẹn gặp lại!'
+    printPaperSize: 'K80',
+    K80: { printFontSize: 12, printTablePaddingX: 4, printTablePaddingY: 6, printDetailFontScale: 80, colWidthStt: 5, colWidthProduct: 35, colWidthQty: 8, colWidthPrice: 12, colWidthWarranty: 12, colWidthNote: 13, colWidthTotal: 15, printShowLogo: true, printShowStoreName: true, printShowStoreAddress: true, printShowStorePhone: true, printInvoiceTitle: 'HÓA ĐƠN BÁN HÀNG', printShowInvoiceId: true, printShowDate: true, printShowCashier: true, printShowCustomer: true, printShowCustomerPhone: true, printShowStatus: true, printShowWarranty: true, printShowNote: true, printFooter: 'Cảm ơn quý khách và hẹn gặp lại!', fsStoreNameOffset: 2, fsStoreAddressOffset: 0, fsStorePhoneOffset: 0, fsInvoiceTitleOffset: 4, fsMetaOffset: 0 },
+    A4: { printFontSize: 12, printTablePaddingX: 4, printTablePaddingY: 6, printDetailFontScale: 80, colWidthStt: 5, colWidthProduct: 35, colWidthQty: 8, colWidthPrice: 12, colWidthWarranty: 12, colWidthNote: 13, colWidthTotal: 15, printShowLogo: true, printShowStoreName: true, printShowStoreAddress: true, printShowStorePhone: true, printInvoiceTitle: 'HÓA ĐƠN BÁN HÀNG', printShowInvoiceId: true, printShowDate: true, printShowCashier: true, printShowCustomer: true, printShowCustomerPhone: true, printShowStatus: true, printShowWarranty: true, printShowNote: true, printFooter: 'Cảm ơn quý khách và hẹn gặp lại!', fsStoreNameOffset: 2, fsStoreAddressOffset: 0, fsStorePhoneOffset: 0, fsInvoiceTitleOffset: 4, fsMetaOffset: 0 },
+    A5: { printFontSize: 12, printTablePaddingX: 4, printTablePaddingY: 6, printDetailFontScale: 80, colWidthStt: 5, colWidthProduct: 35, colWidthQty: 8, colWidthPrice: 12, colWidthWarranty: 12, colWidthNote: 13, colWidthTotal: 15, printShowLogo: true, printShowStoreName: true, printShowStoreAddress: true, printShowStorePhone: true, printInvoiceTitle: 'HÓA ĐƠN BÁN HÀNG', printShowInvoiceId: true, printShowDate: true, printShowCashier: true, printShowCustomer: true, printShowCustomerPhone: true, printShowStatus: true, printShowWarranty: true, printShowNote: true, printFooter: 'Cảm ơn quý khách và hẹn gặp lại!', fsStoreNameOffset: 2, fsStoreAddressOffset: 0, fsStorePhoneOffset: 0, fsInvoiceTitleOffset: 4, fsMetaOffset: 0 }
   });
 
   const [products, setProducts] = useState([]);
@@ -347,7 +353,13 @@ export default function EnhancedPOS() {
     const unsubStore = onSnapshot(doc(db, 'stores', storeId), (docSnap) => {
       if (docSnap.exists()) {
         const data = docSnap.data();
-        setStoreConfig(prev => ({ ...prev, ...data }));
+        setStoreConfig(prev => ({
+          ...prev,
+          ...data,
+          K80: { ...(prev.K80 || {}), ...(data.K80 || {}) },
+          A4: { ...(prev.A4 || {}), ...(data.A4 || {}) },
+          A5: { ...(prev.A5 || {}), ...(data.A5 || {}) }
+        }));
       }
     });
 
@@ -809,7 +821,8 @@ function POSView({ products, customers, db, storeId, user, storeConfig, showToas
 
   const isA4A5 = localPrintSize === 'A4' || localPrintSize === 'A5';
   const paperWidthClass = localPrintSize === 'K80' ? 'max-w-[300px]' : (localPrintSize === 'A4' ? 'max-w-[210mm]' : 'max-w-[148mm]');
-  const baseFontSize = Number(storeConfig?.printFontSize) || 12;
+  const activeCfg = storeConfig?.[localPrintSize] || storeConfig || {};
+  const baseFontSize = Number(activeCfg.printFontSize) || 12;
 
   return (
     <div className="flex-1 flex flex-col lg:flex-row bg-gray-50 h-full overflow-hidden">
@@ -891,7 +904,7 @@ function POSView({ products, customers, db, storeId, user, storeConfig, showToas
               <div className="flex gap-2"><button onClick={handlePrintAsImage} className="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg text-xs font-bold flex items-center gap-1.5 shadow-md transition-colors"><Printer size={16}/> In Hóa Đơn</button></div>
             </div>
             <div id="print-invoice-area-pos" className={`bg-white shadow-xl border border-gray-200 mx-auto transition-all ${paperWidthClass}`} style={{ fontSize: `${baseFontSize}px`, padding: isA4A5 ? '20px' : '15px', color: '#000', fontFamily: 'sans-serif' }}>
-              <ReceiptTemplate order={completedOrder} storeConfig={{...storeConfig, printPaperSize: localPrintSize}} isA4A5={isA4A5} baseFontSize={baseFontSize} />
+              <ReceiptTemplate order={completedOrder} storeConfig={storeConfig} isA4A5={isA4A5} baseFontSize={baseFontSize} />
             </div>
           </div>
         )}
@@ -1036,7 +1049,8 @@ function SalesHistoryView({ orders, products, customers, storeConfig, db, storeI
 
   const isA4A5 = localPrintSize === 'A4' || localPrintSize === 'A5';
   const paperWidthClass = localPrintSize === 'K80' ? 'max-w-[300px]' : (localPrintSize === 'A4' ? 'max-w-[210mm]' : 'max-w-[148mm]');
-  const baseFontSize = Number(storeConfig?.printFontSize) || 12;
+  const activeCfg = storeConfig?.[localPrintSize] || storeConfig || {};
+  const baseFontSize = Number(activeCfg.printFontSize) || 12;
 
   return (
     <div className="flex-1 flex flex-col p-4 md:p-6 bg-gray-50 overflow-hidden h-full">
@@ -1222,7 +1236,7 @@ function SalesHistoryView({ orders, products, customers, storeConfig, db, storeI
               <div className="flex gap-2"><button onClick={handlePrintAsImage} className="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg text-sm font-bold flex items-center gap-1.5 shadow-md"><Printer size={16}/> In Ảnh Trực Tiếp</button></div>
             </div>
             <div id="print-invoice-area" className={`bg-white shadow-xl border border-gray-200 mx-auto transition-all ${paperWidthClass}`} style={{ fontSize: `${baseFontSize}px`, padding: isA4A5 ? '20px' : '15px', color: '#000', fontFamily: 'sans-serif' }}>
-              <ReceiptTemplate order={viewingOrderPrint} storeConfig={{...storeConfig, printPaperSize: localPrintSize}} isA4A5={isA4A5} baseFontSize={baseFontSize} />
+              <ReceiptTemplate order={viewingOrderPrint} storeConfig={storeConfig} isA4A5={isA4A5} baseFontSize={baseFontSize} />
             </div>
           </div>
         )}
@@ -1894,7 +1908,19 @@ function ImportView({ products, suppliers, db, storeId, user, showToast, storeCo
   const [showAddProdModal, setShowAddProdModal] = useState(false);
   const [newProdForm, setNewProdForm] = useState({ name: '', category: '', cost: '', price: '', stock: '' });
 
+  const [importRowsPerPage, setImportRowsPerPage] = useState('10');
+  const [importCurrentPage, setImportCurrentPage] = useState(1);
+
   const filteredProducts = useMemo(() => products.filter(p => p.name && p.name.toLowerCase().includes(searchTerm.toLowerCase())), [products, searchTerm]);
+
+  const paginatedProducts = useMemo(() => {
+    if (importRowsPerPage === 'all') return filteredProducts;
+    const limit = parseInt(importRowsPerPage) || 10;
+    const start = (importCurrentPage - 1) * limit;
+    return filteredProducts.slice(start, start + limit);
+  }, [filteredProducts, importRowsPerPage, importCurrentPage]);
+
+  const totalImportPages = importRowsPerPage === 'all' ? 1 : Math.ceil(filteredProducts.length / (parseInt(importRowsPerPage) || 10));
 
   const handleAddSupplierQuick = async (e) => {
     e.preventDefault();
@@ -1945,21 +1971,49 @@ function ImportView({ products, suppliers, db, storeId, user, showToast, storeCo
 
   return (
     <div className="flex-1 flex flex-col lg:flex-row overflow-hidden bg-gray-50 h-full">
-      <div className="flex-1 p-4 md:p-6 overflow-y-auto flex flex-col">
-        <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center mb-4 gap-3">
-          <div className="flex items-center gap-2"><h2 className="text-xl font-bold text-gray-800">Kho hàng (Chọn sản phẩm nhập)</h2><button onClick={() => setShowAddProdModal(true)} className="bg-blue-600 hover:bg-blue-700 text-white px-3 py-1.5 rounded-lg text-xs font-bold flex items-center gap-1 shadow"><Plus size={14}/> Thêm mới</button></div>
-          <div className="relative w-full sm:w-64"><Search size={16} className="absolute left-3 top-3 text-gray-400"/><input placeholder="Tìm kiếm sản phẩm nhập..." value={searchTerm} onChange={e=>setSearchTerm(e.target.value)} className="w-full pl-9 pr-3 py-2 border rounded-lg bg-white outline-none text-sm"/></div>
+      <div className="flex-1 p-4 md:p-6 flex flex-col overflow-hidden">
+        <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center mb-4 gap-3 shrink-0">
+          <div className="flex items-center gap-2"><h2 className="text-xl font-bold text-gray-800">Chọn sản phẩm nhập</h2><button onClick={() => setShowAddProdModal(true)} className="bg-blue-600 hover:bg-blue-700 text-white px-3 py-1.5 rounded-lg text-xs font-bold flex items-center gap-1 shadow"><Plus size={14}/> Thêm mới</button></div>
+          <div className="relative w-full sm:w-64"><Search size={16} className="absolute left-3 top-3 text-gray-400"/><input placeholder="Tìm kiếm sản phẩm nhập..." value={searchTerm} onChange={e=>{setSearchTerm(e.target.value); setImportCurrentPage(1);}} className="w-full pl-9 pr-3 py-2 border rounded-lg bg-white outline-none text-sm"/></div>
         </div>
-        <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-          {filteredProducts.map(p => (
-            <div key={p.id} onClick={() => addProductToCart(p)} className="bg-white p-3 rounded-xl border cursor-pointer hover:border-blue-400 shadow-sm transition">
-              {p.category && <span className="text-[10px] bg-blue-50 text-blue-600 px-1.5 py-0.5 rounded font-bold mb-1 inline-block">{p.category}</span>}
-              <h3 className="font-semibold text-sm truncate text-gray-800">{p.name}</h3>
-              <div className="flex justify-between items-end mt-2"><p className="text-xs text-gray-500">Tồn: {p.stock}</p><p className="text-blue-600 font-bold text-xs">{formatCurrency(p.cost)}</p></div>
-            </div>
-          ))}
+
+        <div className="flex-1 bg-white rounded-xl border shadow-sm overflow-hidden flex flex-col justify-between">
+          <div className="overflow-auto flex-1">
+            <table className="w-full text-left text-sm">
+              <thead className="bg-gray-100 sticky top-0 border-b select-none">
+                <tr>
+                  <th className="p-4 font-bold text-gray-600">Sản phẩm</th>
+                  <th className="p-4 font-bold text-gray-600">Nhóm</th>
+                  <th className="p-4 font-bold text-gray-600">Giá vốn</th>
+                  <th className="p-4 font-bold text-gray-600">Tồn</th>
+                  <th className="p-4 font-bold text-gray-600 text-right">Thao tác</th>
+                </tr>
+              </thead>
+              <tbody>
+                {paginatedProducts.map(p => {
+                  const stockClass = p.stock < 0 ? 'text-red-600' : 'text-gray-800';
+                  return (
+                    <tr key={p.id} className="border-b hover:bg-blue-50/50 cursor-pointer" onClick={() => addProductToCart(p)}>
+                      <td className="p-4 font-medium text-blue-600">{p.name}</td>
+                      <td className="p-4"><p className="text-[11px] bg-gray-100 border inline-block px-1.5 py-0.5 rounded text-gray-600">{p.category || 'Chưa phân nhóm'}</p></td>
+                      <td className="p-4 text-gray-600">{formatCurrency(p.cost)}</td>
+                      <td className={"p-4 font-bold " + stockClass}>{p.stock}</td>
+                      <td className="p-4 text-right">
+                         <button onClick={(e) => { e.stopPropagation(); addProductToCart(p); }} className="text-blue-600 bg-blue-50 px-3 py-1.5 rounded-lg font-bold hover:bg-blue-100 text-xs">Chọn nhập</button>
+                      </td>
+                    </tr>
+                  );
+                })}
+                {paginatedProducts.length === 0 && (<tr><td colSpan="5" className="p-8 text-center text-gray-400">Không tìm thấy sản phẩm</td></tr>)}
+              </tbody>
+            </table>
+          </div>
+          <div className="border-t shrink-0">
+            <PaginationControls currentPage={importCurrentPage} totalPages={totalImportPages} rowsPerPage={importRowsPerPage} onPageChange={(p) => setImportCurrentPage(p)} onRowsChange={(r) => { setImportRowsPerPage(r); setImportCurrentPage(1); }} totalItems={filteredProducts.length} />
+          </div>
         </div>
       </div>
+      
       <div className="w-full lg:w-[460px] bg-white border-l shadow-lg shrink-0 z-20 flex flex-col h-[65vh] lg:h-auto">
         <div className="p-4 border-b bg-gray-50"><h2 className="font-bold flex items-center gap-2"><ArrowDownToLine size={20} className="text-gray-600"/> Phiếu Nhập Kho</h2></div>
         <div className="flex-1 overflow-y-auto p-4 space-y-3">
@@ -2013,17 +2067,31 @@ function ImportView({ products, suppliers, db, storeId, user, showToast, storeCo
 
 function SettingsView({ db, storeId, showToast, storeConfig }) {
   const [activeSubTab, setActiveSubTab] = useState('general');
+  const [editPaperSize, setEditPaperSize] = useState('K80');
+  
   const [form, setForm] = useState({
     name: storeConfig?.name || '', address: storeConfig?.address || '', phone: storeConfig?.phone || '', logo: storeConfig?.logo || '',
-    costCalcMethod: storeConfig?.costCalcMethod || 'LATEST', printPaperSize: storeConfig?.printPaperSize || 'K80', printFontSize: storeConfig?.printFontSize || 12,
-    printTablePaddingX: storeConfig?.printTablePaddingX ?? 4, printTablePaddingY: storeConfig?.printTablePaddingY ?? 6, printDetailFontScale: storeConfig?.printDetailFontScale ?? 80,
-    colWidthStt: storeConfig?.colWidthStt ?? 5, colWidthProduct: storeConfig?.colWidthProduct ?? 35, colWidthQty: storeConfig?.colWidthQty ?? 8, colWidthPrice: storeConfig?.colWidthPrice ?? 12, colWidthWarranty: storeConfig?.colWidthWarranty ?? 12, colWidthNote: storeConfig?.colWidthNote ?? 13, colWidthTotal: storeConfig?.colWidthTotal ?? 15,
-    printShowLogo: storeConfig?.printShowLogo ?? true, printShowStoreName: storeConfig?.printShowStoreName ?? true, printShowStoreAddress: storeConfig?.printShowStoreAddress ?? true, printShowStorePhone: storeConfig?.printShowStorePhone ?? true,
-    printInvoiceTitle: storeConfig?.printInvoiceTitle || 'HÓA ĐƠN BÁN HÀNG', printShowInvoiceId: storeConfig?.printShowInvoiceId ?? true, printShowDate: storeConfig?.printShowDate ?? true, printShowCashier: storeConfig?.printShowCashier ?? true, printShowCustomer: storeConfig?.printShowCustomer ?? true, printShowCustomerPhone: storeConfig?.printShowCustomerPhone ?? true, printShowStatus: storeConfig?.printShowStatus ?? true, printShowWarranty: storeConfig?.printShowWarranty ?? true, printShowNote: storeConfig?.printShowNote ?? true,
-    printFooter: storeConfig?.printFooter || 'Cảm ơn quý khách và hẹn gặp lại!'
+    costCalcMethod: storeConfig?.costCalcMethod || 'LATEST',
+    printPaperSize: storeConfig?.printPaperSize || 'K80',
+    K80: storeConfig?.K80 || { printFontSize: 12, printTablePaddingX: 4, printTablePaddingY: 6, printDetailFontScale: 80, colWidthStt: 5, colWidthProduct: 35, colWidthQty: 8, colWidthPrice: 12, colWidthWarranty: 12, colWidthNote: 13, colWidthTotal: 15, printShowLogo: true, printShowStoreName: true, printShowStoreAddress: true, printShowStorePhone: true, printInvoiceTitle: 'HÓA ĐƠN BÁN HÀNG', printShowInvoiceId: true, printShowDate: true, printShowCashier: true, printShowCustomer: true, printShowCustomerPhone: true, printShowStatus: true, printShowWarranty: true, printShowNote: true, printFooter: 'Cảm ơn quý khách và hẹn gặp lại!', fsStoreNameOffset: 2, fsStoreAddressOffset: 0, fsStorePhoneOffset: 0, fsInvoiceTitleOffset: 4, fsMetaOffset: 0 },
+    A4: storeConfig?.A4 || { printFontSize: 12, printTablePaddingX: 4, printTablePaddingY: 6, printDetailFontScale: 80, colWidthStt: 5, colWidthProduct: 35, colWidthQty: 8, colWidthPrice: 12, colWidthWarranty: 12, colWidthNote: 13, colWidthTotal: 15, printShowLogo: true, printShowStoreName: true, printShowStoreAddress: true, printShowStorePhone: true, printInvoiceTitle: 'HÓA ĐƠN BÁN HÀNG', printShowInvoiceId: true, printShowDate: true, printShowCashier: true, printShowCustomer: true, printShowCustomerPhone: true, printShowStatus: true, printShowWarranty: true, printShowNote: true, printFooter: 'Cảm ơn quý khách và hẹn gặp lại!', fsStoreNameOffset: 2, fsStoreAddressOffset: 0, fsStorePhoneOffset: 0, fsInvoiceTitleOffset: 4, fsMetaOffset: 0 },
+    A5: storeConfig?.A5 || { printFontSize: 12, printTablePaddingX: 4, printTablePaddingY: 6, printDetailFontScale: 80, colWidthStt: 5, colWidthProduct: 35, colWidthQty: 8, colWidthPrice: 12, colWidthWarranty: 12, colWidthNote: 13, colWidthTotal: 15, printShowLogo: true, printShowStoreName: true, printShowStoreAddress: true, printShowStorePhone: true, printInvoiceTitle: 'HÓA ĐƠN BÁN HÀNG', printShowInvoiceId: true, printShowDate: true, printShowCashier: true, printShowCustomer: true, printShowCustomerPhone: true, printShowStatus: true, printShowWarranty: true, printShowNote: true, printFooter: 'Cảm ơn quý khách và hẹn gặp lại!', fsStoreNameOffset: 2, fsStoreAddressOffset: 0, fsStorePhoneOffset: 0, fsInvoiceTitleOffset: 4, fsMetaOffset: 0 }
   });
+
   const [loadingFile, setLoadingFile] = useState(false);
   const [saving, setSaving] = useState(false);
+
+  useEffect(() => {
+    if (storeConfig) {
+      setForm(prev => ({
+        ...prev,
+        ...storeConfig,
+        K80: { ...(prev.K80 || {}), ...(storeConfig.K80 || {}) },
+        A4: { ...(prev.A4 || {}), ...(storeConfig.A4 || {}) },
+        A5: { ...(prev.A5 || {}), ...(storeConfig.A5 || {}) }
+      }));
+    }
+  }, [storeConfig]);
 
   useEffect(() => {
     if (!window.XLSX) {
@@ -2047,17 +2115,36 @@ function SettingsView({ db, storeId, showToast, storeConfig }) {
     } catch(err) { showToast("Lỗi khi lưu cài đặt", "error"); } finally { setSaving(false); }
   };
 
+  const updateActiveSizeConfig = (field, value) => {
+    setForm(prev => ({
+      ...prev,
+      [editPaperSize]: {
+        ...(prev[editPaperSize] || {}),
+        [field]: value
+      }
+    }));
+  };
+
   const handleColWidthChange = (field, newValueStr) => {
     let newValue = parseInt(newValueStr) || 1;
+    const currentCfg = form[editPaperSize] || {};
     const cols = ['colWidthStt', 'colWidthProduct', 'colWidthQty', 'colWidthPrice', 'colWidthWarranty', 'colWidthNote', 'colWidthTotal'];
     const idx = cols.indexOf(field);
     if (idx === -1) return;
-    const oldVal = form[field]; let diff = newValue - oldVal;
+    const oldVal = currentCfg[field] ?? 10; let diff = newValue - oldVal;
     if (diff === 0) return;
     const nextIdx = idx === cols.length - 1 ? idx - 1 : idx + 1;
     const nextField = cols[nextIdx];
-    if (form[nextField] - diff < 1) { diff = form[nextField] - 1; newValue = oldVal + diff; }
-    setForm({ ...form, [field]: newValue, [nextField]: form[nextField] - diff });
+    if ((currentCfg[nextField] ?? 10) - diff < 1) { diff = (currentCfg[nextField] ?? 10) - 1; newValue = oldVal + diff; }
+    
+    setForm(prev => ({
+      ...prev,
+      [editPaperSize]: {
+        ...(prev[editPaperSize] || {}),
+        [field]: newValue,
+        [nextField]: (prev[editPaperSize][nextField] ?? 10) - diff
+      }
+    }));
   };
 
   const handleImport = async (e, type) => {
@@ -2109,13 +2196,15 @@ function SettingsView({ db, storeId, showToast, storeConfig }) {
 
   const menuItems = [{ id: 'customers', label: 'Khách hàng (Nợ phải thu)' }, { id: 'suppliers', label: 'Nhà cung cấp (Nợ phải trả)' }, { id: 'products', label: 'Hàng hóa & Kho' }, { id: 'expenses', label: 'Lịch sử Chi phí' }];
 
+  const activeCfg = form[editPaperSize] || {};
+  const isA4A5 = editPaperSize === 'A4' || editPaperSize === 'A5';
+  const paperWidthClass = editPaperSize === 'K80' ? 'w-[300px]' : (editPaperSize === 'A4' ? 'w-[210mm]' : 'w-[148mm]');
+  const baseFontSize = Number(activeCfg.printFontSize) || 12;
+
   const LivePreviewReceipt = () => {
-    const isA4A5 = form.printPaperSize === 'A4' || form.printPaperSize === 'A5';
-    const paperWidthClass = form.printPaperSize === 'K80' ? 'w-[300px]' : (form.printPaperSize === 'A4' ? 'w-[210mm]' : 'w-[148mm]');
-    const baseFontSize = Number(form.printFontSize) || 12;
     return (
       <div className={`bg-white shadow-2xl border border-gray-200 mx-auto transition-all ${paperWidthClass}`} style={{ fontSize: `${baseFontSize}px`, padding: isA4A5 ? '20px' : '15px', color: '#000', fontFamily: 'sans-serif' }}>
-        <ReceiptTemplate order={null} storeConfig={form} isA4A5={isA4A5} baseFontSize={baseFontSize} />
+        <ReceiptTemplate order={null} storeConfig={{...form, printPaperSize: editPaperSize}} isA4A5={isA4A5} baseFontSize={baseFontSize} />
       </div>
     );
   };
@@ -2165,66 +2254,86 @@ function SettingsView({ db, storeId, showToast, storeConfig }) {
               </div>
               <div className="flex-1 overflow-y-auto p-5 space-y-6">
                 <div className="space-y-4">
-                  <h4 className="text-xs font-black text-gray-400 uppercase tracking-wider mb-2">Cơ bản (Cấu hình mặc định)</h4>
-                  <div><label className="block text-sm font-bold text-gray-700 mb-1">Khổ giấy in mặc định</label><div className="flex gap-2">{['K80', 'A4', 'A5'].map(size => (<button key={size} onClick={() => setForm({...form, printPaperSize: size})} className={`flex-1 py-2 text-sm font-bold rounded-lg border transition-all ${form.printPaperSize === size ? 'bg-blue-50 border-blue-600 text-blue-700 shadow-sm' : 'bg-white border-gray-300 text-gray-600 hover:bg-gray-50'}`}>{size}</button>))}</div></div>
-                  <div><label className="block text-sm font-bold text-gray-700 mb-1">Cỡ chữ tổng thể (px)</label><div className="flex items-center gap-3"><input type="range" min="8" max="24" step="0.5" value={form.printFontSize} onChange={(e) => setForm({...form, printFontSize: Number(e.target.value)})} className="flex-1 accent-blue-600" /><input type="number" step="0.5" value={form.printFontSize} onChange={(e) => setForm({...form, printFontSize: Number(e.target.value)})} className="w-16 p-1.5 border rounded-lg text-center font-bold text-sm outline-none" /></div></div>
+                  <h4 className="text-xs font-black text-gray-400 uppercase tracking-wider mb-2">Chọn Khổ Giấy Đang Chỉnh Sửa Độc Lập</h4>
+                  <div className="flex gap-2">
+                    {['K80', 'A4', 'A5'].map(size => (
+                      <button key={size} onClick={() => { setEditPaperSize(size); setForm({...form, printPaperSize: size}); }} className={`flex-1 py-2 text-sm font-bold rounded-lg border transition-all ${editPaperSize === size ? 'bg-blue-600 text-white border-blue-600 shadow-md' : 'bg-white border-gray-300 text-gray-600 hover:bg-gray-50'}`}>
+                        {size === 'K80' ? 'Bill K80' : `Giấy ${size}`}
+                      </button>
+                    ))}
+                  </div>
+                  <div><label className="block text-sm font-bold text-gray-700 mb-1">Cỡ chữ tổng thể ({editPaperSize}) (px)</label><div className="flex items-center gap-3"><input type="range" min="8" max="24" step="0.5" value={activeCfg.printFontSize || 12} onChange={(e) => updateActiveSizeConfig('printFontSize', Number(e.target.value))} className="flex-1 accent-blue-600" /><input type="number" step="0.5" value={activeCfg.printFontSize || 12} onChange={(e) => updateActiveSizeConfig('printFontSize', Number(e.target.value))} className="w-16 p-1.5 border rounded-lg text-center font-bold text-sm outline-none" /></div></div>
                 </div>
                 <hr className="border-gray-100" />
                 <div className="space-y-4 mt-6">
-                  <h4 className="text-xs font-black text-gray-400 uppercase tracking-wider mb-2">Tùy chỉnh Kích thước, Chiều ngang/Dọc</h4>
-                  <div><label className="block text-sm font-bold text-gray-700 mb-1">Tỷ lệ Cỡ chữ phần Chi tiết ({form.printDetailFontScale ?? 80}%)</label><input type="range" min="50" max="150" step="5" value={form.printDetailFontScale ?? 80} onChange={(e) => setForm({...form, printDetailFontScale: Number(e.target.value)})} className="w-full accent-blue-600" /></div>
-                  <div><label className="block text-sm font-bold text-gray-700 mb-1">Chiều ngang (Padding X: {form.printTablePaddingX ?? 4}px)</label><input type="range" min="0" max="20" step="1" value={form.printTablePaddingX ?? 4} onChange={(e) => setForm({...form, printTablePaddingX: Number(e.target.value)})} className="w-full accent-blue-600" /></div>
-                  <div><label className="block text-sm font-bold text-gray-700 mb-1">Chiều dọc (Padding Y: {form.printTablePaddingY ?? 6}px)</label><input type="range" min="0" max="20" step="1" value={form.printTablePaddingY ?? 6} onChange={(e) => setForm({...form, printTablePaddingY: Number(e.target.value)})} className="w-full accent-blue-600" /></div>
+                  <h4 className="text-xs font-black text-gray-400 uppercase tracking-wider mb-2">Tăng giảm Cỡ chữ độc lập cho từng dòng (So với cỡ tổng thể)</h4>
+                  <div className="space-y-3 bg-gray-50 p-4 rounded-xl border border-gray-100">
+                    <div><label className="text-xs font-bold text-gray-700">Cỡ chữ Tên Cửa Hàng ({activeCfg.fsStoreNameOffset ?? 2}px)</label><input type="range" min="-4" max="10" step="1" value={activeCfg.fsStoreNameOffset ?? 2} onChange={e=>updateActiveSizeConfig('fsStoreNameOffset', Number(e.target.value))} className="w-full accent-blue-600"/></div>
+                    <div><label className="text-xs font-bold text-gray-700">Cỡ chữ Địa Chỉ ({activeCfg.fsStoreAddressOffset ?? 0}px)</label><input type="range" min="-4" max="10" step="1" value={activeCfg.fsStoreAddressOffset ?? 0} onChange={e=>updateActiveSizeConfig('fsStoreAddressOffset', Number(e.target.value))} className="w-full accent-blue-600"/></div>
+                    <div><label className="text-xs font-bold text-gray-700">Cỡ chữ Số Điện Thoại ({activeCfg.fsStorePhoneOffset ?? 0}px)</label><input type="range" min="-4" max="10" step="1" value={activeCfg.fsStorePhoneOffset ?? 0} onChange={e=>updateActiveSizeConfig('fsStorePhoneOffset', Number(e.target.value))} className="w-full accent-blue-600"/></div>
+                    <div><label className="text-xs font-bold text-gray-700">Cỡ chữ Tiêu Đề Hóa Đơn ({activeCfg.fsInvoiceTitleOffset ?? 4}px)</label><input type="range" min="-4" max="12" step="1" value={activeCfg.fsInvoiceTitleOffset ?? 4} onChange={e=>updateActiveSizeConfig('fsInvoiceTitleOffset', Number(e.target.value))} className="w-full accent-blue-600"/></div>
+                    <div><label className="text-xs font-bold text-gray-700">Cỡ chữ Ngày / Mã HĐ ({activeCfg.fsMetaOffset ?? 0}px)</label><input type="range" min="-4" max="8" step="1" value={activeCfg.fsMetaOffset ?? 0} onChange={e=>updateActiveSizeConfig('fsMetaOffset', Number(e.target.value))} className="w-full accent-blue-600"/></div>
+                  </div>
                 </div>
                 <hr className="border-gray-100" />
                 <div className="space-y-4 mt-6">
-                  <h4 className="text-xs font-black text-gray-400 uppercase tracking-wider mb-2">Độ rộng từng Cột (Tính theo % cho khổ A4/A5)</h4>
-                  <div className="grid grid-cols-2 gap-4 bg-gray-50 p-4 rounded-xl border border-gray-100">
-                    <div className="col-span-2 text-[11px] font-bold text-red-600 mb-1">💡 Tổng các cột luôn bằng 100%. Khi bạn kéo giãn 1 cột, cột bên cạnh sẽ tự động co lại để bù trừ.</div>
-                    <div><label className="text-[10px] font-bold text-gray-600 uppercase">Cột STT ({form.colWidthStt}%)</label><input type="range" min="1" max="90" value={form.colWidthStt} onChange={e=>handleColWidthChange('colWidthStt', e.target.value)} className="w-full accent-blue-600"/></div>
-                    <div><label className="text-[10px] font-bold text-gray-600 uppercase">Cột Sản phẩm ({form.colWidthProduct}%)</label><input type="range" min="1" max="90" value={form.colWidthProduct} onChange={e=>handleColWidthChange('colWidthProduct', e.target.value)} className="w-full accent-blue-600"/></div>
-                    <div><label className="text-[10px] font-bold text-gray-600 uppercase">Cột Số lượng ({form.colWidthQty}%)</label><input type="range" min="1" max="90" value={form.colWidthQty} onChange={e=>handleColWidthChange('colWidthQty', e.target.value)} className="w-full accent-blue-600"/></div>
-                    <div><label className="text-[10px] font-bold text-gray-600 uppercase">Cột Đơn giá ({form.colWidthPrice}%)</label><input type="range" min="1" max="90" value={form.colWidthPrice} onChange={e=>handleColWidthChange('colWidthPrice', e.target.value)} className="w-full accent-blue-600"/></div>
-                    <div><label className="text-[10px] font-bold text-gray-600 uppercase">Cột Bảo hành ({form.colWidthWarranty}%)</label><input type="range" min="1" max="90" value={form.colWidthWarranty} onChange={e=>handleColWidthChange('colWidthWarranty', e.target.value)} className="w-full accent-blue-600"/></div>
-                    <div><label className="text-[10px] font-bold text-gray-600 uppercase">Cột Ghi chú ({form.colWidthNote}%)</label><input type="range" min="1" max="90" value={form.colWidthNote} onChange={e=>handleColWidthChange('colWidthNote', e.target.value)} className="w-full accent-blue-600"/></div>
-                    <div className="col-span-2"><label className="text-[10px] font-bold text-gray-600 uppercase">Cột Thành tiền ({form.colWidthTotal}%)</label><input type="range" min="1" max="90" value={form.colWidthTotal} onChange={e=>handleColWidthChange('colWidthTotal', e.target.value)} className="w-full accent-blue-600"/></div>
+                  <h4 className="text-xs font-black text-gray-400 uppercase tracking-wider mb-2">Tùy chỉnh Kích thước, Bảng chi tiết</h4>
+                  <div><label className="block text-sm font-bold text-gray-700 mb-1">Tỷ lệ Cỡ chữ phần Chi tiết ({activeCfg.printDetailFontScale ?? 80}%)</label><input type="range" min="50" max="150" step="5" value={activeCfg.printDetailFontScale ?? 80} onChange={(e) => updateActiveSizeConfig('printDetailFontScale', Number(e.target.value))} className="w-full accent-blue-600" /></div>
+                  <div><label className="block text-sm font-bold text-gray-700 mb-1">Chiều ngang (Padding X: {activeCfg.printTablePaddingX ?? 4}px)</label><input type="range" min="0" max="20" step="1" value={activeCfg.printTablePaddingX ?? 4} onChange={(e) => updateActiveSizeConfig('printTablePaddingX', Number(e.target.value))} className="w-full accent-blue-600" /></div>
+                  <div><label className="block text-sm font-bold text-gray-700 mb-1">Chiều dọc (Padding Y: {activeCfg.printTablePaddingY ?? 6}px)</label><input type="range" min="0" max="20" step="1" value={activeCfg.printTablePaddingY ?? 6} onChange={(e) => updateActiveSizeConfig('printTablePaddingY', Number(e.target.value))} className="w-full accent-blue-600" /></div>
+                </div>
+                {isA4A5 && (
+                  <>
+                    <hr className="border-gray-100" />
+                    <div className="space-y-4 mt-6">
+                      <h4 className="text-xs font-black text-gray-400 uppercase tracking-wider mb-2">Độ rộng từng Cột ({editPaperSize})</h4>
+                      <div className="grid grid-cols-2 gap-4 bg-gray-50 p-4 rounded-xl border border-gray-100">
+                        <div><label className="text-[10px] font-bold text-gray-600 uppercase">Cột STT ({activeCfg.colWidthStt ?? 5}%)</label><input type="range" min="1" max="90" value={activeCfg.colWidthStt ?? 5} onChange={e=>handleColWidthChange('colWidthStt', e.target.value)} className="w-full accent-blue-600"/></div>
+                        <div><label className="text-[10px] font-bold text-gray-600 uppercase">Cột Sản phẩm ({activeCfg.colWidthProduct ?? 35}%)</label><input type="range" min="1" max="90" value={activeCfg.colWidthProduct ?? 35} onChange={e=>handleColWidthChange('colWidthProduct', e.target.value)} className="w-full accent-blue-600"/></div>
+                        <div><label className="text-[10px] font-bold text-gray-600 uppercase">Cột SL ({activeCfg.colWidthQty ?? 8}%)</label><input type="range" min="1" max="90" value={activeCfg.colWidthQty ?? 8} onChange={e=>handleColWidthChange('colWidthQty', e.target.value)} className="w-full accent-blue-600"/></div>
+                        <div><label className="text-[10px] font-bold text-gray-600 uppercase">Cột Đơn giá ({activeCfg.colWidthPrice ?? 12}%)</label><input type="range" min="1" max="90" value={activeCfg.colWidthPrice ?? 12} onChange={e=>handleColWidthChange('colWidthPrice', e.target.value)} className="w-full accent-blue-600"/></div>
+                        <div><label className="text-[10px] font-bold text-gray-600 uppercase">Cột Bảo hành ({activeCfg.colWidthWarranty ?? 12}%)</label><input type="range" min="1" max="90" value={activeCfg.colWidthWarranty ?? 12} onChange={e=>handleColWidthChange('colWidthWarranty', e.target.value)} className="w-full accent-blue-600"/></div>
+                        <div><label className="text-[10px] font-bold text-gray-600 uppercase">Cột Ghi chú ({activeCfg.colWidthNote ?? 13}%)</label><input type="range" min="1" max="90" value={activeCfg.colWidthNote ?? 13} onChange={e=>handleColWidthChange('colWidthNote', e.target.value)} className="w-full accent-blue-600"/></div>
+                        <div className="col-span-2"><label className="text-[10px] font-bold text-gray-600 uppercase">Cột Thành tiền ({activeCfg.colWidthTotal ?? 15}%)</label><input type="range" min="1" max="90" value={activeCfg.colWidthTotal ?? 15} onChange={e=>handleColWidthChange('colWidthTotal', e.target.value)} className="w-full accent-blue-600"/></div>
+                      </div>
+                    </div>
+                  </>
+                )}
+                <hr className="border-gray-100" />
+                <div className="space-y-4">
+                  <h4 className="text-xs font-black text-gray-400 uppercase tracking-wider mb-2">Đầu trang & Cửa hàng ({editPaperSize})</h4>
+                  <div className="space-y-2 bg-gray-50 p-3 rounded-xl border border-gray-100">
+                    <ToggleSwitch label="In Logo cửa hàng" checked={activeCfg.printShowLogo ?? true} onChange={(val) => updateActiveSizeConfig('printShowLogo', val)} />
+                    <ToggleSwitch label="In Tên cửa hàng" checked={activeCfg.printShowStoreName ?? true} onChange={(val) => updateActiveSizeConfig('printShowStoreName', val)} />
+                    <ToggleSwitch label="In Địa chỉ cửa hàng" checked={activeCfg.printShowStoreAddress ?? true} onChange={(val) => updateActiveSizeConfig('printShowStoreAddress', val)} />
+                    <ToggleSwitch label="In Số điện thoại" checked={activeCfg.printShowStorePhone ?? true} onChange={(val) => updateActiveSizeConfig('printShowStorePhone', val)} />
                   </div>
+                  <div><label className="block text-sm font-bold text-gray-700 mb-1">Tiêu đề hóa đơn</label><input value={activeCfg.printInvoiceTitle || ''} onChange={e=>updateActiveSizeConfig('printInvoiceTitle', e.target.value)} className="w-full p-2.5 border border-gray-300 rounded-xl outline-none focus:ring-2 focus:ring-blue-500 font-bold uppercase text-gray-800"/></div>
                 </div>
                 <hr className="border-gray-100" />
                 <div className="space-y-4">
-                  <h4 className="text-xs font-black text-gray-400 uppercase tracking-wider mb-2">Đầu trang & Cửa hàng</h4>
+                  <h4 className="text-xs font-black text-gray-400 uppercase tracking-wider mb-2">Thông tin Hóa đơn & Hàng hóa ({editPaperSize})</h4>
                   <div className="space-y-2 bg-gray-50 p-3 rounded-xl border border-gray-100">
-                    <ToggleSwitch label="In Logo cửa hàng" checked={form.printShowLogo} onChange={(val) => setForm({...form, printShowLogo: val})} />
-                    <ToggleSwitch label="In Tên cửa hàng" checked={form.printShowStoreName} onChange={(val) => setForm({...form, printShowStoreName: val})} />
-                    <ToggleSwitch label="In Địa chỉ cửa hàng" checked={form.printShowStoreAddress} onChange={(val) => setForm({...form, printShowStoreAddress: val})} />
-                    <ToggleSwitch label="In Số điện thoại" checked={form.printShowStorePhone} onChange={(val) => setForm({...form, printShowStorePhone: val})} />
-                  </div>
-                  <div><label className="block text-sm font-bold text-gray-700 mb-1">Tiêu đề hóa đơn</label><input value={form.printInvoiceTitle} onChange={e=>setForm({...form, printInvoiceTitle: e.target.value})} className="w-full p-2.5 border border-gray-300 rounded-xl outline-none focus:ring-2 focus:ring-blue-500 font-bold uppercase text-gray-800"/></div>
-                </div>
-                <hr className="border-gray-100" />
-                <div className="space-y-4">
-                  <h4 className="text-xs font-black text-gray-400 uppercase tracking-wider mb-2">Thông tin Hóa đơn & Hàng hóa</h4>
-                  <div className="space-y-2 bg-gray-50 p-3 rounded-xl border border-gray-100">
-                    <ToggleSwitch label="In Mã hóa đơn" checked={form.printShowInvoiceId} onChange={(val) => setForm({...form, printShowInvoiceId: val})} />
-                    <ToggleSwitch label="In Ngày giờ bán" checked={form.printShowDate} onChange={(val) => setForm({...form, printShowDate: val})} />
-                    <ToggleSwitch label="In Tên Thu ngân" checked={form.printShowCashier} onChange={(val) => setForm({...form, printShowCashier: val})} />
-                    <ToggleSwitch label="In Tên Khách hàng" checked={form.printShowCustomer} onChange={(val) => setForm({...form, printShowCustomer: val})} />
-                    <ToggleSwitch label="In SĐT Khách hàng" checked={form.printShowCustomerPhone} onChange={(val) => setForm({...form, printShowCustomerPhone: val})} />
-                    <ToggleSwitch label="In Trạng thái (Đã thu/Ghi nợ)" checked={form.printShowStatus} onChange={(val) => setForm({...form, printShowStatus: val})} />
+                    <ToggleSwitch label="In Mã hóa đơn" checked={activeCfg.printShowInvoiceId ?? true} onChange={(val) => updateActiveSizeConfig('printShowInvoiceId', val)} />
+                    <ToggleSwitch label="In Ngày giờ bán" checked={activeCfg.printShowDate ?? true} onChange={(val) => updateActiveSizeConfig('printShowDate', val)} />
+                    <ToggleSwitch label="In Tên Thu ngân" checked={activeCfg.printShowCashier ?? true} onChange={(val) => updateActiveSizeConfig('printShowCashier', val)} />
+                    <ToggleSwitch label="In Tên Khách hàng" checked={activeCfg.printShowCustomer ?? true} onChange={(val) => updateActiveSizeConfig('printShowCustomer', val)} />
+                    <ToggleSwitch label="In SĐT Khách hàng" checked={activeCfg.printShowCustomerPhone ?? true} onChange={(val) => updateActiveSizeConfig('printShowCustomerPhone', val)} />
+                    <ToggleSwitch label="In Trạng thái (Đã thu/Ghi nợ)" checked={activeCfg.printShowStatus ?? true} onChange={(val) => updateActiveSizeConfig('printShowStatus', val)} />
                     <div className="h-px bg-gray-200 my-2"></div>
-                    <ToggleSwitch label="Hiển thị thông tin Bảo hành" checked={form.printShowWarranty ?? true} onChange={(val) => setForm({...form, printShowWarranty: val})} />
-                    <ToggleSwitch label="Hiển thị Ghi chú từng món" checked={form.printShowNote ?? true} onChange={(val) => setForm({...form, printShowNote: val})} />
+                    <ToggleSwitch label="Hiển thị thông tin Bảo hành" checked={activeCfg.printShowWarranty ?? true} onChange={(val) => updateActiveSizeConfig('printShowWarranty', val)} />
+                    <ToggleSwitch label="Hiển thị Ghi chú từng món" checked={activeCfg.printShowNote ?? true} onChange={(val) => updateActiveSizeConfig('printShowNote', val)} />
                   </div>
                 </div>
                 <hr className="border-gray-100" />
                 <div className="space-y-4">
-                  <h4 className="text-xs font-black text-gray-400 uppercase tracking-wider mb-2">Chân trang</h4>
-                  <div><label className="block text-sm font-bold text-gray-700 mb-1">Lời cảm ơn / Ghi chú</label><textarea value={form.printFooter} onChange={e=>setForm({...form, printFooter: e.target.value})} className="w-full p-2.5 border border-gray-300 rounded-xl outline-none focus:ring-2 focus:ring-blue-500 text-sm h-20 resize-none"/></div>
+                  <h4 className="text-xs font-black text-gray-400 uppercase tracking-wider mb-2">Chân trang ({editPaperSize})</h4>
+                  <div><label className="block text-sm font-bold text-gray-700 mb-1">Lời cảm ơn / Ghi chú</label><textarea value={activeCfg.printFooter || ''} onChange={e=>updateActiveSizeConfig('printFooter', e.target.value)} className="w-full p-2.5 border border-gray-300 rounded-xl outline-none focus:ring-2 focus:ring-blue-500 text-sm h-20 resize-none"/></div>
                 </div>
               </div>
             </div>
             <div className="w-full lg:w-7/12 xl:w-2/3 bg-gray-200 rounded-2xl flex items-start justify-center p-6 overflow-y-auto relative border border-gray-300 shadow-inner">
-              <div className="absolute top-4 right-4 bg-white/90 backdrop-blur px-3 py-1.5 rounded-lg text-xs font-bold text-gray-600 shadow flex items-center gap-1.5"><Eye size={14} className="text-blue-500"/> Xem trước trực tiếp</div>
+              <div className="absolute top-4 right-4 bg-white/90 backdrop-blur px-3 py-1.5 rounded-lg text-xs font-bold text-gray-600 shadow flex items-center gap-1.5"><Eye size={14} className="text-blue-500"/> Xem trước trực tiếp ({editPaperSize})</div>
               <LivePreviewReceipt />
             </div>
           </div>
@@ -2274,4 +2383,3 @@ function SettingsView({ db, storeId, showToast, storeConfig }) {
     </div>
   );
 }
-
