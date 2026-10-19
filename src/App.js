@@ -2267,42 +2267,158 @@ function SettingsView({ db, storeId, showToast, storeConfig }) {
         try {
           const wb = window.XLSX.read(evt.target.result, { type: 'binary' });
           const data = window.XLSX.utils.sheet_to_json(wb.Sheets[wb.SheetNames[0]]);
-          let batch = writeBatch(db); let count = 0; let success = 0;
-          for (let i = 0; i < data.length; i++) {
-            let p = null; const row = data[i]; const nowIso = new Date().toISOString();
-            if (type === 'products' && row['Tên hàng']) p = { name: String(row['Tên hàng']), category: row['Nhóm hàng'] || '', price: Number(row['Giá bán']) || 0, cost: Number(row['Giá vốn']) || 0, stock: Number(row['Tồn kho']) || 0, createdAt: nowIso };
-            else if (type === 'customers' && row['Tên khách hàng']) { const rawPhone = row['Điện thoại'] ? String(row['Điện thoại']) : ''; p = { name: String(row['Tên khách hàng']), phone: rawPhone.replace('.0', ''), totalDebt: Number(row['Nợ cần thu hiện tại']) || 0, createdAt: nowIso }; }
-            else if (type === 'suppliers' && row['Tên nhà cung cấp']) { const rawPhone = row['Điện thoại'] ? String(row['Điện thoại']) : ''; p = { name: String(row['Tên nhà cung cấp']), phone: rawPhone.replace('.0', ''), totalDebt: Number(row['Nợ cần trả hiện tại']) || 0, createdAt: nowIso }; }
-            else if (type === 'expenses' && row['Số tiền']) p = { amount: Number(row['Số tiền']), note: row['Nội dung'] || '', date: nowIso };
-            else if (type === 'orders' && row['Chi tiết hàng hóa (JSON)']) {
-              let items = [];
-              try { items = JSON.parse(String(row['Chi tiết hàng hóa (JSON)'])); } catch { items = []; }
-              const importedDate = row['Ngày giờ'] ? new Date(row['Ngày giờ']) : new Date(nowIso);
-              p = {
-                invoiceCode: String(row['Mã hóa đơn'] || '').trim() || generateInvoiceCode([]),
-                date: Number.isNaN(importedDate.getTime()) ? nowIso : importedDate.toISOString(),
-                customerId: String(row['Mã khách hàng'] || '').trim() || null,
-                customerName: String(row['Khách hàng'] || 'Khách lẻ'),
-                sellerUid: String(row['Mã nhân viên'] || ''),
-                sellerName: String(row['Nhân viên'] || 'Nhập từ Excel'),
-                status: String(row['Trạng thái'] || 'PAID').toUpperCase() === 'DEBT' ? 'DEBT' : 'PAID',
-                note: String(row['Ghi chú'] || ''),
-                total: Number(row['Tổng tiền']) || 0,
-                totalCost: Number(row['Tổng giá vốn']) || 0,
-                items: Array.isArray(items) ? items : []
-              };
+          let batch = writeBatch(db); 
+          let count = 0; 
+          let success = 0;
+
+          // --- LOGIC GOM NHÓM ĐƠN HÀNG KIOTVIET ---
+          if (type === 'orders') {
+            const ordersMap = {};
+            
+            data.forEach(row => {
+              const orderId = row['Mã hóa đơn'];
+              if (!orderId) return;
+
+              // Nếu mã hóa đơn chưa có trong map, khởi tạo
+              if (!ordersMap[orderId]) {
+                // Xử lý ngày tháng từ Excel serial number
+                let orderDate = new Date().toISOString();
+                if (row['Thời gian']) {
+                  if (typeof row['Thời gian'] === 'number') {
+                     orderDate = new Date(Math.round((row['Thời gian'] - 25569) * 86400 * 1000)).toISOString();
+                  } else {
+                     orderDate = new Date(row['Thời gian']).toISOString();
+                  }
+                }
+
+                ordersMap[orderId] = {
+                  id: orderId,
+                  invoiceCode: orderId,
+                  customerName: row['Tên khách hàng'] || 'Khách lẻ',
+                  customerId: row['Mã khách hàng'] || null, // Lưu thêm mã KH nếu cần map sau này
+                  sellerName: row['Người tạo'] || row['Người bán'] || 'Hệ thống',
+                  date: orderDate,
+                  status: row['Trạng thái'] === 'Hoàn thành' ? 'PAID' : 'DEBT',
+                  total: Number(row['Khách cần trả']) || Number(row['Tổng tiền hàng']) || 0,
+                  totalCost: 0, // Sẽ cộng dồn ở phần items (nếu Kiotviet có xuất giá vốn trong file đơn hàng)
+                  note: row['Ghi chú'] || '',
+                  items: []
+                };
+              }
+
+              // Thêm sản phẩm vào mảng items của hóa đơn đó
+              if (row['Tên hàng']) {
+                const qty = Number(row['Số lượng']) || 1;
+                // Kiotviet xuất 'Giá bán' (đơn giá) và 'Thành tiền' (giá bán * sl)
+                const price = Number(row['Giá bán']) || Number(row['Đơn giá']) || 0; 
+                
+                ordersMap[orderId].items.push({
+                  name: String(row['Tên hàng']),
+                  quantity: qty,
+                  price: price,
+                  cost: 0, // Kiotviet mặc định không xuất giá vốn trong bảng chi tiết đơn hàng
+                  warrantyValue: '',
+                  warrantyUnit: 'tháng',
+                  note: row['Ghi chú hàng hóa'] || row['Mã hàng'] || ''
+                });
+              }
+            });
+            
+            // Ghi dữ liệu đã gom nhóm vào Firestore
+            for (const key in ordersMap) {
+              batch.set(doc(collection(db, 'stores', storeId, 'orders')), ordersMap[key]);
+              count++; 
+              success++;
+              if (count >= 400) { 
+                await batch.commit(); 
+                batch = writeBatch(db); 
+                count = 0; 
+              }
             }
-            if (p) { batch.set(doc(collection(db, 'stores', storeId, type)), p); count++; success++; }
-            if (count === 400 || i === data.length - 1) { if (count > 0) { await batch.commit(); batch = writeBatch(db); count = 0; } }
+            if (count > 0) await batch.commit();
+          } 
+          // --- LOGIC NHẬP CÁC DANH MỤC KHÁC ---
+          else {
+            for (let i = 0; i < data.length; i++) {
+              let p = null; 
+              const row = data[i]; 
+              let nowIso = new Date().toISOString();
+              
+              // Xử lý ngày tạo chung nếu có
+              if (row['Ngày tạo'] || row['Thời gian tạo']) {
+                 const t = row['Ngày tạo'] || row['Thời gian tạo'];
+                 if (typeof t === 'number') nowIso = new Date(Math.round((t - 25569) * 86400 * 1000)).toISOString();
+                 else nowIso = new Date(t).toISOString();
+              }
+              
+              if (type === 'products' && row['Tên hàng']) {
+                p = { 
+                  name: String(row['Tên hàng']), 
+                  category: row['Nhóm hàng(3 Cấp)'] || row['Nhóm hàng'] || '', 
+                  price: Number(row['Giá bán']) || 0, 
+                  cost: Number(row['Giá vốn']) || 0, 
+                  stock: Number(row['Tồn kho']) || 0, 
+                  createdAt: nowIso 
+                };
+              }
+              else if (type === 'customers' && row['Tên khách hàng']) { 
+                const rawPhone = row['Điện thoại'] ? String(row['Điện thoại']) : ''; 
+                p = { 
+                  name: String(row['Tên khách hàng']), 
+                  phone: rawPhone.replace('.0', ''), 
+                  address: row['Địa chỉ'] || row['Phường/Xã'] || '',
+                  totalDebt: Number(row['Nợ cần thu hiện tại']) || 0, 
+                  createdAt: nowIso 
+                }; 
+              } 
+              else if (type === 'suppliers' && row['Tên nhà cung cấp']) { 
+                const rawPhone = row['Điện thoại'] ? String(row['Điện thoại']) : ''; 
+                p = { 
+                  name: String(row['Tên nhà cung cấp']), 
+                  phone: rawPhone.replace('.0', ''), 
+                  address: row['Địa chỉ'] || row['Phường/Xã'] || '',
+                  totalDebt: Number(row['Nợ cần trả hiện tại']) || 0, 
+                  createdAt: nowIso 
+                }; 
+              } 
+              else if (type === 'expenses' && row['Số tiền']) {
+                p = { 
+                  amount: Number(row['Số tiền']), 
+                  note: row['Nội dung'] || row['Ghi chú'] || '', 
+                  date: nowIso 
+                };
+              }
+
+              if (p) { 
+                batch.set(doc(collection(db, 'stores', storeId, type)), p); 
+                count++; 
+                success++; 
+              }
+              
+              if (count >= 400 || i === data.length - 1) { 
+                if (count > 0) { 
+                  await batch.commit(); 
+                  batch = writeBatch(db); 
+                  count = 0; 
+                } 
+              }
+            }
           }
-          showToast("Đã NHẬP thành công " + success + " dòng.");
-          setLoadingFile(false); e.target.value = '';
-        } catch(err) { showToast("Lỗi dữ liệu", "error"); setLoadingFile(false); }
+          
+          showToast("Đã NHẬP thành công " + success + " dòng (đã gộp các mục nếu là Hóa Đơn).");
+          setLoadingFile(false); 
+          e.target.value = '';
+        } catch(err) { 
+          console.error(err);
+          showToast("Lỗi định dạng dữ liệu Excel", "error"); 
+          setLoadingFile(false); 
+        }
       };
       reader.readAsBinaryString(file);
-    } catch(err) { setLoadingFile(false); }
+    } catch(err) { 
+      setLoadingFile(false); 
+    }
   };
-
   const handleExport = async (type) => {
     if (!window.XLSX) return showToast("Hệ thống chưa sẵn sàng", "error");
     setLoadingFile(true);
@@ -2323,7 +2439,13 @@ function SettingsView({ db, storeId, showToast, storeConfig }) {
     } catch(e) { showToast("Lỗi xuất file", "error"); } setLoadingFile(false);
   };
 
-  const menuItems = [{ id: 'customers', label: 'Khách hàng (Nợ phải thu)' }, { id: 'suppliers', label: 'Nhà cung cấp (Nợ phải trả)' }, { id: 'products', label: 'Hàng hóa & Kho' }, { id: 'expenses', label: 'Lịch sử Chi phí' }, { id: 'orders', label: 'Đơn hàng' }];
+  const menuItems = [
+    { id: 'customers', label: 'Khách hàng (Nợ phải thu)' }, 
+    { id: 'suppliers', label: 'Nhà cung cấp (Nợ phải trả)' }, 
+    { id: 'products', label: 'Hàng hóa & Kho' }, 
+    { id: 'orders', label: 'Hóa đơn (Bán hàng)' },
+    { id: 'expenses', label: 'Lịch sử Chi phí' }
+  ];
 
   const openDeleteConfirmation = (target) => {
     setDeleteTarget(target);
