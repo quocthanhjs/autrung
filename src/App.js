@@ -464,7 +464,7 @@ export default function App() {
       </aside>
       <main className="flex-1 overflow-hidden flex flex-col h-[calc(100vh-80px)] md:h-screen relative">
         {toast && <div className={"absolute top-4 right-4 z-50 px-6 py-3.5 rounded-xl shadow-xl flex items-center gap-2 text-white animate-in slide-in-from-top-2 " + (toast.type === 'success' ? 'bg-emerald-600' : 'bg-red-600')}><div className="bg-white/20 p-1 rounded-full">{toast.type === 'success' ? <Check size={16} /> : <AlertCircle size={16} />}</div><span className="font-bold text-sm tracking-wide">{toast.msg}</span></div>}
-        {activeTab === 'dashboard' && <DashboardView orders={orders} imports={imports} expenses={expenses} customers={customers} suppliers={suppliers} showToast={showToast} />}
+        {activeTab === 'dashboard' && <DashboardView orders={orders} imports={imports} expenses={expenses} customers={customers} suppliers={suppliers} products={products} showToast={showToast} />}
         {activeTab === 'groups' && <GroupManagementView products={products} db={db} storeId={storeId} showToast={showToast} />}
         {activeTab === 'pos' && <POSView products={products} orders={orders} customers={customers} db={db} storeId={storeId} user={user} storeConfig={storeConfig} showToast={showToast} userData={userData} />}
         {activeTab === 'sales_history' && <SalesHistoryView orders={orders} imports={imports} products={products} customers={customers} storeConfig={storeConfig} db={db} storeId={storeId} user={user} userData={userData} showToast={showToast} />}
@@ -480,7 +480,7 @@ export default function App() {
   );
 }
 
-function DashboardView({ orders, imports, expenses, customers, suppliers, showToast }) {
+function DashboardView({ orders, imports, expenses, customers, suppliers, products = [], showToast }) {
   const currentDate = new Date();
   const currentVietnamDate = getVietnamDateParts(currentDate);
   const [activityRows, setActivityRows] = useState('10');
@@ -507,7 +507,18 @@ function DashboardView({ orders, imports, expenses, customers, suppliers, showTo
     });
 
     const totalRev = fOrders.reduce((s, o) => s + o.total, 0);
-    const totalCost = fOrders.reduce((s, o) => s + (o.totalCost || 0), 0);
+    const totalCost = fOrders.reduce((sum, order) => {
+      const items = order.items || [];
+      if (!items.length) return sum + (Number(order.totalCost) || 0);
+      const itemCosts = items.reduce((itemSum, item) => {
+        const product = products.find(p => p.id && item.id && p.id === item.id);
+        const qty = Number(item.quantity || item.qty || 0);
+        if (product) return Number(product.stock) > 0 ? itemSum + (Number(product.cost) || 0) * qty : itemSum;
+        const savedCost = Number(item.cost ?? item.importCost);
+        return itemSum + (Number.isFinite(savedCost) && savedCost > 0 ? savedCost * qty : 0);
+      }, 0);
+      return sum + itemCosts;
+    }, 0);
     const totalExp = fExpenses.reduce((s, e) => s + (Number(e.amount) || 0), 0);
     const netProfit = totalRev - totalCost - totalExp;
 
@@ -574,7 +585,7 @@ function DashboardView({ orders, imports, expenses, customers, suppliers, showTo
     const topProducts = Object.values(productSalesMap).sort((a, b) => b.totalQty - a.totalQty).slice(0, 5);
 
     return { totalRev, totalCost, totalExp, netProfit, overdueCust, overdueCust1Week, chartData, topProducts, filteredCustDebt, filteredSuppDebt };
-  }, [orders, imports, expenses, customers, suppliers, filterMonth, filterYear, custSortOrder, suppSortOrder, chartFilter]);
+  }, [orders, imports, expenses, customers, suppliers, products, filterMonth, filterYear, custSortOrder, suppSortOrder, chartFilter]);
 
   const years = Array.from({length: 5}, (_, i) => currentVietnamDate.year - i);
   const StatCard = ({ icon, title, value, color, highlight = false }) => {
@@ -1312,7 +1323,10 @@ function SalesHistoryView({ orders, imports = [], products, customers, storeConf
           const inRange = d => (!productTarget.from || new Date(d) >= new Date(productTarget.from)) && (!productTarget.to || new Date(d) <= new Date(productTarget.to + 'T23:59:59'));
           const sold = (orders||[]).filter(o => inRange(o.date) && (o.items||[]).some(it => (productTarget.id && it.id === productTarget.id) || it.name === productTarget.name)).sort((a,b)=>new Date(b.date)-new Date(a.date));
           const bought = (imports||[]).filter(im => inRange(im.date) && (im.items||[]).some(it => (productTarget.id && it.id === productTarget.id) || it.name === productTarget.name)).sort((a,b)=>new Date(b.date)-new Date(a.date));
-          return <div className="space-y-4"><div className="flex gap-3 flex-wrap"><label className="text-sm">Từ ngày <input type="date" className="border rounded p-1" value={productTarget.from||''} onChange={e=>setProductTarget(v=>({...v,from:e.target.value}))}/></label><label className="text-sm">Đến ngày <input type="date" className="border rounded p-1" value={productTarget.to||''} onChange={e=>setProductTarget(v=>({...v,to:e.target.value}))}/></label></div><h4 className="font-bold">Khách hàng đã mua</h4><div className="overflow-auto"><table className="w-full text-sm"><thead className="bg-gray-100"><tr><th className="p-2 text-left">Khách hàng</th><th className="p-2 text-left">Mã hóa đơn</th><th className="p-2 text-left">Thời gian</th><th className="p-2">Số lượng</th></tr></thead><tbody>{sold.map(o=><tr key={o.id} className="border-b"><td className="p-2">{o.customerName||'Khách lẻ'}</td><td className="p-2">{o.invoiceCode||o.id}</td><td className="p-2">{formatDate(o.date)}</td><td className="p-2">{(o.items||[]).filter(it=>(productTarget.id&&it.id===productTarget.id)||it.name===productTarget.name).reduce((n,it)=>n+Number(it.quantity||0),0)}</td></tr>)}</tbody></table></div><h4 className="font-bold">Nhà cung cấp nhập hàng</h4><div className="overflow-auto"><table className="w-full text-sm"><thead className="bg-gray-100"><tr><th className="p-2 text-left">Nhà cung cấp</th><th className="p-2 text-left">Thời gian</th><th className="p-2">Số lượng</th></tr></thead><tbody>{bought.map(im=><tr key={im.id} className="border-b"><td className="p-2">{im.supplierName||'Chưa rõ'}</td><td className="p-2">{formatDate(im.date)}</td><td className="p-2">{(im.items||[]).filter(it=>(productTarget.id&&it.id===productTarget.id)||it.name===productTarget.name).reduce((n,it)=>n+Number(it.qty||it.quantity||0),0)}</td></tr>)}</tbody></table></div></div>;
+          const matchedProduct = (products || []).find(p => (productTarget.id && p.id === productTarget.id) || p.name === productTarget.name);
+          const latestImport = (imports || []).flatMap(im => (im.items || []).filter(item => (productTarget.id && item.id === productTarget.id) || (!productTarget.id && item.name === productTarget.name)).map(item => ({ ...item, date: im.date, supplierName: im.supplierName || 'Chưa rõ nhà cung cấp' }))).sort((a, b) => new Date(b.date || 0) - new Date(a.date || 0))[0];
+          return <div className="space-y-4"><div className="flex gap-3 flex-wrap"><label className="text-sm">Từ ngày <input type="date" className="border rounded p-1" value={productTarget.from||''} onChange={e=>setProductTarget(v=>({...v,from:e.target.value}))}/></label><label className="text-sm">Đến ngày <input type="date" className="border rounded p-1" value={productTarget.to||''} onChange={e=>setProductTarget(v=>({...v,to:e.target.value}))}/></label></div>
+          <div className="bg-blue-50 border border-blue-100 rounded-xl p-3 grid grid-cols-2 md:grid-cols-4 gap-3"><div><p className="text-[10px] uppercase font-bold text-blue-700">Nhập gần nhất</p><p className="text-xs font-semibold">{latestImport ? formatDate(latestImport.date) : 'Chưa có dữ liệu'}</p></div><div><p className="text-[10px] uppercase font-bold text-blue-700">Nhà cung cấp</p><p className="text-xs font-semibold">{latestImport?.supplierName || matchedProduct?.lastSupplierName || 'Chưa có dữ liệu'}</p></div><div><p className="text-[10px] uppercase font-bold text-blue-700">Giá nhập gần nhất</p><p className="text-xs font-bold">{latestImport ? formatCurrency(latestImport.importCost) : 'Chưa có dữ liệu'}</p></div><div><p className="text-[10px] uppercase font-bold text-blue-700">Tồn còn lại hiện tại</p><p className="text-xs font-bold">{Number(matchedProduct?.stock) || 0} sản phẩm</p></div></div><h4 className="font-bold">Khách hàng đã mua</h4><div className="overflow-auto"><table className="w-full text-sm"><thead className="bg-gray-100"><tr><th className="p-2 text-left">Khách hàng</th><th className="p-2 text-left">Mã hóa đơn</th><th className="p-2 text-left">Thời gian</th><th className="p-2">Số lượng</th></tr></thead><tbody>{sold.map(o=><tr key={o.id} className="border-b"><td className="p-2">{o.customerName||'Khách lẻ'}</td><td className="p-2">{o.invoiceCode||o.id}</td><td className="p-2">{formatDate(o.date)}</td><td className="p-2">{(o.items||[]).filter(it=>(productTarget.id&&it.id===productTarget.id)||it.name===productTarget.name).reduce((n,it)=>n+Number(it.quantity||0),0)}</td></tr>)}</tbody></table></div><h4 className="font-bold">5 lần nhập hàng gần nhất</h4><div className="overflow-auto"><table className="w-full text-sm min-w-[650px]"><thead className="bg-gray-100"><tr><th className="p-2 text-left">Thời gian</th><th className="p-2 text-left">Nhà cung cấp</th><th className="p-2 text-right">Số lượng</th><th className="p-2 text-right">Đơn giá nhập</th><th className="p-2 text-right">Thành tiền</th><th className="p-2 text-right">Tồn lúc nhập</th></tr></thead><tbody>{(imports||[]).flatMap(im=>(im.items||[]).filter(it=>(productTarget.id&&it.id===productTarget.id)||it.name===productTarget.name).map((it,idx)=>({key:`${im.id||im.date}-${idx}`,date:im.date,supplierName:im.supplierName||'Chưa rõ',qty:Number(it.qty??it.quantity??0),cost:Number(it.importCost)||0,amount:Number(it.qty??it.quantity??0)*(Number(it.importCost)||0)}))).sort((a,b)=>new Date(b.date||0)-new Date(a.date||0)).slice(0,5).map(im=>{const importTime=new Date(im.date||0).getTime();const laterImports=(imports||[]).reduce((sum,rec)=>sum+(new Date(rec.date||0).getTime()>importTime?(rec.items||[]).filter(it=>(productTarget.id&&it.id===productTarget.id)||it.name===productTarget.name).reduce((n,it)=>n+Number(it.qty??it.quantity??0),0):0),0);const laterSales=(orders||[]).reduce((sum,rec)=>sum+(new Date(rec.date||0).getTime()>importTime?(rec.items||[]).filter(it=>(productTarget.id&&it.id===productTarget.id)||it.name===productTarget.name).reduce((n,it)=>n+Number(it.quantity||0),0):0),0);const stockAtImport=(Number(matchedProduct?.stock)||0)-laterImports+laterSales;return <tr key={im.key} className="border-b"><td className="p-2 whitespace-nowrap">{formatDate(im.date)}</td><td className="p-2">{im.supplierName}</td><td className="p-2 text-right">{im.qty}</td><td className="p-2 text-right">{formatCurrency(im.cost)}</td><td className="p-2 text-right font-semibold">{formatCurrency(im.amount)}</td><td className="p-2 text-right font-bold text-blue-700">{stockAtImport}</td></tr>})}</tbody></table></div></div>;
         })()}
       </Modal>
     </div>
@@ -1865,16 +1879,21 @@ function InventoryView({ products, orders, imports, storeConfig, db, storeId, sh
                 </div>
               </div>
             </div>
+            {(() => {
+              const latestImport = (imports || []).flatMap(im => (im.items || []).filter(item => (item.id && item.id === detailProduct.id) || (!item.id && item.name === detailProduct.name)).map(item => ({ ...item, date: im.date, supplierName: im.supplierName || 'Chưa rõ nhà cung cấp' }))).sort((a, b) => new Date(b.date || 0) - new Date(a.date || 0))[0];
+              return <div className="bg-blue-50 p-3 rounded-xl border border-blue-100 grid grid-cols-2 md:grid-cols-4 gap-3">
+                <div><p className="text-[10px] text-blue-700 font-bold uppercase">Nhập gần nhất</p><p className="text-xs font-semibold text-gray-800">{latestImport ? formatDate(latestImport.date) : 'Chưa có dữ liệu'}</p></div>
+                <div><p className="text-[10px] text-blue-700 font-bold uppercase">Nhà cung cấp</p><p className="text-xs font-semibold text-gray-800">{latestImport?.supplierName || detailProduct.lastSupplierName || 'Chưa có dữ liệu'}</p></div>
+                <div><p className="text-[10px] text-blue-700 font-bold uppercase">Giá nhập gần nhất</p><p className="text-xs font-bold text-blue-800">{latestImport ? formatCurrency(latestImport.importCost) : 'Chưa có dữ liệu'}</p></div>
+                <div><p className="text-[10px] text-blue-700 font-bold uppercase">Tồn còn lại hiện tại</p><p className="text-xs font-bold text-blue-800">{Number(detailProduct.stock) || 0} sản phẩm</p></div>
+              </div>;
+            })()}
             <div className="bg-orange-50 p-3 rounded-xl border border-orange-100">
-              <p className="text-[11px] text-orange-800 font-bold uppercase mb-2">Lịch sử 3 giá nhập gần nhất</p>
+              <p className="text-[11px] text-orange-800 font-bold uppercase mb-2">5 lần nhập hàng gần nhất</p>
               {(() => {
-                const last3 = (imports || []).flatMap(i => (i.items || []).filter(item => item.id === detailProduct.id).map(it => ({ date: i.date, importCost: it.importCost }))).sort((a,b) => new Date(b.date) - new Date(a.date)).slice(0, 3);
-                if (last3.length === 0) return <p className="text-xs text-orange-600/70">Chưa có dữ liệu nhập hàng đợt nào.</p>;
-                return (
-                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-                    {last3.map((imp, idx) => (<div key={idx} className="flex justify-between items-center text-xs bg-white p-2 rounded-lg border border-orange-100 shadow-sm"><span className="text-gray-500">{formatDate(imp.date)}</span><span className="font-bold text-orange-600">{formatCurrency(imp.importCost)}</span></div>))}
-                  </div>
-                );
+                const lastImports = (imports || []).flatMap(im => (im.items || []).filter(item => (item.id && item.id === detailProduct.id) || (!item.id && item.name === detailProduct.name)).map(item => ({ date: im.date, supplierName: im.supplierName || 'Chưa rõ nhà cung cấp', qty: Number(item.qty ?? item.quantity ?? 0), importCost: Number(item.importCost) || 0, amount: Number(item.qty ?? item.quantity ?? 0) * (Number(item.importCost) || 0) }))).sort((a,b) => new Date(b.date || 0) - new Date(a.date || 0)).slice(0, 5).map(imp => { const importTime = new Date(imp.date || 0).getTime(); const laterImports = (imports || []).reduce((sum, rec) => sum + (new Date(rec.date || 0).getTime() > importTime ? (rec.items || []).filter(item => (item.id && item.id === detailProduct.id) || (!item.id && item.name === detailProduct.name)).reduce((n, item) => n + Number(item.qty ?? item.quantity ?? 0), 0) : 0), 0); const laterSales = (orders || []).reduce((sum, rec) => sum + (new Date(rec.date || 0).getTime() > importTime ? (rec.items || []).filter(item => (item.id && item.id === detailProduct.id) || (!item.id && item.name === detailProduct.name)).reduce((n, item) => n + Number(item.quantity || 0), 0) : 0), 0); return { ...imp, stock: (Number(detailProduct.stock) || 0) - laterImports + laterSales }; });
+                if (lastImports.length === 0) return <p className="text-xs text-orange-600/70">Chưa có dữ liệu nhập hàng đợt nào.</p>;
+                return <div className="overflow-auto"><table className="w-full text-xs min-w-[650px]"><thead className="bg-orange-100 text-orange-900"><tr><th className="p-2 text-left">Thời gian nhập</th><th className="p-2 text-left">Nhà cung cấp</th><th className="p-2 text-right">Số lượng</th><th className="p-2 text-right">Đơn giá nhập</th><th className="p-2 text-right">Thành tiền</th><th className="p-2 text-right">Tồn lúc nhập</th></tr></thead><tbody>{lastImports.map((imp, idx) => <tr key={idx} className="border-t border-orange-100 bg-white"><td className="p-2 whitespace-nowrap">{formatDate(imp.date)}</td><td className="p-2">{imp.supplierName}</td><td className="p-2 text-right">{imp.qty}</td><td className="p-2 text-right">{formatCurrency(imp.importCost)}</td><td className="p-2 text-right font-bold">{formatCurrency(imp.amount)}</td><td className="p-2 text-right font-bold text-blue-700">{imp.stock}</td></tr>)}</tbody></table></div>;
               })()}
             </div>
             <div className="grid grid-cols-4 gap-2 text-center">
