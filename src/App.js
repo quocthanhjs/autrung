@@ -2899,12 +2899,55 @@ function SettingsView({ db, storeId, showToast, storeConfig }) {
                   createdAt: nowIso 
                 }; 
               } 
-              else if (type === 'expenses' && row['Số tiền']) {
-                p = { 
-                  amount: Number(row['Số tiền']), 
-                  note: row['Nội dung'] || row['Ghi chú'] || '', 
-                  date: nowIso 
-                };
+              else if (type === 'expenses') {
+                // Hỗ trợ file chi phí thường và file Sổ Quỹ KiotViet.
+                // Bỏ qua dòng tổng kết/lũy kế không phải giao dịch.
+                const hasExpenseData = row['Mã phiếu'] !== undefined || row['Số tiền'] !== undefined || row['Nội dung'] !== undefined || row['Giá trị'] !== undefined;
+                if (hasExpenseData) {
+                let expenseDate = nowIso;
+                const rawDate = row['Thời gian'] || row['Ngày'] || row['Ngày tạo'] || row['Thời gian tạo'];
+                if (rawDate !== undefined && rawDate !== null && rawDate !== '') {
+                  let parsedDate;
+                  if (typeof rawDate === 'number') {
+                    parsedDate = new Date(Math.round((rawDate - 25569) * 86400 * 1000));
+                  } else {
+                    parsedDate = new Date(rawDate);
+                  }
+                  if (!Number.isNaN(parsedDate.getTime())) expenseDate = parsedDate.toISOString();
+                }
+
+                // File Sổ Quỹ KiotViet: Mã phiếu, Thời gian, Loại thu chi,
+                // Người nộp/nhận, Giá trị. Chỉ nhập phiếu chi.
+                if (row['Giá trị'] !== undefined || row['Mã phiếu'] !== undefined || row['Loại thu chi'] !== undefined) {
+                  const rawValue = row['Giá trị'];
+                  const value = typeof rawValue === 'number'
+                    ? rawValue
+                    : Number(String(rawValue ?? '0').replace(/[^0-9,.-]/g, '').replace(/,(?=\d{3}(?:\D|$))/g, '')) || 0;
+                  const expenseType = String(row['Loại thu chi'] || '').trim();
+                  const person = String(row['Người nộp/nhận'] || '').trim();
+                  const voucherCode = String(row['Mã phiếu'] || '').trim();
+                  const isExpense = value < 0 || expenseType.toLowerCase().includes('chi');
+
+                  // Các dòng tổng kết thường không có mã phiếu; không nhập chúng.
+                  if (isExpense && voucherCode) {
+                    const noteParts = [];
+                    if (expenseType) noteParts.push(expenseType);
+                    if (person) noteParts.push(person);
+                    noteParts.push(`(${voucherCode})`);
+                    p = { amount: Math.abs(value), note: noteParts.join(' - ') || 'Phiếu chi KiotViet', date: expenseDate };
+                  }
+                } else if (row['Số tiền'] !== undefined && row['Số tiền'] !== '') {
+                  const rawAmount = row['Số tiền'];
+                  const amount = typeof rawAmount === 'number'
+                    ? rawAmount
+                    : Number(String(rawAmount).replace(/[^0-9,.-]/g, '').replace(/,(?=\d{3}(?:\D|$))/g, '')) || 0;
+                  p = {
+                    amount: Math.abs(amount),
+                    note: String(row['Nội dung'] || row['Ghi chú'] || 'Chi phí'),
+                    date: expenseDate
+                  };
+                }
+                }
               }
 
               if (p) { 
