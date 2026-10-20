@@ -1779,8 +1779,9 @@ function InventoryView({ products, orders, imports, storeConfig, db, storeId, sh
   const [detailProduct, setDetailProduct] = useState(null);
   const [showAllDetailSales, setShowAllDetailSales] = useState(false);
   const currentDate = new Date();
-  const [filterMonth, setFilterMonth] = useState((currentDate.getMonth() + 1).toString());
-  const [filterYear, setFilterYear] = useState(currentDate.getFullYear().toString());
+  const currentVietnamDate = getVietnamDateParts(currentDate);
+  const [filterMonth, setFilterMonth] = useState(currentVietnamDate.month.toString());
+  const [filterYear, setFilterYear] = useState(currentVietnamDate.year.toString());
   const [invRowsPerPage, setInvRowsPerPage] = useState('10');
   const [invCurrentPage, setInvCurrentPage] = useState(1);
 
@@ -1865,7 +1866,7 @@ function InventoryView({ products, orders, imports, storeConfig, db, storeId, sh
 
   const productHistory = useMemo(() => {
     if (!detailProduct) return { sales: [], imports: [], totalSoldQty: 0, totalImportQty: 0, totalSoldAmount: 0, totalImportAmount: 0, totalPaid: 0, totalDebtRemain: 0 };
-    const matchTime = (dateStr) => { const d = new Date(dateStr); return (filterMonth === 'ALL' || (d.getMonth() + 1).toString() === filterMonth) && d.getFullYear().toString() === filterYear; };
+    const matchTime = (dateStr) => { const d = getVietnamDateParts(new Date(dateStr)); return (filterMonth === 'ALL' || d.month.toString() === filterMonth) && d.year.toString() === filterYear; };
     const sales = (orders || []).filter(o => matchTime(o.date)).flatMap(o => (o.items || []).filter(item => item.id === detailProduct.id).map(it => ({ ...it, date: o.date, status: o.status, customerName: o.customerName || 'Khách lẻ' }))).sort((a,b) => new Date(b.date) - new Date(a.date));
     const imp = (imports || []).filter(i => matchTime(i.date)).flatMap(i => (i.items || []).filter(item => item.id === detailProduct.id).map(it => ({ ...it, date: i.date, status: i.status, supplierName: i.supplierName || 'NCC Ẩn' }))).sort((a,b) => new Date(b.date) - new Date(a.date));
     let totalSoldQty = sales.reduce((s, x) => s + (Number(x.quantity) || 0), 0); let totalImportQty = imp.reduce((s, x) => s + (Number(x.qty) || 0), 0);
@@ -1934,7 +1935,7 @@ function InventoryView({ products, orders, imports, storeConfig, db, storeId, sh
                 <button onClick={handlePrintProductDetail} className="bg-blue-600 hover:bg-blue-700 text-white px-3 py-1.5 rounded-lg text-xs font-bold flex items-center gap-1 shadow-sm"><Printer size={14}/> In Thẻ Kho</button>
                 <div className="flex items-center gap-1 bg-white p-1 rounded border">
                   <select value={filterMonth} onChange={e=>setFilterMonth(e.target.value)} className="bg-transparent text-xs outline-none"><option value="ALL">Cả năm</option>{Array.from({length: 12}, (_, i) => <option key={i+1} value={i+1}>Tháng {i+1}</option>)}</select>
-                  <select value={filterYear} onChange={e=>setFilterYear(e.target.value)} className="bg-transparent text-xs outline-none">{Array.from({length: 5}, (_, i) => new Date().getFullYear() - i).map(y => <option key={y} value={y}>{y}</option>)}</select>
+                  <select value={filterYear} onChange={e=>setFilterYear(e.target.value)} className="bg-transparent text-xs outline-none">{Array.from({length: 5}, (_, i) => getVietnamDateParts(new Date()).year - i).map(y => <option key={y} value={y}>{y}</option>)}</select>
                 </div>
               </div>
             </div>
@@ -2049,9 +2050,9 @@ function WarrantyView({ products = [], customers = [], suppliers = [], warrantyR
   const [showPrintSaleDate, setShowPrintSaleDate] = useState(true);
   const [showPrintWarrantyDuration, setShowPrintWarrantyDuration] = useState(true);
   const [showPrintLogo, setShowPrintLogo] = useState(true);
-  const [saleDate, setSaleDate] = useState(new Date().toISOString().slice(0,10));
-  const [purchaseDate, setPurchaseDate] = useState(new Date().toISOString().slice(0,10));
-  const [sentDate, setSentDate] = useState(new Date().toISOString().slice(0,10));
+  const [saleDate, setSaleDate] = useState(getVietnamDateKey(new Date()));
+  const [purchaseDate, setPurchaseDate] = useState(getVietnamDateKey(new Date()));
+  const [sentDate, setSentDate] = useState(getVietnamDateKey(new Date()));
   const [warrantyLocation, setWarrantyLocation] = useState('');
   const [newLocation, setNewLocation] = useState('');
   const [newLocationAddress, setNewLocationAddress] = useState('');
@@ -2064,8 +2065,6 @@ function WarrantyView({ products = [], customers = [], suppliers = [], warrantyR
   const [filter, setFilter] = useState('PENDING');
   const [rowsPerPage, setRowsPerPage] = useState('10');
   const [search, setSearch] = useState('');
-  const [historySearch, setHistorySearch] = useState({ customer: '', location: '' });
-  const [historyRowsPerPage, setHistoryRowsPerPage] = useState({ customer: '10', location: '10' });
   const [sortOrder, setSortOrder] = useState('desc');
   const [sortField, setSortField] = useState('sentAt');
   const [paperSize, setPaperSize] = useState(storeConfig.warrantyPrintSize || 'A4');
@@ -2097,8 +2096,8 @@ function WarrantyView({ products = [], customers = [], suppliers = [], warrantyR
   const updateItem = (idx, key, value) => setItems(prev => prev.map((it,i)=>i===idx?{...it,[key]:value}:it));
   const resetForm = () => {
     setEditingId(null); setRecordType('customer'); setCustomerName(''); setCustomerAddress(''); setPhone('');
-    setSupplierName(''); setSupplierAddress(''); setSupplierPhone(''); setSaleDate(new Date().toISOString().slice(0,10)); setPurchaseDate(new Date().toISOString().slice(0,10));
-    setSentDate(new Date().toISOString().slice(0,10)); setWarrantyLocation(''); setNotes('');
+    setSupplierName(''); setSupplierAddress(''); setSupplierPhone(''); setSaleDate(getVietnamDateKey(new Date())); setPurchaseDate(getVietnamDateKey(new Date()));
+    setSentDate(getVietnamDateKey(new Date())); setWarrantyLocation(''); setNotes('');
     setCustomerNotes(''); setLocationNotes(''); setItems([{productId:'',name:'',quantity:1,warranty:'',note:''}]);
   };
   const addLocation = async () => {
@@ -2192,7 +2191,7 @@ function WarrantyView({ products = [], customers = [], suppliers = [], warrantyR
       warrantyLocationPhone: recordType === 'location' && typeof location === 'object' ? location.phone || '' : '',
       saleDate: recordType === 'customer' ? (saleDate || '') : (existingRequest?.saleDate || ''),
       purchaseDate: recordType === 'location' ? (purchaseDate || '') : (existingRequest?.purchaseDate || ''),
-      sentAt: sentDate ? new Date(`${sentDate}T12:00:00`).toISOString() : now,
+      sentAt: sentDate ? new Date(`${sentDate}T12:00:00+07:00`).toISOString() : now,
       notes: recordType === 'customer' ? customerNotes.trim() : locationNotes.trim(), customerNotes: recordType === 'customer' ? customerNotes.trim() : '', locationNotes: recordType === 'location' ? locationNotes.trim() : '',
       items: cleanItems, updatedAt: now
     };
@@ -2211,9 +2210,9 @@ function WarrantyView({ products = [], customers = [], suppliers = [], warrantyR
     setEditingId(w.id); setRecordType(w.recordType || (w.supplierName && !w.customerName ? 'location' : 'customer'));
     setCustomerName(w.customerName || ''); setCustomerAddress(w.customerAddress || ''); setPhone(w.phone || '');
     setSupplierName(w.supplierName || ''); setSupplierAddress(w.supplierAddress || ''); setSupplierPhone(w.supplierPhone || '');
-    setSaleDate((w.saleDate || '').slice(0,10) || new Date().toISOString().slice(0,10));
-    setPurchaseDate((w.purchaseDate || '').slice(0,10) || new Date().toISOString().slice(0,10));
-    setSentDate((w.sentAt || w.createdAt || '').slice(0,10) || new Date().toISOString().slice(0,10));
+    setSaleDate((w.saleDate || '').slice(0,10) || getVietnamDateKey(new Date()));
+    setPurchaseDate((w.purchaseDate || '').slice(0,10) || getVietnamDateKey(new Date()));
+    setSentDate((w.sentAt || w.createdAt) ? getVietnamDateKey(new Date(w.sentAt || w.createdAt)) : getVietnamDateKey(new Date()));
     setWarrantyLocation(w.warrantyLocation || ''); setNotes(w.notes || '');
     setCustomerNotes(w.customerNotes || ((w.recordType || 'customer') === 'customer' ? (w.notes || '') : '')); setLocationNotes(w.locationNotes || ((w.recordType || 'customer') === 'location' ? (w.notes || '') : ''));
     setItems((w.items || []).map(it=>({...it, quantity:it.quantity || 1})).concat([]).length ? (w.items || []).map(it=>({...it, quantity:it.quantity || 1})) : [{productId:'',name:'',quantity:1,warranty:'',note:''}]);
@@ -2313,12 +2312,11 @@ function WarrantyView({ products = [], customers = [], suppliers = [], warrantyR
       { type: 'customer', title: 'Thẻ lưu bảo hành khách hàng', description: 'Lịch sử sản phẩm đã nhận bảo hành, có thể đổi trạng thái giữa đang bảo hành và đã xong.' },
       { type: 'location', title: 'Thẻ địa chỉ bảo hành', description: 'Lịch sử các phiếu gửi đến địa chỉ/nơi bảo hành.' }
     ].map(card => {
-      const cardRows = (warrantyRequests || []).filter(w => { const type = w.recordType || (w.supplierName && !w.customerName ? 'location' : 'customer'); return type === card.type; }).map((w, idx) => ({...w, __historyStt: idx + 1})).filter(w => `${w.__historyStt || ''} ${w.customerName || ''} ${w.phone || ''} ${w.supplierName || ''} ${w.warrantyLocation || ''} ${(w.items || []).map(it => it.name || '').join(' ')} ${w.id || ''} ${w.warrantyCode || ''}`.toLocaleLowerCase('vi').includes((historySearch[card.type] || '').trim().toLocaleLowerCase('vi'))).filter(w => filter === 'ALL' || (filter === 'PENDING' ? w.status !== 'COMPLETED' : w.status === 'COMPLETED')).sort((a,b) => { const av = sortField === 'customerName' ? (a.customerName || a.supplierName || '') : sortField === 'warrantyLocation' ? (a.warrantyLocation || '') : (a.sentAt || a.createdAt || ''); const bv = sortField === 'customerName' ? (b.customerName || b.supplierName || '') : sortField === 'warrantyLocation' ? (b.warrantyLocation || '') : (b.sentAt || b.createdAt || ''); const cmp = sortField === 'sentAt' ? new Date(av || 0) - new Date(bv || 0) : String(av).localeCompare(String(bv), 'vi', {numeric:true, sensitivity:'base'}); return sortOrder === 'asc' ? cmp : -cmp; });
-      const visibleCardRows = historyRowsPerPage[card.type] === 'all' ? cardRows : cardRows.slice(0, Number(historyRowsPerPage[card.type] || 10));
+      const cardRows = visible.filter(w => (w.recordType || (w.supplierName ? 'location' : 'customer')) === card.type);
       return <section key={card.type} className="flex-1 overflow-auto bg-white rounded-xl border shadow-sm mb-4">
-        <div className="p-4 border-b"><h3 className="text-lg font-bold text-gray-800">{card.title}</h3><p className="text-sm text-gray-500">{card.description}</p><div className="flex flex-col sm:flex-row gap-2 mt-3"><input value={historySearch[card.type] || ''} onChange={e=>setHistorySearch(prev=>({...prev,[card.type]:e.target.value}))} placeholder="Tìm STT, tên khách hàng, số điện thoại, sản phẩm..." className="flex-1 p-2.5 border rounded-xl bg-white"/><select aria-label={`Số dòng ${card.title}`} value={historyRowsPerPage[card.type] || '10'} onChange={e=>setHistoryRowsPerPage(prev=>({...prev,[card.type]:e.target.value}))} className="p-2.5 border rounded-xl bg-white"><option value="10">Hiển thị 10</option><option value="20">Hiển thị 20</option><option value="50">Hiển thị 50</option><option value="all">Hiển thị tất cả</option></select></div></div>
+        <div className="p-4 border-b"><h3 className="text-lg font-bold text-gray-800">{card.title}</h3><p className="text-sm text-gray-500">{card.description}</p></div>
         <div className="overflow-x-auto"><table className="w-full text-left text-sm min-w-[950px]"><thead className="bg-gray-100 sticky top-0"><tr><th className="p-3">STT</th><th className="p-3">Tên khách hàng</th><th className="p-3">Sản phẩm đã bảo hành</th><th className="p-3">Thời gian bảo hành</th><th className="p-3">Số điện thoại</th><th className="p-3">Trạng thái</th><th className="p-3">Thao tác</th></tr></thead><tbody>
-          {visibleCardRows.map((w, i) => <tr key={w.id} className="border-t hover:bg-gray-50 align-top"><td className="p-3">{i+1}</td><td className="p-3 font-bold">{w.customerName || w.supplierName || '—'}<p className="font-normal text-xs text-gray-500">{card.type === 'location' ? (w.warrantyLocation || '') : ''}</p></td><td className="p-3">{(w.items || []).map((it, j) => <div key={j}>{it.name || '—'}</div>)}</td><td className="p-3"><div>Gửi: {formatDate(w.sentAt || w.createdAt)}</div><div>{(w.items || []).map((it,j)=><div key={j}>{it.warranty || 'Chưa ghi thời hạn'}</div>)}</div></td><td className="p-3">{w.phone || w.supplierPhone || '—'}</td><td className="p-3">{w.status === 'COMPLETED' ? <span className="px-2 py-1 rounded-lg text-xs font-bold bg-green-100 text-green-700">Đã xong</span> : <span className="px-2 py-1 rounded-lg text-xs font-bold bg-amber-100 text-amber-800">Đang bảo hành</span>}</td><td className="p-3"><div className="flex flex-col gap-2"><button onClick={()=>toggleWarrantyStatus(w)} className="px-3 py-1.5 rounded-lg border font-bold whitespace-nowrap">{w.status === 'COMPLETED' ? 'Chuyển lại đang bảo hành' : 'Đánh dấu đã xong'}</button><button onClick={()=>editRequest(w)} className="px-3 py-1.5 rounded-lg border font-bold flex items-center gap-1"><Edit size={14}/> Sửa chi tiết</button><button onClick={()=>setPrintTarget(w)} className="px-3 py-1.5 rounded-lg border font-bold flex items-center gap-1"><Printer size={14}/> In lại phiếu</button><button onClick={()=>deleteRequest(w)} className="px-3 py-1.5 rounded-lg border border-red-200 text-red-600 font-bold flex items-center gap-1"><Trash2 size={14}/> Xóa phiếu</button></div></td></tr>)}
+          {cardRows.map((w, i) => <tr key={w.id} className="border-t hover:bg-gray-50 align-top"><td className="p-3">{i+1}</td><td className="p-3 font-bold">{w.customerName || w.supplierName || '—'}<p className="font-normal text-xs text-gray-500">{card.type === 'location' ? (w.warrantyLocation || '') : ''}</p></td><td className="p-3">{(w.items || []).map((it, j) => <div key={j}>{it.name || '—'}</div>)}</td><td className="p-3"><div>Gửi: {formatDate(w.sentAt || w.createdAt)}</div><div>{(w.items || []).map((it,j)=><div key={j}>{it.warranty || 'Chưa ghi thời hạn'}</div>)}</div></td><td className="p-3">{w.phone || w.supplierPhone || '—'}</td><td className="p-3">{w.status === 'COMPLETED' ? <span className="px-2 py-1 rounded-lg text-xs font-bold bg-green-100 text-green-700">Đã xong</span> : <span className="px-2 py-1 rounded-lg text-xs font-bold bg-amber-100 text-amber-800">Đang bảo hành</span>}</td><td className="p-3"><div className="flex flex-col gap-2"><button onClick={()=>toggleWarrantyStatus(w)} className="px-3 py-1.5 rounded-lg border font-bold whitespace-nowrap">{w.status === 'COMPLETED' ? 'Chuyển lại đang bảo hành' : 'Đánh dấu đã xong'}</button><button onClick={()=>editRequest(w)} className="px-3 py-1.5 rounded-lg border font-bold flex items-center gap-1"><Edit size={14}/> Sửa chi tiết</button><button onClick={()=>setPrintTarget(w)} className="px-3 py-1.5 rounded-lg border font-bold flex items-center gap-1"><Printer size={14}/> In lại phiếu</button><button onClick={()=>deleteRequest(w)} className="px-3 py-1.5 rounded-lg border border-red-200 text-red-600 font-bold flex items-center gap-1"><Trash2 size={14}/> Xóa phiếu</button></div></td></tr>)}
           {cardRows.length===0 && <tr><td colSpan="7" className="p-8 text-center text-gray-400">Chưa có lịch sử trong thẻ này.</td></tr>}
         </tbody></table></div></section>;
     })}
