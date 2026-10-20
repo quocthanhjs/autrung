@@ -2191,7 +2191,7 @@ function WarrantyView({ products = [], customers = [], suppliers = [], warrantyR
       warrantyLocationPhone: recordType === 'location' && typeof location === 'object' ? location.phone || '' : '',
       saleDate: recordType === 'customer' ? (saleDate || '') : (existingRequest?.saleDate || ''),
       purchaseDate: recordType === 'location' ? (purchaseDate || '') : (existingRequest?.purchaseDate || ''),
-      sentAt: sentDate ? new Date(`${sentDate}T12:00:00+07:00`).toISOString() : now,
+      sentAt: sentDate ? (() => { const parts = getVietnamDateParts(new Date()); return new Date(`${sentDate}T${String(parts.hour).padStart(2, '0')}:${String(parts.minute).padStart(2, '0')}:${String(parts.second).padStart(2, '0')}+07:00`).toISOString(); })() : now,
       notes: recordType === 'customer' ? customerNotes.trim() : locationNotes.trim(), customerNotes: recordType === 'customer' ? customerNotes.trim() : '', locationNotes: recordType === 'location' ? locationNotes.trim() : '',
       items: cleanItems, updatedAt: now
     };
