@@ -29,7 +29,7 @@ const PERMISSION_TREE = [
 
 const VIETNAM_TIME_ZONE = 'Asia/Ho_Chi_Minh';
 const getVietnamDateParts = (date = new Date()) => {
-  const parts = new Intl.DateTimeFormat('en-CA', { timeZone: VIETNAM_TIME_ZONE, year: 'numeric', month: '2-digit', day: '2-digit' }).formatToParts(date);
+  const parts = new Intl.DateTimeFormat('en-CA', { timeZone: VIETNAM_TIME_ZONE, year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit', second: '2-digit', hourCycle: 'h23' }).formatToParts(date);
   return Object.fromEntries(parts.filter(part => part.type !== 'literal').map(part => [part.type, Number(part.value)]));
 };
 const getVietnamDateKey = (date = new Date()) => {
