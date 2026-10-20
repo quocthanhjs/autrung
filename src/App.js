@@ -2056,6 +2056,7 @@ function WarrantyView({ products = [], customers = [], suppliers = [], warrantyR
   const [newLocation, setNewLocation] = useState('');
   const [newLocationAddress, setNewLocationAddress] = useState('');
   const [newLocationPhone, setNewLocationPhone] = useState('');
+  const [editingLocationName, setEditingLocationName] = useState('');
   const [notes, setNotes] = useState('');
   const [customerNotes, setCustomerNotes] = useState('');
   const [locationNotes, setLocationNotes] = useState('');
@@ -2101,14 +2102,31 @@ function WarrantyView({ products = [], customers = [], suppliers = [], warrantyR
   const addLocation = async () => {
     const name = newLocation.trim();
     if (!name || !newLocationAddress.trim() || !newLocationPhone.trim()) {
-      return showToast('Vui lòng nhập tên, địa chỉ và số điện thoại nơi nhận bảo hành','error');
+      return showToast('Vui lòng nhập tên, địa chỉ và số điện thoại nơi bảo hành','error');
     }
-    const next = [...locations.filter(l => locationName(l) !== name), { name, address: newLocationAddress.trim(), phone: newLocationPhone.trim() }];
+    const next = [...locations.filter(l => locationName(l) !== (editingLocationName || name) && locationName(l) !== name), { name, address: newLocationAddress.trim(), phone: newLocationPhone.trim() }];
     try {
       await setDoc(doc(db,'stores',storeId), { warrantyLocations: next }, { merge:true });
-      setWarrantyLocation(name); setNewLocation(''); setNewLocationAddress(''); setNewLocationPhone('');
-      showToast('Đã thêm nơi bảo hành');
-    } catch(e) { showToast('Không thêm được nơi bảo hành','error'); }
+      if (warrantyLocation === editingLocationName) setWarrantyLocation(name);
+      setWarrantyLocation(name); setNewLocation(''); setNewLocationAddress(''); setNewLocationPhone(''); setEditingLocationName('');
+      showToast(editingLocationName ? 'Đã cập nhật nơi bảo hành' : 'Đã thêm nơi bảo hành');
+    } catch(e) { showToast('Không lưu được nơi bảo hành','error'); }
+  };
+  const editWarrantyLocation = (location) => {
+    setEditingLocationName(locationName(location));
+    setNewLocation(locationName(location));
+    setNewLocationAddress(location?.address || '');
+    setNewLocationPhone(location?.phone || '');
+  };
+  const deleteWarrantyLocation = async (location) => {
+    const name = locationName(location);
+    if (!window.confirm(`Xóa nơi bảo hành “${name}”? Các phiếu bảo hành đã lưu không bị xóa.`)) return;
+    try {
+      await setDoc(doc(db, 'stores', storeId), { warrantyLocations: locations.filter(l => locationName(l) !== name) }, { merge: true });
+      if (warrantyLocation === name) setWarrantyLocation('');
+      if (editingLocationName === name) { setEditingLocationName(''); setNewLocation(''); setNewLocationAddress(''); setNewLocationPhone(''); }
+      showToast('Đã xóa nơi bảo hành');
+    } catch(e) { showToast('Không xóa được nơi bảo hành','error'); }
   };
   const closeQuickAdd = () => { setQuickAddType(''); setQuickAddName(''); setQuickAddAddress(''); setQuickAddPhone(''); };
   const saveQuickAdd = async () => {
@@ -2244,9 +2262,28 @@ function WarrantyView({ products = [], customers = [], suppliers = [], warrantyR
     const cmp = sortField==='sentAt' ? new Date(av||0)-new Date(bv||0) : String(av).localeCompare(String(bv),'vi',{numeric:true,sensitivity:'base'});
     return sortOrder==='asc' ? cmp : -cmp;
   });
-  const visible = rowsPerPage==='all'?filtered:filtered.slice(0,Number(rowsPerPage)||10);
+  // Gộp các phiếu nhận bảo hành của cùng một khách thành một dòng hiển thị;
+  // không xóa hay sửa các phiếu gốc trong Firebase. Sản phẩm của các phiếu được gom để dùng khi gửi nơi nhận.
+  const groupedFiltered = [...filtered.reduce((map, w) => {
+    const type = w.recordType || (w.supplierName ? 'location' : 'customer');
+    const key = [type, String(w.customerName || w.supplierName || '').trim().toLocaleLowerCase('vi'), w.status || 'PENDING', type === 'location' ? (w.warrantyLocation || '') : ''].join('|');
+    if (!map.has(key)) map.set(key, { ...w, items: [...(w.items || [])], groupedRequestIds: [w.id], groupedRequests: [w] });
+    else {
+      const group = map.get(key);
+      group.groupedRequestIds.push(w.id);
+      group.groupedRequests.push(w);
+      group.items.push(...(w.items || []));
+      if (new Date(w.sentAt || w.createdAt || 0) < new Date(group.sentAt || group.createdAt || 0)) {
+        group.sentAt = w.sentAt || group.sentAt;
+        group.createdAt = w.createdAt || group.createdAt;
+      }
+    }
+    return map;
+  }, new Map()).values()];
+  const visible = rowsPerPage==='all'?groupedFiltered:groupedFiltered.slice(0,Number(rowsPerPage)||10);
   return <div className="flex-1 flex flex-col p-4 md:p-6 bg-gray-50 overflow-hidden h-full">
     <div className="flex flex-col sm:flex-row justify-between gap-3 mb-4"><div><h2 className="text-2xl font-bold text-gray-800 flex items-center gap-2"><ShieldAlert className="text-purple-600"/> Bảo hành</h2><p className="text-sm text-gray-500">Lập, chỉnh sửa, in lại phiếu bảo hành theo thẻ khách hàng hoặc nơi nhận bảo hành.</p></div><button onClick={()=>{if(showForm){resetForm();setShowForm(false)}else{resetForm();setShowForm(true)}}} className="bg-purple-600 text-white px-4 py-2 rounded-xl font-bold flex items-center gap-2"><Plus size={18}/>{showForm?'Đóng biểu mẫu':'Lập phiếu bảo hành'}</button></div>
+    <section className="bg-white rounded-2xl border shadow-sm p-4 mb-4 space-y-3"><div><h3 className="text-lg font-bold text-gray-800">Nơi bảo hành</h3><p className="text-sm text-gray-500">Quản lý danh sách nơi nhận bảo hành dùng trong phiếu.</p></div><div className="grid grid-cols-1 md:grid-cols-3 gap-2"><input value={newLocation} onChange={e=>setNewLocation(e.target.value)} className="p-2 border rounded-lg" placeholder="Tên nơi bảo hành"/><input value={newLocationAddress} onChange={e=>setNewLocationAddress(e.target.value)} className="p-2 border rounded-lg" placeholder="Địa chỉ"/><input value={newLocationPhone} onChange={e=>setNewLocationPhone(e.target.value)} className="p-2 border rounded-lg" placeholder="Số điện thoại"/></div><div className="flex flex-wrap gap-2"><button type="button" onClick={addLocation} className="px-4 py-2 rounded-lg bg-purple-600 text-white font-bold">{editingLocationName?'Lưu chỉnh sửa':'Thêm nơi bảo hành'}</button>{editingLocationName&&<button type="button" onClick={()=>{setEditingLocationName('');setNewLocation('');setNewLocationAddress('');setNewLocationPhone('');}} className="px-4 py-2 rounded-lg border font-bold">Hủy sửa</button>}</div>{locations.length>0&&<div className="overflow-x-auto"><table className="w-full text-sm text-left"><thead className="bg-gray-100"><tr><th className="p-2">Tên nơi bảo hành</th><th className="p-2">Địa chỉ</th><th className="p-2">Số điện thoại</th><th className="p-2">Thao tác</th></tr></thead><tbody>{locations.map((loc,i)=><tr key={locationName(loc)||i} className="border-t"><td className="p-2 font-semibold">{locationName(loc)}</td><td className="p-2">{loc?.address||'—'}</td><td className="p-2">{loc?.phone||'—'}</td><td className="p-2"><div className="flex gap-2"><button type="button" onClick={()=>editWarrantyLocation(loc)} className="px-3 py-1 rounded border font-bold"><Edit size={13} className="inline mr-1"/>Sửa</button><button type="button" onClick={()=>deleteWarrantyLocation(loc)} className="px-3 py-1 rounded border border-red-200 text-red-600 font-bold"><Trash2 size={13} className="inline mr-1"/>Xóa</button></div></td></tr>)}</tbody></table></div>}</section>
     {showForm&&<form onSubmit={saveRequest} className="bg-white p-4 rounded-2xl border shadow-sm mb-4 space-y-3 overflow-y-auto max-h-[55vh]">
       <div className="flex gap-2"><button type="button" onClick={()=>setRecordType('customer')} className={`px-4 py-2 rounded-lg font-bold ${recordType==='customer'?'bg-purple-600 text-white':'border'}`}>Thẻ khách hàng</button><button type="button" onClick={()=>setRecordType('location')} className={`px-4 py-2 rounded-lg font-bold ${recordType==='location'?'bg-blue-600 text-white':'border'}`}>Thẻ nơi gửi bảo hành</button></div>
       {recordType==='customer'?<div className="grid grid-cols-1 md:grid-cols-2 gap-3"><div><label className="text-sm font-bold">Tên khách hàng</label><div className="mt-1 flex gap-2"><WarrantyAutocomplete value={customerName} options={customers} onChange={setCustomerName} onSelect={c=>{setCustomerName(c.name||'');setCustomerAddress(c.address||'');setPhone(c.phone||'');}} required placeholder="Gõ để tìm khách hàng đã lưu" className="min-w-0 w-full p-2 border rounded-lg font-normal"/><button type="button" onClick={()=>{setQuickAddType('customer');setQuickAddName(customerName);setQuickAddAddress(customerAddress);setQuickAddPhone(phone);}} className="px-3 rounded-lg border text-purple-700 font-bold whitespace-nowrap">+ Thêm mới</button></div></div><label className="text-sm font-bold">Số điện thoại khách hàng<input value={phone} onChange={e=>setPhone(e.target.value)} className="mt-1 w-full p-2 border rounded-lg font-normal" placeholder="Số điện thoại"/></label><label className="text-sm font-bold md:col-span-2">Địa chỉ khách hàng<input value={customerAddress} onChange={e=>setCustomerAddress(e.target.value)} className="mt-1 w-full p-2 border rounded-lg font-normal" placeholder="Địa chỉ"/></label></div>:<div className="grid grid-cols-1 md:grid-cols-2 gap-3"><div className="md:col-span-2"><label className="text-sm font-bold">Khách hàng liên quan (chỉ quản lý, không in)</label><div className="mt-1"><WarrantyAutocomplete value={customerName} options={availableRelatedCustomers} onChange={value=>{setCustomerName(value);if(!value.trim()){setItems([{productId:'',name:'',quantity:1,warranty:'',note:''}]);}}} onSelect={c=>{setCustomerName(c.name||'');setCustomerAddress(c.address||'');setPhone(c.phone||'');const linkedItems=(c.items||[]).map(it=>({...it,quantity:it.quantity||1}));setItems(linkedItems.length?linkedItems:[{productId:'',name:'',quantity:1,warranty:'',note:''}]);}} placeholder="Bấm chọn khách hàng còn đang bảo hành" className="w-full p-2 border rounded-lg font-normal"/></div><p className="mt-1 text-xs text-gray-500">Chỉ hiện khách hàng có phiếu nhận bảo hành chưa hoàn thành. Chọn khách hàng sẽ tự điền các sản phẩm còn bảo hành.</p></div></div>}
