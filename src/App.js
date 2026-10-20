@@ -501,6 +501,11 @@ function DashboardView({ orders, imports, expenses, customers, suppliers, produc
   const [warrantySortOrder, setWarrantySortOrder] = useState('oldest');
   const [filterMonth, setFilterMonth] = useState(currentVietnamDate.month.toString());
   const [filterYear, setFilterYear] = useState(currentVietnamDate.year.toString());
+  // Bộ lọc riêng cho hai bảng nhắc nợ, không phụ thuộc bộ lọc tổng quan chung.
+  const [custDebtMonth, setCustDebtMonth] = useState('ALL');
+  const [custDebtYear, setCustDebtYear] = useState(currentVietnamDate.year.toString());
+  const [suppDebtMonth, setSuppDebtMonth] = useState('ALL');
+  const [suppDebtYear, setSuppDebtYear] = useState(currentVietnamDate.year.toString());
   const [filterDay, setFilterDay] = useState('');
   const [chartPeriodMode, setChartPeriodMode] = useState('day');
   const [selectedChartPeriod, setSelectedChartPeriod] = useState(null);
@@ -580,10 +585,9 @@ function DashboardView({ orders, imports, expenses, customers, suppliers, produc
 
     const filteredCustDebt = (customers || []).filter(c => {
       if (Number(c.totalDebt || 0) <= 0) return false;
-      if (filterDay) return !!c.createdAt && getVietnamDateKey(new Date(c.createdAt)) === filterDay;
-      if (!c.createdAt) return filterMonth === 'ALL';
+      if (!c.createdAt) return custDebtMonth === 'ALL';
       const d = getVietnamDateParts(new Date(c.createdAt));
-      return (filterMonth === 'ALL' || d.month.toString() === filterMonth) && d.year.toString() === filterYear;
+      return (custDebtMonth === 'ALL' || d.month.toString() === custDebtMonth) && d.year.toString() === custDebtYear;
     }).sort((a, b) => {
       const timeA = new Date(a.createdAt || 0);
       const timeB = new Date(b.createdAt || 0);
@@ -592,10 +596,9 @@ function DashboardView({ orders, imports, expenses, customers, suppliers, produc
 
     const filteredSuppDebt = (suppliers || []).filter(s => {
       if (Number(s.totalDebt || 0) <= 0) return false;
-      if (filterDay) return !!s.createdAt && getVietnamDateKey(new Date(s.createdAt)) === filterDay;
-      if (!s.createdAt) return filterMonth === 'ALL';
+      if (!s.createdAt) return suppDebtMonth === 'ALL';
       const d = getVietnamDateParts(new Date(s.createdAt));
-      return (filterMonth === 'ALL' || d.month.toString() === filterMonth) && d.year.toString() === filterYear;
+      return (suppDebtMonth === 'ALL' || d.month.toString() === suppDebtMonth) && d.year.toString() === suppDebtYear;
     }).sort((a, b) => {
       const timeA = new Date(a.createdAt || 0);
       const timeB = new Date(b.createdAt || 0);
@@ -642,7 +645,7 @@ function DashboardView({ orders, imports, expenses, customers, suppliers, produc
     const topProducts = Object.values(productSalesMap).sort((a, b) => b.totalQty - a.totalQty).slice(0, 5);
 
     return { totalRev, totalCost, totalExp, netProfit, overdueCust, overdueCust1Week, chartData, chartMeta, topProducts, filteredCustDebt, filteredSuppDebt };
-  }, [orders, imports, expenses, customers, suppliers, products, filterMonth, filterYear, filterDay, custSortOrder, suppSortOrder, chartFilter, chartPeriodMode]);
+  }, [orders, imports, expenses, customers, suppliers, products, filterMonth, filterYear, filterDay, custDebtMonth, custDebtYear, suppDebtMonth, suppDebtYear, custSortOrder, suppSortOrder, chartFilter, chartPeriodMode]);
 
   const years = Array.from({length: 5}, (_, i) => currentVietnamDate.year - i);
   const StatCard = ({ icon, title, value, color, highlight = false }) => {
@@ -757,8 +760,8 @@ function DashboardView({ orders, imports, expenses, customers, suppliers, produc
 
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
         <div className="bg-white p-5 rounded-2xl shadow-sm border border-gray-200 flex flex-col">
-          <div className="flex justify-between items-center mb-3">
-            <h3 className="font-bold text-gray-800 flex items-center gap-2 text-blue-600"> <Users size={18}/> Nhắc nợ Khách hàng ({filterMonth === 'ALL' ? `Năm ${filterYear}` : `Tháng ${filterMonth}/${filterYear}`}) </h3>
+          <div className="flex flex-wrap justify-between items-center gap-2 mb-3">
+            <div className="flex flex-wrap items-center gap-2"><h3 className="font-bold text-gray-800 flex items-center gap-2 text-blue-600"> <Users size={18}/> Nhắc nợ Khách hàng ({custDebtMonth === 'ALL' ? `Năm ${custDebtYear}` : `Tháng ${custDebtMonth}/${custDebtYear}`}) </h3><select aria-label="Tháng nhắc nợ khách hàng" value={custDebtMonth} onChange={e=>setCustDebtMonth(e.target.value)} className="border rounded-lg px-2 py-1.5 bg-white text-xs"><option value="ALL">Cả năm</option>{Array.from({length:12},(_,i)=><option key={i+1} value={String(i+1)}>Tháng {i+1}</option>)}</select><select aria-label="Năm nhắc nợ khách hàng" value={custDebtYear} onChange={e=>setCustDebtYear(e.target.value)} className="border rounded-lg px-2 py-1.5 bg-white text-xs">{Array.from({length:8},(_,i)=>currentVietnamDate.year-i).map(y=><option key={y} value={String(y)}>Năm {y}</option>)}</select></div>
             <button onClick={() => setCustSortOrder(prev => prev === 'desc' ? 'asc' : 'desc')} className="text-xs bg-gray-100 hover:bg-gray-200 text-gray-700 px-2.5 py-1 rounded-lg font-medium flex items-center gap-1 transition" > <ArrowUpDown size={12}/> {custSortOrder === 'desc' ? 'Lâu nhất trước' : 'Gần nhất trước'} </button>
           </div>
           <div className="overflow-y-auto border rounded-xl flex-1 max-h-72">
@@ -785,8 +788,8 @@ function DashboardView({ orders, imports, expenses, customers, suppliers, produc
         </div>
         
         <div className="bg-white p-5 rounded-2xl shadow-sm border border-gray-200 flex flex-col">
-          <div className="flex justify-between items-center mb-3">
-            <h3 className="font-bold text-gray-800 flex items-center gap-2 text-orange-600"> <Truck size={18}/> Nhắc nợ Nhà cung cấp ({filterMonth === 'ALL' ? `Năm ${filterYear}` : `Tháng ${filterMonth}/${filterYear}`}) </h3>
+          <div className="flex flex-wrap justify-between items-center gap-2 mb-3">
+            <div className="flex flex-wrap items-center gap-2"><h3 className="font-bold text-gray-800 flex items-center gap-2 text-orange-600"> <Truck size={18}/> Nhắc nợ Nhà cung cấp ({suppDebtMonth === 'ALL' ? `Năm ${suppDebtYear}` : `Tháng ${suppDebtMonth}/${suppDebtYear}`}) </h3><select aria-label="Tháng nhắc nợ nhà cung cấp" value={suppDebtMonth} onChange={e=>setSuppDebtMonth(e.target.value)} className="border rounded-lg px-2 py-1.5 bg-white text-xs"><option value="ALL">Cả năm</option>{Array.from({length:12},(_,i)=><option key={i+1} value={String(i+1)}>Tháng {i+1}</option>)}</select><select aria-label="Năm nhắc nợ nhà cung cấp" value={suppDebtYear} onChange={e=>setSuppDebtYear(e.target.value)} className="border rounded-lg px-2 py-1.5 bg-white text-xs">{Array.from({length:8},(_,i)=>currentVietnamDate.year-i).map(y=><option key={y} value={String(y)}>Năm {y}</option>)}</select></div>
             <button onClick={() => setSuppSortOrder(prev => prev === 'desc' ? 'asc' : 'desc')} className="text-xs bg-gray-100 hover:bg-gray-200 text-gray-700 px-2.5 py-1 rounded-lg font-medium flex items-center gap-1 transition" > <ArrowUpDown size={12}/> {suppSortOrder === 'desc' ? 'Lâu nhất trước' : 'Gần nhất trước'} </button>
           </div>
           <div className="overflow-y-auto border rounded-xl flex-1 max-h-72">
