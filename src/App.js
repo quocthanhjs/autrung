@@ -1545,8 +1545,8 @@ function ContactManager({ type, data, orders, navigationTarget, storeConfig, db,
     return () => window.removeEventListener('app:navigate-tab', onNavigate);
   }, [data, isCus]);
   const currentDate = new Date();
-  const [filterMonth, setFilterMonth] = useState((currentDate.getMonth() + 1).toString());
-  const [filterYear, setFilterYear] = useState(currentDate.getFullYear().toString());
+  const [filterMonth, setFilterMonth] = useState('ALL');
+  const [filterYear, setFilterYear] = useState('ALL');
   const [rowsPerPage, setRowsPerPage] = useState('10');
   const [currentPage, setCurrentPage] = useState(1);
   useEffect(() => { if (navigationTarget?.tab === type && navigationTarget.id) { const match = (data || []).find(item => item.id === navigationTarget.id) || (data || []).find(item => (item.name || '').toLocaleLowerCase('vi') === (navigationTarget.name || '').toLocaleLowerCase('vi')); if (match) { setDetailTarget(match); setSearchTerm(''); setCurrentPage(1); } } }, [navigationTarget?.nonce, navigationTarget?.tab, navigationTarget?.id, navigationTarget?.name, type, data]);
@@ -1595,7 +1595,7 @@ function ContactManager({ type, data, orders, navigationTarget, storeConfig, db,
   const bannerStats = useMemo(() => {
     const filteredOrders = (orders || []).filter(o => {
       const d = new Date(o.date);
-      return (filterMonth === 'ALL' || (d.getMonth() + 1).toString() === filterMonth) && d.getFullYear().toString() === filterYear;
+      return (filterMonth === 'ALL' || (d.getMonth() + 1).toString() === filterMonth) && (filterYear === 'ALL' || d.getFullYear().toString() === filterYear);
     });
     const totalDebt = data.reduce((s, i) => s + (Number(i.totalDebt) || 0), 0);
     const totalTraded = filteredOrders.reduce((s, o) => s + (Number(o.total) || 0), 0);
@@ -1626,11 +1626,21 @@ function ContactManager({ type, data, orders, navigationTarget, storeConfig, db,
 
   const detailData = useMemo(() => {
     if (!detailTarget) return { list: [], totalAmount: 0, totalPaid: 0, totalDebtRemain: 0 };
-    const matched = (orders || []).filter(o => {
-      const matchTarget = isCus ? o.customerId === detailTarget.id : o.supplierId === detailTarget.id;
+    // Ưu tiên liên kết bằng ID; nếu dữ liệu đơn cũ không cùng ID (hoặc thiếu ID),
+    // dùng tên khách hàng/nhà cung cấp để không làm popup chi tiết bị trống.
+    const idField = isCus ? 'customerId' : 'supplierId';
+    const nameField = isCus ? 'customerName' : 'supplierName';
+    const sameName = value => String(value || '').trim().toLocaleLowerCase('vi') === String(detailTarget.name || '').trim().toLocaleLowerCase('vi');
+    const allOrders = orders || [];
+    const idMatches = detailTarget.id ? allOrders.filter(o => o[idField] && o[idField] === detailTarget.id) : [];
+    const baseMatches = idMatches.length
+      ? idMatches
+      : allOrders.filter(o => sameName(o[nameField]));
+    const matched = baseMatches.filter(o => {
       const d = new Date(o.date);
-      const matchTime = (filterMonth === 'ALL' || (d.getMonth() + 1).toString() === filterMonth) && d.getFullYear().toString() === filterYear;
-      return matchTarget && matchTime;
+      const validDate = !Number.isNaN(d.getTime());
+      const matchTime = validDate && (filterMonth === 'ALL' || (d.getMonth() + 1).toString() === filterMonth) && d.getFullYear().toString() === filterYear;
+      return matchTime;
     }).sort((a,b) => new Date(b.date) - new Date(a.date));
     let totalAmount = matched.reduce((s, o) => s + (Number(o.total) || 0), 0);
     let totalPaid = matched.filter(o => o.status === 'PAID').reduce((s, o) => s + (Number(o.total) || 0), 0);
@@ -1702,7 +1712,7 @@ function ContactManager({ type, data, orders, navigationTarget, storeConfig, db,
                 <button onClick={handlePrintDetail} className="bg-blue-600 hover:bg-blue-700 text-white px-3 py-1.5 rounded-lg text-xs font-bold flex items-center gap-1 shadow-sm"><Printer size={14}/> In Phiếu</button>
                 <div className="flex items-center gap-1 bg-white p-1 rounded border">
                   <select value={filterMonth} onChange={e=>setFilterMonth(e.target.value)} className="bg-transparent text-xs outline-none"><option value="ALL">Cả năm</option>{Array.from({length: 12}, (_, i) => <option key={i+1} value={i+1}>Tháng {i+1}</option>)}</select>
-                  <select value={filterYear} onChange={e=>setFilterYear(e.target.value)} className="bg-transparent text-xs outline-none">{Array.from({length: 5}, (_, i) => new Date().getFullYear() - i).map(y => <option key={y} value={y}>{y}</option>)}</select>
+                  <select value={filterYear} onChange={e=>setFilterYear(e.target.value)} className="bg-transparent text-xs outline-none"><option value="ALL">Tất cả năm</option>{Array.from({length: 10}, (_, i) => new Date().getFullYear() - i).map(y => <option key={y} value={y}>{y}</option>)}</select>
                 </div>
               </div>
             </div>
@@ -2442,7 +2452,7 @@ function ExpenseView({ expenses, db, storeId, showToast }) {
         <div className="flex items-center gap-2 bg-gray-50 p-2 rounded-xl border">
           <select value={filterMonth} onChange={e=>setFilterMonth(e.target.value)} className="bg-transparent text-sm font-medium outline-none"><option value="ALL">Cả năm</option>{Array.from({length: 12}, (_, i) => <option key={i+1} value={i+1}>Tháng {i+1}</option>)}</select>
           <div className="w-px h-4 bg-gray-300"></div>
-          <select value={filterYear} onChange={e=>setFilterYear(e.target.value)} className="bg-transparent text-sm font-medium outline-none">{Array.from({length: 5}, (_, i) => new Date().getFullYear() - i).map(y => <option key={y} value={y}>{y}</option>)}</select>
+          <select value={filterYear} onChange={e=>setFilterYear(e.target.value)} className="bg-transparent text-sm font-medium outline-none"><option value="ALL">Tất cả năm</option>{Array.from({length: 10}, (_, i) => new Date().getFullYear() - i).map(y => <option key={y} value={y}>{y}</option>)}</select>
         </div>
       </div>
       <form onSubmit={handleSave} className="bg-white p-4 rounded-xl border shadow-sm mb-4 flex flex-col md:flex-row gap-4 shrink-0">
