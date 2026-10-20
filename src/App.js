@@ -19,7 +19,7 @@ const auth = getAuth(app);
 const db = getFirestore(app);
 
 const PERMISSION_TREE = [
-  { module: 'Tổng quan', perms: [{ id: 'tong_quan_xem', label: 'Xem tổng quan' }] },
+  { module: 'Tổng quan', perms: [{ id: 'tong_quan_xem', label: 'Xem tổng quan' }, { id: 'dash_activity_date', label: 'Tổng quan: cột Thời gian giao dịch' }, { id: 'dash_activity_type', label: 'Tổng quan: cột Loại giao dịch' }, { id: 'dash_activity_staff', label: 'Tổng quan: cột Người thực hiện' }, { id: 'dash_activity_partner', label: 'Tổng quan: cột Khách hàng/Nhà cung cấp' }, { id: 'dash_activity_items', label: 'Tổng quan: cột Chi tiết hàng hóa' }, { id: 'dash_activity_amount', label: 'Tổng quan: cột Thành tiền' }, { id: 'dash_warranty_date', label: 'Tổng quan: cột Thời gian bảo hành' }, { id: 'dash_warranty_customer', label: 'Tổng quan: cột Khách hàng bảo hành' }, { id: 'dash_warranty_location', label: 'Tổng quan: cột Nơi bảo hành' }, { id: 'dash_warranty_items', label: 'Tổng quan: cột Sản phẩm bảo hành' }, { id: 'dash_warranty_status', label: 'Tổng quan: cột Tình trạng bảo hành' }, { id: 'dash_overdue_customer', label: 'Tổng quan: cột Khách hàng nợ' }, { id: 'dash_overdue_date', label: 'Tổng quan: cột Ngày mua nợ' }, { id: 'dash_overdue_days', label: 'Tổng quan: cột Số ngày nợ' }, { id: 'dash_overdue_amount', label: 'Tổng quan: cột Số tiền nợ' }] },
   { module: 'Quản lý Bán hàng', perms: [{ id: 'ban_hang', label: 'Quản lý bán hàng & Hóa đơn' }] },
   { module: 'Hàng hóa', perms: [{ id: 'hh_danh_sach', label: 'Danh sách hàng hóa' }, { id: 'hh_gia', label: 'Thiết lập giá' }] },
   { module: 'Mua hàng', perms: [{ id: 'mua_ncc', label: 'Danh sách nhà cung cấp' }, { id: 'mua_nhap_hang', label: 'Nhập hàng' }] },
@@ -52,7 +52,10 @@ const formatCurrency = (amount) => {
 };
 
 const formatDate = (iso) => {
-  return new Intl.DateTimeFormat('vi-VN', { timeZone: VIETNAM_TIME_ZONE, dateStyle: 'short', timeStyle: 'short' }).format(new Date(iso));
+  if (!iso) return '—';
+  const date = new Date(iso);
+  if (Number.isNaN(date.getTime())) return '—';
+  return new Intl.DateTimeFormat('vi-VN', { timeZone: VIETNAM_TIME_ZONE, dateStyle: 'short', timeStyle: 'medium', hourCycle: 'h23' }).format(date);
 };
 
 const getDaysDifference = (isoDate) => {
@@ -467,7 +470,7 @@ export default function App() {
       </aside>
       <main className="flex-1 overflow-hidden flex flex-col h-[calc(100vh-80px)] md:h-screen relative">
         {toast && <div className={"absolute top-4 right-4 z-50 px-6 py-3.5 rounded-xl shadow-xl flex items-center gap-2 text-white animate-in slide-in-from-top-2 " + (toast.type === 'success' ? 'bg-emerald-600' : 'bg-red-600')}><div className="bg-white/20 p-1 rounded-full">{toast.type === 'success' ? <Check size={16} /> : <AlertCircle size={16} />}</div><span className="font-bold text-sm tracking-wide">{toast.msg}</span></div>}
-        {activeTab === 'dashboard' && <DashboardView orders={orders} imports={imports} expenses={expenses} customers={customers} suppliers={suppliers} products={products} warrantyRequests={warrantyRequests} showToast={showToast} />}
+        {activeTab === 'dashboard' && <DashboardView orders={orders} imports={imports} expenses={expenses} customers={customers} suppliers={suppliers} products={products} warrantyRequests={warrantyRequests} showToast={showToast} userData={userData} />}
         {activeTab === 'groups' && <GroupManagementView products={products} db={db} storeId={storeId} showToast={showToast} />}
         {activeTab === 'pos' && <POSView products={products} orders={orders} customers={customers} db={db} storeId={storeId} user={user} storeConfig={storeConfig} showToast={showToast} userData={userData} />}
         {activeTab === 'sales_history' && <SalesHistoryView orders={orders} imports={imports} products={products} customers={customers} storeConfig={storeConfig} db={db} storeId={storeId} user={user} userData={userData} showToast={showToast} />}
@@ -484,7 +487,8 @@ export default function App() {
   );
 }
 
-function DashboardView({ orders, imports, expenses, customers, suppliers, products = [], warrantyRequests = [], showToast }) {
+function DashboardView({ orders, imports, expenses, customers, suppliers, products = [], warrantyRequests = [], showToast, userData = {} }) {
+  const canShowColumn = (id) => userData.role === 'admin' || userData.perms?.[id] !== false;
   const currentDate = new Date();
   const currentVietnamDate = getVietnamDateParts(currentDate);
   const [activityRows, setActivityRows] = useState('10');
@@ -672,15 +676,15 @@ function DashboardView({ orders, imports, expenses, customers, suppliers, produc
           <div className="max-h-60 overflow-y-auto">
             <table className="w-full text-left text-sm bg-white">
               <thead className="bg-red-50 sticky top-0 border-b border-red-200">
-                <tr>{[['customer','Khách hàng'],['date','Ngày mua'],['days','Số ngày nợ'],['amount','Số tiền']].map(([field,label])=><th key={field} onClick={()=>toggleDashboardColumnSort('overdue',field)} className="p-3 text-red-800 cursor-pointer select-none hover:bg-red-100">{label} <ArrowUpDown size={11} className="inline"/></th>)}</tr>
+                <tr>{[['customer','Khách hàng','dash_overdue_customer'],['date','Ngày mua','dash_overdue_date'],['days','Số ngày nợ','dash_overdue_days'],['amount','Số tiền','dash_overdue_amount']].filter(([, ,perm])=>canShowColumn(perm)).map(([field,label])=><th key={field} onClick={()=>toggleDashboardColumnSort('overdue',field)} className="p-3 text-red-800 cursor-pointer select-none hover:bg-red-100">{label} <ArrowUpDown size={11} className="inline"/></th>)}</tr>
               </thead>
               <tbody>
                 {sortDashboardRows(stats.overdueCust1Week,'overdue',(o,f)=>f==='customer'?o.customerName:f==='date'?o.date:f==='days'?getDaysDifference(o.date):Number(o.total)||0).map(o => (
                   <tr key={o.id} className="border-b hover:bg-red-50/50">
-                    <td className="p-3 font-bold text-gray-800">{o.customerName}</td>
-                    <td className="p-3 text-gray-600">{formatDate(o.date)}</td>
-                    <td className="p-3 font-bold text-red-600">{getDaysDifference(o.date)} ngày</td>
-                    <td className="p-3 font-bold text-red-600 text-lg">{formatCurrency(o.total)}</td>
+                    {canShowColumn('dash_overdue_customer') && <td className="p-3 font-bold text-gray-800">{o.customerName}</td>}
+                    {canShowColumn('dash_overdue_date') && <td className="p-3 text-gray-600">{formatDate(o.date)}</td>}
+                    {canShowColumn('dash_overdue_days') && <td className="p-3 font-bold text-red-600">{getDaysDifference(o.date)} ngày</td>}
+                    {canShowColumn('dash_overdue_amount') && <td className="p-3 font-bold text-red-600 text-lg">{formatCurrency(o.total)}</td>}
                   </tr>
                 ))}
               </tbody>
@@ -809,7 +813,7 @@ function DashboardView({ orders, imports, expenses, customers, suppliers, produc
           <div><h3 className="font-bold text-gray-800 text-lg flex items-center gap-2"><ShieldAlert size={20} className="text-purple-600"/> Hàng đã gửi bảo hành chưa hoàn thành</h3><p className="text-xs text-gray-500 mt-1">Ưu tiên hiển thị phiếu gửi lâu nhất trước.</p></div>
           <div className="flex items-center gap-2"><button onClick={()=>setWarrantySortOrder(v=>v==='oldest'?'newest':'oldest')} className="text-xs bg-gray-100 px-3 py-2 rounded-lg font-bold">{warrantySortOrder==='oldest'?'Lâu nhất trước':'Gần nhất trước'}</button><label className="flex items-center gap-2 text-sm font-semibold text-gray-600">Hiển thị <select value={warrantyRows} onChange={e=>setWarrantyRows(e.target.value)} className="border rounded-lg px-3 py-2 bg-white"><option value="10">10 dòng</option><option value="20">20 dòng</option><option value="50">50 dòng</option><option value="all">Tất cả</option></select></label></div>
         </div>
-        {(() => { const pending = (warrantyRequests || []).filter(w => w.status !== 'COMPLETED').sort((a,b)=>warrantySortOrder==='oldest'?new Date(a.sentAt || a.createdAt || 0)-new Date(b.sentAt || b.createdAt || 0):new Date(b.sentAt || b.createdAt || 0)-new Date(a.sentAt || a.createdAt || 0)); const sortedPending = sortDashboardRows(pending,'pendingWarranty',(w,f)=>f==='date'?(w.sentAt||w.createdAt||''):f==='customer'?(w.customerName||''):f==='location'?(w.warrantyLocation||''):f==='items'?(w.items||[]).map(i=>i.name||'').join(', '):(w.status||'')); const shown = warrantyRows === 'all' ? sortedPending : sortedPending.slice(0, Number(warrantyRows) || 10); return <div className="overflow-auto border rounded-xl"><table className="w-full text-left text-sm min-w-[700px]"><thead className="bg-purple-50"><tr>{[['date','Thời gian gửi'],['customer','Khách hàng'],['location','Nơi bảo hành'],['items','Sản phẩm'],['status','Tình trạng']].map(([field,label])=><th key={field} onClick={()=>toggleDashboardColumnSort('pendingWarranty',field)} className="p-3 cursor-pointer select-none hover:bg-purple-100">{label} <ArrowUpDown size={11} className="inline"/></th>)}</tr></thead><tbody>{shown.map(w=><tr key={w.id} className="border-t"><td className="p-3 whitespace-nowrap">{formatDate(w.sentAt || w.createdAt)}</td><td className="p-3 font-bold">{w.customerName || 'Khách lẻ'}<p className="text-xs text-gray-500">{w.phone || ''}</p></td><td className="p-3">{w.warrantyLocation || '—'}</td><td className="p-3">{(w.items || []).map(i=>`${i.name} × ${i.quantity || 1}`).join(', ')}</td><td className="p-3"><span className="px-2 py-1 rounded bg-amber-100 text-amber-800 text-xs font-bold">Đang bảo hành</span></td></tr>)}{shown.length===0 && <tr><td colSpan="5" className="p-6 text-center text-gray-400">Không có phiếu bảo hành đang chờ nhận hàng.</td></tr>}</tbody></table></div>; })()}
+        {(() => { const pending = (warrantyRequests || []).filter(w => w.status !== 'COMPLETED').sort((a,b)=>warrantySortOrder==='oldest'?new Date(a.sentAt || a.createdAt || 0)-new Date(b.sentAt || b.createdAt || 0):new Date(b.sentAt || b.createdAt || 0)-new Date(a.sentAt || a.createdAt || 0)); const sortedPending = sortDashboardRows(pending,'pendingWarranty',(w,f)=>f==='date'?(w.sentAt||w.createdAt||''):f==='customer'?(w.customerName||''):f==='location'?(w.warrantyLocation||''):f==='items'?(w.items||[]).map(i=>i.name||'').join(', '):(w.status||'')); const shown = warrantyRows === 'all' ? sortedPending : sortedPending.slice(0, Number(warrantyRows) || 10); return <div className="overflow-auto border rounded-xl"><table className="w-full text-left text-sm min-w-[700px]"><thead className="bg-purple-50"><tr>{[['date','Thời gian gửi','dash_warranty_date'],['customer','Khách hàng','dash_warranty_customer'],['location','Nơi bảo hành','dash_warranty_location'],['items','Sản phẩm','dash_warranty_items'],['status','Tình trạng','dash_warranty_status']].filter(([, ,perm])=>canShowColumn(perm)).map(([field,label])=><th key={field} onClick={()=>toggleDashboardColumnSort('pendingWarranty',field)} className="p-3 cursor-pointer select-none hover:bg-purple-100">{label} <ArrowUpDown size={11} className="inline"/></th>)}</tr></thead><tbody>{shown.map(w=><tr key={w.id} className="border-t">{canShowColumn('dash_warranty_date') && <td className="p-3 whitespace-nowrap">{formatDate(w.sentAt || w.createdAt)}</td>}{canShowColumn('dash_warranty_customer') && <td className="p-3 font-bold">{w.customerName || 'Khách lẻ'}<p className="text-xs text-gray-500">{w.phone || ''}</p></td>}{canShowColumn('dash_warranty_location') && <td className="p-3">{w.warrantyLocation || '—'}</td>}{canShowColumn('dash_warranty_items') && <td className="p-3">{(w.items || []).map(i=>`${i.name} × ${i.quantity || 1}`).join(', ')}</td>}{canShowColumn('dash_warranty_status') && <td className="p-3"><span className="px-2 py-1 rounded bg-amber-100 text-amber-800 text-xs font-bold">Đang bảo hành</span></td>}</tr>)}{shown.length===0 && <tr><td colSpan="5" className="p-6 text-center text-gray-400">Không có phiếu bảo hành đang chờ nhận hàng.</td></tr>}</tbody></table></div>; })()}
       </section>
 
       <section className="bg-white p-5 rounded-2xl shadow-sm border border-gray-200 space-y-4">
@@ -828,7 +832,7 @@ function DashboardView({ orders, imports, expenses, customers, suppliers, produc
           ].sort((a,b) => new Date(b.date || 0) - new Date(a.date || 0));
           const sortedActivity = sortDashboardRows(activity,'activity',(a,f)=>f==='date'?(a.date||''):f==='type'?a.activityType:f==='staff'?a.activityName:f==='partner'?a.partner:f==='items'?(a.items||[]).map(it=>it.name||'').join(', '):Number(a.amount)||0);
           const visibleActivity = activityRows === 'all' ? sortedActivity : sortedActivity.slice(0, Number(activityRows) || 10);
-          return <div className="overflow-auto border rounded-xl"><table className="w-full text-left text-sm min-w-[900px]"><thead className="bg-gray-100 text-gray-600"><tr>{[['date','Thời gian'],['type','Loại giao dịch'],['staff','Người thực hiện'],['partner','Khách hàng / Nhà cung cấp'],['items','Chi tiết hàng hóa & số lượng'],['amount','Thành tiền']].map(([field,label])=><th key={field} onClick={()=>toggleDashboardColumnSort('activity',field)} className="p-3 cursor-pointer select-none hover:bg-gray-200">{label} <ArrowUpDown size={11} className="inline"/></th>)}</tr></thead><tbody>{visibleActivity.map(a => <tr key={a.rowKey} className="border-t hover:bg-gray-50 align-top"><td className="p-3 whitespace-nowrap">{a.date ? formatDate(a.date) : '—'}</td><td className="p-3"><span className={`px-2 py-1 rounded-lg text-xs font-bold ${a.activityType === 'Bán hàng' ? 'bg-blue-50 text-blue-700' : 'bg-orange-50 text-orange-700'}`}>{a.activityType}</span></td><td className="p-3 font-medium">{a.activityName}</td><td className="p-3">{a.partner}</td><td className="p-3">{(a.items || []).length ? <div className="space-y-1">{a.items.map((it, idx) => <div key={`${a.rowKey}-item-${idx}`}>{it.name || 'Sản phẩm'} × {Number(it.quantity ?? it.qty ?? 1)}</div>)}</div> : 'Không có chi tiết hàng hóa'}</td><td className="p-3 text-right font-bold whitespace-nowrap">{formatCurrency(a.amount)}</td></tr>)}{visibleActivity.length === 0 && <tr><td colSpan="6" className="p-8 text-center text-gray-400">Chưa có giao dịch bán hàng hoặc nhập hàng.</td></tr>}</tbody></table></div>;
+          return <div className="overflow-auto border rounded-xl"><table className="w-full text-left text-sm min-w-[900px]"><thead className="bg-gray-100 text-gray-600"><tr>{[['date','Thời gian','dash_activity_date'],['type','Loại giao dịch','dash_activity_type'],['staff','Người thực hiện','dash_activity_staff'],['partner','Khách hàng / Nhà cung cấp','dash_activity_partner'],['items','Chi tiết hàng hóa & số lượng','dash_activity_items'],['amount','Thành tiền','dash_activity_amount']].filter(([, ,perm])=>canShowColumn(perm)).map(([field,label])=><th key={field} onClick={()=>toggleDashboardColumnSort('activity',field)} className="p-3 cursor-pointer select-none hover:bg-gray-200">{label} <ArrowUpDown size={11} className="inline"/></th>)}</tr></thead><tbody>{visibleActivity.map(a => <tr key={a.rowKey} className="border-t hover:bg-gray-50 align-top">{canShowColumn('dash_activity_date') && <td className="p-3 whitespace-nowrap">{a.date ? formatDate(a.date) : '—'}</td>}{canShowColumn('dash_activity_type') && <td className="p-3"><span className={`px-2 py-1 rounded-lg text-xs font-bold ${a.activityType === 'Bán hàng' ? 'bg-blue-50 text-blue-700' : 'bg-orange-50 text-orange-700'}`}>{a.activityType}</span></td>}{canShowColumn('dash_activity_staff') && <td className="p-3 font-medium">{a.activityName}</td>}{canShowColumn('dash_activity_partner') && <td className="p-3">{a.partner}</td>}{canShowColumn('dash_activity_items') && <td className="p-3">{(a.items || []).length ? <div className="space-y-1">{a.items.map((it, idx) => <div key={`${a.rowKey}-item-${idx}`}>{it.name || 'Sản phẩm'} × {Number(it.quantity ?? it.qty ?? 1)}</div>)}</div> : 'Không có chi tiết hàng hóa'}</td>}{canShowColumn('dash_activity_amount') && <td className="p-3 text-right font-bold whitespace-nowrap">{formatCurrency(a.amount)}</td>}</tr>)}{visibleActivity.length === 0 && <tr><td colSpan="6" className="p-8 text-center text-gray-400">Chưa có giao dịch bán hàng hoặc nhập hàng.</td></tr>}</tbody></table></div>;
         })()}
       </section>
     </div>
@@ -1504,7 +1508,7 @@ function StaffManagerView({ db, showToast }) {
             <div>
               <label className="block text-xs font-bold text-gray-500 mb-1">Phân quyền chức năng</label>
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4 max-h-[40vh] overflow-y-auto p-4 border rounded bg-gray-50">
-                {PERMISSION_TREE.map(g => (<div key={g.module} className="border-b pb-2"><p className="font-bold text-blue-800 text-sm mb-2 uppercase">{g.module}</p>{g.perms.map(p => (<label key={p.id} className="flex items-center gap-2 text-sm mb-1.5 cursor-pointer hover:bg-gray-200 p-1 rounded"><input type="checkbox" checked={!!form.perms[p.id]} onChange={() => setForm({...form, perms: {...form.perms, [p.id]: !form.perms[p.id]}})} className="w-4 h-4 text-blue-600"/> {p.label}</label>))}</div>))}
+                {PERMISSION_TREE.map(g => (<div key={g.module} className="border-b pb-2"><p className="font-bold text-blue-800 text-sm mb-2 uppercase">{g.module}</p>{g.perms.map(p => (<label key={p.id} className="flex items-center gap-2 text-sm mb-1.5 cursor-pointer hover:bg-gray-200 p-1 rounded"><input type="checkbox" checked={p.id.startsWith('dash_') ? form.perms[p.id] !== false : !!form.perms[p.id]} onChange={() => setForm({...form, perms: {...form.perms, [p.id]: p.id.startsWith('dash_') ? form.perms[p.id] === false : !form.perms[p.id]}})} className="w-4 h-4 text-blue-600"/> {p.label}</label>))}</div>))}
               </div>
             </div>
           )}
@@ -1741,30 +1745,41 @@ function ContactManager({ type, data, orders, storeConfig, db, storeId, showToas
 function GroupManagementView({ products, db, storeId, showToast }) {
   const [groups, setGroups] = useState([]);
   const [newGroupName, setNewGroupName] = useState('');
+  const [editingGroup, setEditingGroup] = useState(null);
   const [groupProductIds, setGroupProductIds] = useState([]);
   useEffect(() => onSnapshot(collection(db, 'stores', storeId, 'product_groups'), snap => setGroups(snap.docs.map(d => ({ id: d.id, ...d.data() }))), () => showToast('Không tải được danh sách nhóm hàng', 'error')), [db, storeId]);
   const saveGroup = async () => {
     const name = newGroupName.trim();
     if (!name) return showToast('Vui lòng nhập tên nhóm hàng', 'error');
     try {
-      await addDoc(collection(db, 'stores', storeId, 'product_groups'), { name, createdAt: new Date().toISOString() });
-      if (groupProductIds.length) {
+      if (editingGroup) {
+        await updateDoc(doc(db, 'stores', storeId, 'product_groups', editingGroup.id), { name, updatedAt: new Date().toISOString() });
         const batch = writeBatch(db);
+        products.filter(p => p.category === editingGroup.name).forEach(p => batch.update(doc(db, 'stores', storeId, 'products', p.id), { category: name }));
         groupProductIds.forEach(id => batch.update(doc(db, 'stores', storeId, 'products', id), { category: name }));
         await batch.commit();
+        showToast('Đã cập nhật nhóm hàng và sản phẩm');
+      } else {
+        await addDoc(collection(db, 'stores', storeId, 'product_groups'), { name, createdAt: new Date().toISOString() });
+        if (groupProductIds.length) { const batch = writeBatch(db); groupProductIds.forEach(id => batch.update(doc(db, 'stores', storeId, 'products', id), { category: name })); await batch.commit(); }
+        showToast('Đã tạo nhóm hàng và cập nhật sản phẩm');
       }
-      setNewGroupName(''); setGroupProductIds([]); showToast('Đã tạo nhóm hàng và cập nhật sản phẩm');
-    } catch (e) { showToast('Lỗi tạo nhóm hàng', 'error'); }
+      setNewGroupName(''); setGroupProductIds([]); setEditingGroup(null);
+    } catch (e) { showToast('Lỗi lưu nhóm hàng', 'error'); }
+  };
+  const deleteGroup = async (g) => {
+    if (!window.confirm(`Xóa nhóm hàng "${g.name}"? Sản phẩm trong nhóm sẽ chuyển về chưa phân nhóm.`)) return;
+    try { const batch = writeBatch(db); batch.delete(doc(db, 'stores', storeId, 'product_groups', g.id)); products.filter(p => p.category === g.name).forEach(p => batch.update(doc(db, 'stores', storeId, 'products', p.id), { category: '' })); await batch.commit(); if (editingGroup?.id === g.id) { setEditingGroup(null); setNewGroupName(''); setGroupProductIds([]); } showToast('Đã xóa nhóm hàng'); } catch(e) { showToast('Lỗi xóa nhóm hàng', 'error'); }
   };
   return <div className="flex-1 overflow-y-auto p-4 md:p-6 bg-gray-50/50 space-y-5">
     <div><h2 className="text-2xl font-bold text-gray-800">Quản lý nhóm hàng</h2><p className="text-sm text-gray-500 mt-1">Tạo nhóm và chọn sản phẩm để đưa vào nhóm.</p></div>
     <section className="bg-white rounded-2xl border shadow-sm p-5 space-y-4">
-      <h3 className="font-bold text-gray-800">Tạo nhóm hàng mới</h3>
-      <div className="flex flex-col sm:flex-row gap-2"><input value={newGroupName} onChange={e=>setNewGroupName(e.target.value)} placeholder="Tên nhóm hàng mới" className="flex-1 border rounded-lg p-2.5"/><button type="button" onClick={saveGroup} className="bg-blue-600 hover:bg-blue-700 text-white px-5 py-2.5 rounded-lg font-bold">Tạo nhóm</button></div>
+      <h3 className="font-bold text-gray-800">{editingGroup ? `Chỉnh sửa nhóm hàng: ${editingGroup.name}` : 'Tạo nhóm hàng mới'}</h3>
+      <div className="flex flex-col sm:flex-row gap-2"><input value={newGroupName} onChange={e=>setNewGroupName(e.target.value)} placeholder="Tên nhóm hàng mới" className="flex-1 border rounded-lg p-2.5"/><button type="button" onClick={saveGroup} className="bg-blue-600 hover:bg-blue-700 text-white px-5 py-2.5 rounded-lg font-bold">{editingGroup ? 'Lưu chỉnh sửa' : 'Tạo nhóm'}</button>{editingGroup && <button type="button" onClick={()=>{setEditingGroup(null);setNewGroupName('');setGroupProductIds([]);}} className="border px-4 py-2.5 rounded-lg font-bold">Hủy</button>}</div>
       <p className="text-sm text-gray-500">Chọn sản phẩm bên dưới trước khi bấm “Tạo nhóm”. Sản phẩm đã chọn sẽ được cập nhật nhóm tương ứng.</p>
       <div className="max-h-80 overflow-y-auto border rounded-xl divide-y">{products.map(p=><label key={p.id} className="flex items-center gap-3 p-3 hover:bg-gray-50"><input type="checkbox" checked={groupProductIds.includes(p.id)} onChange={e=>setGroupProductIds(v=>e.target.checked?[...v,p.id]:v.filter(id=>id!==p.id))} className="w-4 h-4"/><span className="flex-1 font-medium">{p.name}</span><span className="text-xs text-gray-500">{p.category||'Chưa phân nhóm'}</span></label>)}{products.length===0&&<p className="p-5 text-center text-gray-400">Chưa có sản phẩm trong kho.</p>}</div>
     </section>
-    <section className="bg-white rounded-2xl border shadow-sm p-5"><h3 className="font-bold text-gray-800 mb-3">Nhóm hàng hiện có ({groups.length})</h3>{groups.length ? <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">{groups.map(g=><div key={g.id} className="p-4 border rounded-xl"><p className="font-bold text-gray-800">{g.name}</p><p className="text-sm text-gray-500 mt-1">{products.filter(p=>p.category===g.name).length} sản phẩm</p></div>)}</div> : <p className="text-sm text-gray-500">Chưa có nhóm hàng.</p>}</section>
+    <section className="bg-white rounded-2xl border shadow-sm p-5"><h3 className="font-bold text-gray-800 mb-3">Nhóm hàng hiện có ({groups.length})</h3>{groups.length ? <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">{groups.map(g=><div key={g.id} className="p-4 border rounded-xl"><p className="font-bold text-gray-800">{g.name}</p><p className="text-sm text-gray-500 mt-1">{products.filter(p=>p.category===g.name).length} sản phẩm</p><div className="flex gap-2 mt-3"><button type="button" onClick={()=>{setEditingGroup(g);setNewGroupName(g.name);setGroupProductIds(products.filter(p=>p.category===g.name).map(p=>p.id));}} className="text-blue-600 bg-blue-50 px-3 py-1.5 rounded-lg text-xs font-bold flex items-center gap-1"><Edit size={14}/> Sửa</button><button type="button" onClick={()=>deleteGroup(g)} className="text-red-600 bg-red-50 px-3 py-1.5 rounded-lg text-xs font-bold flex items-center gap-1"><Trash2 size={14}/> Xóa</button></div></div>)}</div> : <p className="text-sm text-gray-500">Chưa có nhóm hàng.</p>}</section>
   </div>;
 }
 
@@ -2324,7 +2339,7 @@ function WarrantyView({ products = [], customers = [], suppliers = [], warrantyR
   </div>;
 }
 function ExpenseView({ expenses, db, storeId, showToast }) {
-  const [form, setForm] = useState({ amount: '', note: '' });
+  const [form, setForm] = useState({ id: '', amount: '', note: '' });
   const [selectedIds, setSelectedIds] = useState([]);
   const [searchTerm, setSearchTerm] = useState('');
   const [detailExpense, setDetailExpense] = useState(null);
@@ -2334,8 +2349,11 @@ function ExpenseView({ expenses, db, storeId, showToast }) {
 
   const handleSave = async (e) => {
     e.preventDefault();
-    await addDoc(collection(db, 'stores', storeId, 'expenses'), { amount: Number(form.amount), note: form.note, date: new Date().toISOString() });
-    setForm({ amount: '', note: '' }); showToast("Đã thêm chi phí");
+    try {
+      if (form.id) { await updateDoc(doc(db, 'stores', storeId, 'expenses', form.id), { amount: Number(form.amount), note: form.note }); showToast('Đã cập nhật chi phí'); }
+      else { await addDoc(collection(db, 'stores', storeId, 'expenses'), { amount: Number(form.amount), note: form.note, date: new Date().toISOString() }); showToast('Đã thêm chi phí'); }
+      setForm({ id: '', amount: '', note: '' });
+    } catch (e) { showToast('Không lưu được chi phí', 'error'); }
   };
 
   const handleDelete = async (id) => { if (window.confirm("Xác nhận xóa chi phí này?")) { await deleteDoc(doc(db, 'stores', storeId, 'expenses', id)); showToast("Đã xóa chi phí"); } };
@@ -2377,7 +2395,7 @@ function ExpenseView({ expenses, db, storeId, showToast }) {
       <form onSubmit={handleSave} className="bg-white p-4 rounded-xl border shadow-sm mb-4 flex flex-col md:flex-row gap-4 shrink-0">
         <input required type="number" placeholder="Số tiền chi *" value={form.amount} onChange={e=>setForm({...form,amount:e.target.value})} className="p-2.5 border rounded-lg outline-none flex-1"/>
         <input required placeholder="Nội dung chi (VD: Trả tiền điện) *" value={form.note} onChange={e=>setForm({...form,note:e.target.value})} className="p-2.5 border rounded-lg outline-none flex-1 md:flex-[2]"/>
-        <button className="bg-orange-600 text-white px-8 rounded-lg font-bold py-2.5">Ghi Nhận</button>
+        <button className="bg-orange-600 text-white px-8 rounded-lg font-bold py-2.5">{form.id ? 'Lưu chỉnh sửa' : 'Ghi Nhận'}</button>{form.id && <button type="button" onClick={()=>setForm({id:'',amount:'',note:''})} className="border px-4 rounded-lg font-bold">Hủy</button>}
       </form>
       {selectedIds.length > 0 && (
         <div className="bg-red-50 border border-red-200 p-2.5 rounded-xl mb-3 flex justify-between items-center"><span className="text-xs font-bold text-red-700">Đã chọn {selectedIds.length} mục</span><button onClick={handleBatchDelete} className="bg-red-600 hover:bg-red-700 text-white px-3 py-1 rounded-lg text-xs font-bold flex items-center gap-1"><Trash2 size={14}/> Xóa đã chọn</button></div>
@@ -2390,7 +2408,7 @@ function ExpenseView({ expenses, db, storeId, showToast }) {
               <tr key={e.id} className="border-b hover:bg-gray-50 cursor-pointer" onClick={() => setDetailExpense(e)}>
                 <td className="p-4" onClick={evt=>evt.stopPropagation()}><input type="checkbox" checked={selectedIds.includes(e.id)} onChange={() => setSelectedIds(prev => prev.includes(e.id) ? prev.filter(x=>x!==e.id) : [...prev, e.id])} className="w-4 h-4"/></td>
                 <td className="p-4 text-gray-500">{formatDate(e.date)}</td><td className="p-4 font-medium text-blue-600 underline">{e.note}</td><td className="p-4 font-bold text-orange-600">{formatCurrency(e.amount)}</td>
-                <td className="p-4 text-right" onClick={evt=>evt.stopPropagation()}><button onClick={() => handleDelete(e.id)} className="text-red-500 bg-red-50 p-2 rounded-lg hover:bg-red-100"><Trash2 size={16}/></button></td>
+                <td className="p-4 text-right" onClick={evt=>evt.stopPropagation()}><div className="flex justify-end gap-1"><button onClick={() => {setForm({id:e.id,amount:String(e.amount ?? ''),note:e.note || ''});setDetailExpense(null);}} title="Chỉnh sửa chi phí" className="text-blue-600 bg-blue-50 p-2 rounded-lg hover:bg-blue-100"><Edit size={16}/></button><button onClick={() => handleDelete(e.id)} className="text-red-500 bg-red-50 p-2 rounded-lg hover:bg-red-100"><Trash2 size={16}/></button></div></td>
               </tr>
             ))}
           </tbody>
@@ -2408,6 +2426,7 @@ function ImportView({ products, imports = [], suppliers, db, storeId, user, user
   const [cart, setCart] = useState([]);
   const [supplierId, setSupplierId] = useState('');
   const [isDebt, setIsDebt] = useState(false);
+  const [editingImport, setEditingImport] = useState(null);
   const [searchTerm, setSearchTerm] = useState('');
   const [showAddSuppModal, setShowAddSuppModal] = useState(false);
   const [newSuppForm, setNewSuppForm] = useState({ name: '', phone: '', address: '' });
@@ -2453,23 +2472,41 @@ function ImportView({ products, imports = [], suppliers, db, storeId, user, user
     try {
       const s = suppliers.find(sup => sup.id === supplierId);
       const total = cart.reduce((sum, i) => sum + Number(i.importCost || 0) * Number(i.qty || 1), 0);
-      await addDoc(collection(db, 'stores', storeId, 'imports'), { supplierId: supplierId, supplierName: s.name, createdByUid: user?.uid || '', createdByName: userData?.name || user?.displayName || user?.email || 'Nhân viên', items: cart, total: total, status: isDebt ? 'DEBT' : 'PAID', date: new Date().toISOString() });
-      
-      let batch = writeBatch(db);
-      cart.forEach(item => {
-        const p = products.find(prod => prod.id === item.id);
-        if (p) {
-          let newCost = Number(item.importCost || 0); const oldCost = Number(p.cost || 0); const currentStock = Number(p.stock || 0); const importQty = Number(item.qty || 1);
-          const method = storeConfig?.costCalcMethod || 'LATEST';
-          if (method === 'AVERAGE') { if (currentStock + importQty > 0) newCost = Math.round(((currentStock * oldCost) + (importQty * newCost)) / (currentStock + importQty)); }
-          else if (method === 'HIGHEST') newCost = Math.max(oldCost, newCost);
-          else if (method === 'LOWEST') newCost = oldCost === 0 ? newCost : Math.min(oldCost, newCost);
-          batch.update(doc(db, 'stores', storeId, 'products', p.id), { stock: currentStock + importQty, cost: newCost, lastSupplierId: supplierId, lastSupplierName: s.name });
-        }
-      });
-      if (isDebt) batch.update(doc(db, 'stores', storeId, 'suppliers', supplierId), { totalDebt: (s.totalDebt || 0) + total });
+      const batch = writeBatch(db);
+      const importPayload = { supplierId, supplierName: s.name, createdByUid: editingImport?.createdByUid || user?.uid || '', createdByName: editingImport?.createdByName || userData?.name || user?.displayName || user?.email || 'Nhân viên', items: cart, total, status: isDebt ? 'DEBT' : 'PAID', date: editingImport?.date || new Date().toISOString() };
+      if (editingImport) {
+        const oldItems = editingImport.items || [];
+        const allProductIds = [...new Set([...oldItems.map(i => i.id || i.productId), ...cart.map(i => i.id || i.productId)].filter(Boolean))];
+        allProductIds.forEach(pid => {
+          const p = products.find(prod => prod.id === pid);
+          if (!p) return;
+          const oldQty = oldItems.filter(i => (i.id || i.productId) === pid).reduce((n, i) => n + Number(i.qty ?? i.quantity ?? 0), 0);
+          const newQty = cart.filter(i => (i.id || i.productId) === pid).reduce((n, i) => n + Number(i.qty ?? i.quantity ?? 0), 0);
+          const stockDelta = newQty - oldQty;
+          if (stockDelta) batch.update(doc(db, 'stores', storeId, 'products', pid), { stock: Number(p.stock || 0) + stockDelta });
+        });
+        const oldSupplier = suppliers.find(x => x.id === editingImport.supplierId);
+        if (editingImport.status === 'DEBT' && oldSupplier) batch.update(doc(db, 'stores', storeId, 'suppliers', oldSupplier.id), { totalDebt: Math.max(0, Number(oldSupplier.totalDebt || 0) - Number(editingImport.total || 0)) });
+        if (isDebt) batch.update(doc(db, 'stores', storeId, 'suppliers', supplierId), { totalDebt: Number(s.totalDebt || 0) + total - (editingImport.status === 'DEBT' && editingImport.supplierId === supplierId ? Number(editingImport.total || 0) : 0) });
+        batch.update(doc(db, 'stores', storeId, 'imports', editingImport.id), importPayload);
+      } else {
+        const importRef = doc(collection(db, 'stores', storeId, 'imports'));
+        batch.set(importRef, importPayload);
+        cart.forEach(item => {
+          const p = products.find(prod => prod.id === item.id);
+          if (p) {
+            let newCost = Number(item.importCost || 0); const oldCost = Number(p.cost || 0); const currentStock = Number(p.stock || 0); const importQty = Number(item.qty || 1);
+            const method = storeConfig?.costCalcMethod || 'LATEST';
+            if (method === 'AVERAGE') { if (currentStock + importQty > 0) newCost = Math.round(((currentStock * oldCost) + (importQty * newCost)) / (currentStock + importQty)); }
+            else if (method === 'HIGHEST') newCost = Math.max(oldCost, newCost);
+            else if (method === 'LOWEST') newCost = oldCost === 0 ? newCost : Math.min(oldCost, newCost);
+            batch.update(doc(db, 'stores', storeId, 'products', p.id), { stock: currentStock + importQty, cost: newCost, lastSupplierId: supplierId, lastSupplierName: s.name });
+          }
+        });
+        if (isDebt) batch.update(doc(db, 'stores', storeId, 'suppliers', supplierId), { totalDebt: Number(s.totalDebt || 0) + total });
+      }
       await batch.commit();
-      setCart([]); setSupplierId(''); setIsDebt(false); showToast("Nhập hàng thành công!");
+      setCart([]); setSupplierId(''); setIsDebt(false); setEditingImport(null); setActiveImportTab('history'); showToast(editingImport ? 'Đã cập nhật phiếu nhập!' : 'Nhập hàng thành công!');
     } catch (e) { showToast("Lỗi nhập hàng", "error"); }
   };
 
@@ -2486,7 +2523,7 @@ function ImportView({ products, imports = [], suppliers, db, storeId, user, user
       {activeImportTab === 'history' ? (
         <div className="flex-1 overflow-auto p-4 md:p-6 space-y-4">
           <div className="flex flex-wrap items-center justify-between gap-3"><div><h2 className="text-xl font-bold text-gray-800">Lịch sử nhập hàng</h2><p className="text-sm text-gray-500 mt-1">Danh sách các phiếu nhập hàng đã ghi nhận, bao gồm phiếu nhập từ Excel.</p></div><button onClick={() => setActiveImportTab('create')} className="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2.5 rounded-xl text-sm font-bold flex items-center gap-2"><Plus size={16}/> Tạo phiếu nhập</button></div>
-          <div className="bg-white rounded-xl border shadow-sm overflow-auto"><table className="w-full text-left text-sm min-w-[850px]"><thead className="bg-gray-100 text-gray-600"><tr><th className="p-3">Ngày nhập</th><th className="p-3">Mã phiếu</th><th className="p-3">Nhà cung cấp</th><th className="p-3">Chi tiết hàng hóa</th><th className="p-3 text-right">Tổng tiền</th><th className="p-3">Trạng thái</th></tr></thead><tbody>{sortedImports.map((im, idx) => <tr key={im.id || idx} className="border-t hover:bg-gray-50 align-top"><td className="p-3 whitespace-nowrap">{im.date ? formatDate(im.date) : '—'}</td><td className="p-3 font-semibold">{im.invoiceCode || im.receiptCode || (im.id ? im.id.slice(0, 8) : '—')}</td><td className="p-3">{im.supplierName || 'Chưa rõ nhà cung cấp'}</td><td className="p-3">{(im.items || []).length ? <div className="space-y-1">{im.items.map((it, i) => <div key={i}>{it.name || 'Sản phẩm'} × {Number(it.qty ?? it.quantity ?? 0)}</div>)}</div> : 'Không có chi tiết hàng hóa'}</td><td className="p-3 text-right font-bold whitespace-nowrap">{formatCurrency(Number(im.total) || 0)}</td><td className="p-3"><span className={`px-2 py-1 rounded-lg text-xs font-bold ${im.status === 'DEBT' ? 'bg-orange-50 text-orange-700' : 'bg-green-50 text-green-700'}`}>{im.status === 'DEBT' ? 'Ghi nợ' : 'Đã thanh toán'}</span></td></tr>)}{sortedImports.length === 0 && <tr><td colSpan="6" className="p-10 text-center text-gray-400">Chưa có lịch sử nhập hàng.</td></tr>}</tbody></table></div>
+          <div className="bg-white rounded-xl border shadow-sm overflow-auto"><table className="w-full text-left text-sm min-w-[850px]"><thead className="bg-gray-100 text-gray-600"><tr><th className="p-3">Ngày nhập</th><th className="p-3">Mã phiếu</th><th className="p-3">Nhà cung cấp</th><th className="p-3">Chi tiết hàng hóa</th><th className="p-3 text-right">Tổng tiền</th><th className="p-3">Trạng thái</th><th className="p-3 text-right">Thao tác</th></tr></thead><tbody>{sortedImports.map((im, idx) => <tr key={im.id || idx} className="border-t hover:bg-gray-50 align-top"><td className="p-3 whitespace-nowrap">{im.date ? formatDate(im.date) : '—'}</td><td className="p-3 font-semibold">{im.invoiceCode || im.receiptCode || (im.id ? im.id.slice(0, 8) : '—')}</td><td className="p-3">{im.supplierName || 'Chưa rõ nhà cung cấp'}</td><td className="p-3">{(im.items || []).length ? <div className="space-y-1">{im.items.map((it, i) => <div key={i}>{it.name || 'Sản phẩm'} × {Number(it.qty ?? it.quantity ?? 0)}</div>)}</div> : 'Không có chi tiết hàng hóa'}</td><td className="p-3 text-right font-bold whitespace-nowrap">{formatCurrency(Number(im.total) || 0)}</td><td className="p-3"><span className={`px-2 py-1 rounded-lg text-xs font-bold ${im.status === 'DEBT' ? 'bg-orange-50 text-orange-700' : 'bg-green-50 text-green-700'}`}>{im.status === 'DEBT' ? 'Ghi nợ' : 'Đã thanh toán'}</span></td><td className="p-3"><div className="flex justify-end gap-1"><button onClick={() => { setEditingImport(im); setSupplierId(im.supplierId || suppliers.find(x => x.name === im.supplierName)?.id || ''); setCart((im.items || []).map(it => ({...it, id: it.id || it.productId, qty: Number(it.qty ?? it.quantity ?? 1), importCost: Number(it.importCost ?? it.cost ?? 0)}))); setIsDebt(im.status === 'DEBT'); setActiveImportTab('create'); }} className="text-blue-600 bg-blue-50 p-2 rounded-lg hover:bg-blue-100" title="Sửa phiếu nhập"><Edit size={15}/></button><button onClick={async () => { if (!window.confirm('Xóa phiếu nhập này? Tồn kho và công nợ nhà cung cấp sẽ được điều chỉnh lại.')) return; try { const batch = writeBatch(db); (im.items || []).forEach(it => { const pid = it.id || it.productId; const p = products.find(prod => prod.id === pid); if (p) batch.update(doc(db, 'stores', storeId, 'products', pid), { stock: Number(p.stock || 0) - Number(it.qty ?? it.quantity ?? 0) }); }); const sup = suppliers.find(x => x.id === im.supplierId); if (im.status === 'DEBT' && sup) batch.update(doc(db, 'stores', storeId, 'suppliers', sup.id), { totalDebt: Math.max(0, Number(sup.totalDebt || 0) - Number(im.total || 0)) }); batch.delete(doc(db, 'stores', storeId, 'imports', im.id)); await batch.commit(); showToast('Đã xóa phiếu nhập'); } catch (err) { showToast('Không xóa được phiếu nhập: ' + err.message, 'error'); } }} className="text-red-600 bg-red-50 p-2 rounded-lg hover:bg-red-100" title="Xóa phiếu nhập"><Trash2 size={15}/></button></div></td></tr>)}{sortedImports.length === 0 && <tr><td colSpan="7" className="p-10 text-center text-gray-400">Chưa có lịch sử nhập hàng.</td></tr>}</tbody></table></div>
         </div>
       ) : (
       <div className="flex-1 flex flex-col lg:flex-row overflow-hidden min-h-0">
@@ -2534,7 +2571,7 @@ function ImportView({ products, imports = [], suppliers, db, storeId, user, user
       </div>
       
       <div className="w-full lg:w-[460px] bg-white border-l shadow-lg shrink-0 z-20 flex flex-col h-[65vh] lg:h-auto">
-        <div className="p-4 border-b bg-gray-50"><h2 className="font-bold flex items-center gap-2"><ArrowDownToLine size={20} className="text-gray-600"/> Phiếu Nhập Kho</h2></div>
+        <div className="p-4 border-b bg-gray-50"><h2 className="font-bold flex items-center gap-2"><ArrowDownToLine size={20} className="text-gray-600"/> {editingImport ? `Sửa phiếu nhập ${editingImport.invoiceCode || editingImport.id?.slice(0,8) || ""}` : "Phiếu Nhập Kho"}</h2>{editingImport && <button onClick={() => { setEditingImport(null); setCart([]); setSupplierId(''); setIsDebt(false); }} className="text-xs text-red-600 mt-2">Hủy chỉnh sửa</button>}</div>
         <div className="flex-1 overflow-y-auto p-4 space-y-3">
           {cart.map(item => (
             <div key={item.id} className="bg-gray-50 p-3 rounded-xl border space-y-2 shadow-sm">
@@ -2555,7 +2592,7 @@ function ImportView({ products, imports = [], suppliers, db, storeId, user, user
           </div>
           <div className="flex gap-2"><button onClick={() => setIsDebt(false)} className={"flex-1 py-2 rounded-lg border font-bold text-xs " + (!isDebt ? 'bg-blue-600 text-white' : 'bg-white')}>Tiền mặt</button><button onClick={() => setIsDebt(true)} className={"flex-1 py-2 rounded-lg border font-bold text-xs " + (isDebt ? 'bg-orange-500 text-white' : 'bg-white')}>Ghi nợ NCC</button></div>
           <div className="flex justify-between items-center px-1"><span className="text-sm font-bold text-gray-700">Tổng tiền nhập:</span><span className="text-lg font-bold text-blue-600">{formatCurrency(cart.reduce((sum, i) => sum + (Number(i.qty || 0) * Number(i.importCost || 0)), 0))}</span></div>
-          <button onClick={handleImport} disabled={!supplierId || cart.length === 0} className="w-full bg-gray-800 disabled:bg-gray-300 text-white py-3 rounded-xl font-bold mt-1 shadow-sm">Hoàn tất Nhập Hàng</button>
+          <button onClick={handleImport} disabled={!supplierId || cart.length === 0} className="w-full bg-gray-800 disabled:bg-gray-300 text-white py-3 rounded-xl font-bold mt-1 shadow-sm">{editingImport ? "Lưu chỉnh sửa phiếu nhập" : "Hoàn tất Nhập Hàng"}</button>
         </div>
       </div>
 
