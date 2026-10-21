@@ -1642,7 +1642,7 @@ function ContactManager({ type, data, orders, navigationTarget, storeConfig, db,
     const matched = baseMatches.filter(o => {
       const d = new Date(o.date);
       const validDate = !Number.isNaN(d.getTime());
-      const matchTime = validDate && (filterMonth === 'ALL' || (d.getMonth() + 1).toString() === filterMonth) && d.getFullYear().toString() === filterYear;
+      const matchTime = validDate && (filterMonth === 'ALL' || (d.getMonth() + 1).toString() === filterMonth) && (filterYear === 'ALL' || d.getFullYear().toString() === filterYear);
       return matchTime;
     }).sort((a,b) => new Date(b.date) - new Date(a.date));
     let totalAmount = matched.reduce((s, o) => s + (Number(o.total) || 0), 0);
