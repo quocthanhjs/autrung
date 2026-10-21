@@ -2651,10 +2651,11 @@ function ImportView({ products, imports = [], suppliers, db, storeId, user, user
   const handleAddNewProductInImport = async (e) => {
     e.preventDefault();
     try {
-      const costVal = Number(newProdForm.cost) || 0; const priceVal = Number(newProdForm.price) || 0; const initStock = Number(newProdForm.stock) || 0;
-      const newProdData = { name: newProdForm.name, category: newProdForm.category || '', cost: costVal, price: priceVal, stock: initStock, createdAt: new Date().toISOString() };
+      const costVal = Number(newProdForm.cost) || 0; const priceVal = Number(newProdForm.price) || 0; const initStock = Math.max(1, Number(newProdForm.stock) || 0);
+      // Sản phẩm mới bắt đầu tồn 0; số lượng thực tế được cộng đúng một lần khi hoàn tất phiếu nhập.
+      const newProdData = { name: newProdForm.name, category: newProdForm.category || '', cost: costVal, price: priceVal, stock: 0, createdAt: new Date().toISOString() };
       const docRef = await addDoc(collection(db, 'stores', storeId, 'products'), newProdData);
-      setCart(c => [...c, { id: docRef.id, name: newProdData.name, category: newProdData.category, qty: initStock > 0 ? initStock : 1, importCost: costVal, price: priceVal }]);
+      setCart(c => [...c, { id: docRef.id, name: newProdData.name, category: newProdData.category, qty: initStock, importCost: costVal, price: priceVal, _newProductInImport: true }]);
       setShowAddProdModal(false); setShowGroupSuggestions(false); setShowAddGroupForm(false); setNewProdForm({ name: '', category: '', cost: '', price: '', stock: '' }); showToast("Đã thêm hàng mới và đưa vào phiếu nhập!");
     } catch (err) { showToast("Lỗi thêm sản phẩm mới", "error"); }
   };
@@ -2686,13 +2687,13 @@ function ImportView({ products, imports = [], suppliers, db, storeId, user, user
         batch.set(importRef, importPayload);
         cart.forEach(item => {
           const p = products.find(prod => prod.id === item.id);
-          if (p) {
-            let newCost = Number(item.importCost || 0); const oldCost = Number(p.cost || 0); const currentStock = Number(p.stock || 0); const importQty = Number(item.qty || 1);
+          if (p || item._newProductInImport) {
+            let newCost = Number(item.importCost || 0); const oldCost = Number(p?.cost || 0); const currentStock = Number(p?.stock || 0); const importQty = Number(item.qty || 1);
             const method = storeConfig?.costCalcMethod || 'LATEST';
             if (method === 'AVERAGE') { if (currentStock + importQty > 0) newCost = Math.round(((currentStock * oldCost) + (importQty * newCost)) / (currentStock + importQty)); }
             else if (method === 'HIGHEST') newCost = Math.max(oldCost, newCost);
             else if (method === 'LOWEST') newCost = oldCost === 0 ? newCost : Math.min(oldCost, newCost);
-            batch.update(doc(db, 'stores', storeId, 'products', p.id), { stock: currentStock + importQty, cost: newCost, lastSupplierId: supplierId, lastSupplierName: s?.name || supplierSearch || newSuppForm.name || '' });
+            batch.update(doc(db, 'stores', storeId, 'products', item.id), { stock: currentStock + importQty, cost: newCost, lastSupplierId: supplierId, lastSupplierName: s?.name || supplierSearch || newSuppForm.name || '' });
           }
         });
         if (isDebt && s) batch.update(doc(db, 'stores', storeId, 'suppliers', supplierId), { totalDebt: Number(s.totalDebt || 0) + total });
@@ -2745,7 +2746,7 @@ function ImportView({ products, imports = [], suppliers, db, storeId, user, user
               <label className="block text-xs font-bold text-gray-600 mb-1">Sản phẩm *</label>
               <div className="relative"><Search size={16} className="absolute left-3 top-3 text-gray-400"/><input placeholder="Tìm hoặc chọn sản phẩm..." value={searchTerm} onFocus={()=>setShowProductSuggestions(true)} onChange={e=>{setSearchTerm(e.target.value);setImportCurrentPage(1);setShowProductSuggestions(true);}} className="w-full pl-9 pr-3 py-2.5 border rounded-lg bg-white outline-none text-sm"/></div>
               <button type="button" onClick={()=>{setNewProdForm(v=>({...v,name:searchTerm || v.name || ''}));setShowAddProdModal(v=>!v);setShowProductSuggestions(false);}} className="mt-2 w-full text-left px-3 py-2.5 rounded-lg border border-blue-200 bg-blue-50 text-blue-700 font-semibold text-sm"><Plus size={14} className="inline mr-1"/>{showAddProdModal ? 'Đóng thêm sản phẩm mới' : 'Thêm sản phẩm mới'}</button>
-              {showProductSuggestions && <div className="absolute z-40 top-[4.4rem] left-0 right-0 max-h-56 overflow-auto bg-white border rounded-lg shadow-lg">{filteredProducts.slice(0,8).map(p=><button type="button" key={p.id} onClick={()=>{addProductToCart(p);setSearchTerm(p.name);setShowProductSuggestions(false);}} className="block w-full text-left px-3 py-2.5 text-sm hover:bg-blue-50"><span className="font-semibold">{p.name}</span><span className="block text-xs text-gray-500">{p.category || 'Chưa phân nhóm'} · Tồn: {p.stock}</span></button>)}{filteredProducts.length===0 && <div className="px-3 py-2 text-sm text-gray-500">Không tìm thấy sản phẩm.</div>}<button type="button" onClick={()=>{setNewProdForm(v=>({...v,name:searchTerm || v.name || ''}));setShowAddProdModal(true);setShowProductSuggestions(false);}} className="w-full text-left px-3 py-2.5 text-sm text-blue-700 font-semibold border-t"><Plus size={14} className="inline mr-1"/>Thêm sản phẩm mới</button></div>}
+              {showProductSuggestions && <div className="absolute z-40 top-[4.4rem] left-0 right-0 max-h-56 overflow-auto bg-white border rounded-lg shadow-lg">{filteredProducts.slice(0,8).map(p=><button type="button" key={p.id} onClick={()=>{addProductToCart(p);setSearchTerm('');setShowProductSuggestions(false);}} className="block w-full text-left px-3 py-2.5 text-sm hover:bg-blue-50"><span className="font-semibold">{p.name}</span><span className="block text-xs text-gray-500">{p.category || 'Chưa phân nhóm'} · Tồn: {p.stock}</span></button>)}{filteredProducts.length===0 && <div className="px-3 py-2 text-sm text-gray-500">Không tìm thấy sản phẩm.</div>}<button type="button" onClick={()=>{setNewProdForm(v=>({...v,name:searchTerm || v.name || ''}));setShowAddProdModal(true);setShowProductSuggestions(false);}} className="w-full text-left px-3 py-2.5 text-sm text-blue-700 font-semibold border-t"><Plus size={14} className="inline mr-1"/>Thêm sản phẩm mới</button></div>}
             </div>
             <div className="relative min-w-0">
               <label className="block text-xs font-bold text-gray-600 mb-1">Nhóm hàng *</label>
