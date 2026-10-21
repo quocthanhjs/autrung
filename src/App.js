@@ -2737,8 +2737,8 @@ function ImportView({ products, imports = [], suppliers, db, storeId, user, user
         </div>
       ) : (
       <Modal isOpen={activeImportTab === 'create'} onClose={() => setActiveImportTab('history')} title={editingImport ? 'Sửa phiếu nhập hàng' : 'Tạo phiếu nhập hàng'} maxWidth="max-w-6xl">
-      <div className="flex flex-col lg:flex-row overflow-hidden min-h-0 max-h-[75vh]">
-      <div className="flex-1 p-4 md:p-6 flex flex-col overflow-hidden">
+      <div className="flex flex-col lg:flex-row overflow-y-auto lg:overflow-hidden min-h-0 max-h-[85vh] lg:max-h-[80vh]">
+      <div className="flex-1 min-w-0 p-3 sm:p-4 md:p-6 flex flex-col overflow-visible lg:overflow-hidden">
         <div className="mb-4 shrink-0 space-y-3">
           <h2 className="text-xl font-bold text-gray-800">Chọn sản phẩm nhập</h2>
           <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
@@ -2807,7 +2807,7 @@ function ImportView({ products, imports = [], suppliers, db, storeId, user, user
         </div>
       </div>
       
-      <div className="w-full lg:w-[460px] bg-white border-l shadow-lg shrink-0 z-20 flex flex-col h-[65vh] lg:h-auto">
+      <div className="w-full lg:w-[460px] bg-white border-t lg:border-t-0 lg:border-l shadow-lg shrink-0 z-20 flex flex-col h-auto max-h-none lg:h-auto lg:max-h-full">
         <div className="p-4 border-b bg-gray-50"><h2 className="font-bold flex items-center gap-2"><ArrowDownToLine size={20} className="text-gray-600"/> {editingImport ? `Sửa phiếu nhập ${editingImport.invoiceCode || editingImport.id?.slice(0,8) || ""}` : "Phiếu Nhập Kho"}</h2>{editingImport && <button onClick={() => { setEditingImport(null); setCart([]); setSupplierId(''); setIsDebt(false); }} className="text-xs text-red-600 mt-2">Hủy chỉnh sửa</button>}</div>
         <div className="flex-1 overflow-y-auto p-4 space-y-3">
           {cart.map(item => (
@@ -2822,7 +2822,7 @@ function ImportView({ products, imports = [], suppliers, db, storeId, user, user
           ))}
           {cart.length === 0 && <div className="text-center text-gray-400 py-12">Chưa chọn sản phẩm nào để nhập</div>}
         </div>
-        <div className="p-4 border-t bg-gray-50 space-y-3">
+        <div className="p-3 sm:p-4 border-t bg-gray-50 space-y-3">
           <div className="relative">
             <label className="block text-xs font-bold text-gray-500 mb-1">Nhà cung cấp *</label>
             <input required value={supplierSearch || ((suppliers || []).find(s=>s.id===supplierId)?.name || '')} onFocus={()=>setShowSupplierSuggestions(true)} onChange={e=>{setSupplierSearch(e.target.value);setSupplierId('');setShowSupplierSuggestions(true);}} placeholder="Tìm hoặc chọn nhà cung cấp..." className="w-full p-2.5 border rounded-lg outline-none text-sm bg-white font-medium"/>
