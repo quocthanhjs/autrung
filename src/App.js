@@ -479,7 +479,7 @@ export default function App() {
         {activeTab === 'pos' && <POSView products={products} orders={orders} customers={customers} db={db} storeId={storeId} user={user} storeConfig={storeConfig} showToast={showToast} userData={userData} />}
         {activeTab === 'sales_history' && <SalesHistoryView orders={orders} imports={imports} products={products} customers={customers} storeConfig={storeConfig} db={db} storeId={storeId} user={user} userData={userData} showToast={showToast} />}
         {activeTab === 'imports' && <ImportView products={products} imports={imports} suppliers={suppliers} db={db} storeId={storeId} user={user} userData={userData} showToast={showToast} storeConfig={storeConfig} setActiveTab={setActiveTab} />}
-        {activeTab === 'products' && <InventoryView products={products} orders={orders} imports={imports} customers={customers} suppliers={suppliers} navigationTarget={navigationTarget} storeConfig={storeConfig} db={db} storeId={storeId} showToast={showToast} />}
+        {activeTab === 'products' && <InventoryView products={products} orders={orders} imports={imports} warrantyRequests={warrantyRequests} customers={customers} suppliers={suppliers} navigationTarget={navigationTarget} storeConfig={storeConfig} db={db} storeId={storeId} showToast={showToast} />}
         {activeTab === 'warranty' && <WarrantyView products={products} customers={customers} suppliers={suppliers} warrantyRequests={warrantyRequests} storeConfig={storeConfig} db={db} storeId={storeId} showToast={showToast} />}
         {activeTab === 'customers' && <ContactManager type="customers" data={customers} orders={orders} navigationTarget={navigationTarget} storeConfig={storeConfig} db={db} storeId={storeId} showToast={showToast} />}
         {activeTab === 'suppliers' && <ContactManager type="suppliers" data={suppliers} orders={imports} navigationTarget={navigationTarget} storeConfig={storeConfig} db={db} storeId={storeId} showToast={showToast} />}
@@ -1543,7 +1543,7 @@ function ContactManager({ type, data, orders, navigationTarget, storeConfig, db,
   const [filterYear, setFilterYear] = useState('ALL');
   const [rowsPerPage, setRowsPerPage] = useState('10');
   const [currentPage, setCurrentPage] = useState(1);
-  useEffect(() => { if (navigationTarget?.tab === type && navigationTarget.id) { const match = (data || []).find(item => item.id === navigationTarget.id) || (data || []).find(item => (item.name || '').toLocaleLowerCase('vi') === (navigationTarget.name || '').toLocaleLowerCase('vi')); if (match) { setDetailTarget(match); setSearchTerm(''); setCurrentPage(1); } } }, [navigationTarget?.nonce, navigationTarget?.tab, navigationTarget?.id, navigationTarget?.name, type, data]);
+  useEffect(() => { if (navigationTarget?.tab === type && (navigationTarget.id || navigationTarget.name)) { const match = (data || []).find(item => navigationTarget.id && item.id === navigationTarget.id) || (data || []).find(item => navigationTarget.name && (item.name || '').trim().toLocaleLowerCase('vi') === navigationTarget.name.trim().toLocaleLowerCase('vi')); if (match) { setDetailTarget(match); setSearchTerm(''); setCurrentPage(1); } } }, [navigationTarget?.nonce, navigationTarget?.tab, navigationTarget?.id, navigationTarget?.name, type, data]);
 
   const handleSave = async (e) => {
     e.preventDefault();
@@ -1803,7 +1803,7 @@ function GroupManagementView({ products, db, storeId, showToast }) {
   </div>;
 }
 
-function InventoryView({ products, orders, imports, customers = [], suppliers = [], navigationTarget, storeConfig, db, storeId, showToast }) {
+function InventoryView({ products, orders, imports, warrantyRequests = [], customers = [], suppliers = [], navigationTarget, storeConfig, db, storeId, showToast }) {
   const [groups, setGroups] = useState([]);
   useEffect(() => onSnapshot(collection(db, 'stores', storeId, 'product_groups'), snap => setGroups(snap.docs.map(d => ({ id: d.id, ...d.data() })))), [db, storeId]);
   const [isModalOpen, setIsModalOpen] = useState(false);
@@ -1932,14 +1932,48 @@ function InventoryView({ products, orders, imports, customers = [], suppliers = 
 
   const productHistory = useMemo(() => {
     if (!detailProduct) return { sales: [], imports: [], totalSoldQty: 0, totalImportQty: 0, totalSoldAmount: 0, totalImportAmount: 0, totalPaid: 0, totalDebtRemain: 0 };
-    const matchTime = (dateStr) => { const d = getVietnamDateParts(new Date(dateStr)); return d.year.toString() === filterYear; };
-    const sales = (orders || []).filter(o => matchTime(o.date)).flatMap(o => (o.items || []).filter(item => (item.id || item.productId) === detailProduct.id).map(it => ({ ...it, date: o.date, status: o.status, customerName: o.customerName || 'Khách lẻ', customerId: o.customerId || '' }))).sort((a,b) => new Date(b.date) - new Date(a.date));
-    const imp = (imports || []).filter(i => matchTime(i.date)).flatMap(i => (i.items || []).filter(item => (item.id || item.productId) === detailProduct.id).map(it => ({ ...it, date: i.date, status: i.status, supplierName: i.supplierName || 'NCC Ẩn', supplierId: i.supplierId || '' }))).sort((a,b) => new Date(b.date) - new Date(a.date));
-    let totalSoldQty = sales.reduce((s, x) => s + (Number(x.quantity) || 0), 0); let totalImportQty = imp.reduce((s, x) => s + (Number(x.qty) || 0), 0);
-    let totalSoldAmount = sales.reduce((s, x) => s + ((Number(x.quantity) || 0) * (Number(x.price) || 0)), 0); let totalImportAmount = imp.reduce((s, x) => s + ((Number(x.qty) || 0) * (Number(x.importCost) || 0)), 0);
-    let totalPaid = sales.filter(s => s.status === 'PAID').reduce((sum, x) => sum + (x.quantity * x.price), 0); let totalDebtRemain = sales.filter(s => s.status === 'DEBT').reduce((sum, x) => sum + (x.quantity * x.price), 0);
+    const norm = value => String(value || '').trim().toLocaleLowerCase('vi');
+    const isThisProduct = item => {
+      const itemId = item?.id || item?.productId || item?.product_id || '';
+      return (itemId && itemId === detailProduct.id) || norm(item?.name) === norm(detailProduct.name);
+    };
+    const matchTime = dateStr => {
+      if (!dateStr) return false;
+      const d = new Date(dateStr);
+      return !Number.isNaN(d.getTime()) && getVietnamDateParts(d).year.toString() === filterYear;
+    };
+    const orderSales = (orders || []).filter(o => matchTime(o.date)).flatMap(o => (o.items || []).filter(isThisProduct).map(it => ({
+      ...it, date: o.date, status: o.status, customerName: o.customerName || 'Khách lẻ', customerId: o.customerId || '', source: 'order'
+    })));
+    // Thẻ khách hàng (phiếu lưu bảo hành) cũng ghi nhận sản phẩm đã bán và ngày bán,
+    // nhưng trước đây lịch sử kho chỉ đọc collection orders nên những dòng này bị bỏ sót.
+    const cardSales = (warrantyRequests || []).filter(w =>
+      (w.recordType === 'customer' || (!w.recordType && !w.supplierName)) && w.customerName
+    ).flatMap(w => (w.items || []).filter(isThisProduct).map(it => {
+      const date = it.saleDate || w.saleDate || w.createdAt || w.sentAt || '';
+      if (!matchTime(date)) return null;
+      return { ...it, date, quantity: Number(it.quantity ?? it.qty ?? 1) || 1, status: w.status === 'DEBT' ? 'DEBT' : 'PAID', customerName: w.customerName, customerId: w.customerId || '', source: 'customer-card' };
+    }).filter(Boolean));
+    // Tránh hiện hai lần cùng một giao dịch nếu người dùng đã ghi cả hóa đơn bán và thẻ khách hàng.
+    const sales = [...orderSales];
+    for (const cardSale of cardSales) {
+      const cardDay = String(cardSale.date).slice(0, 10);
+      const duplicate = sales.some(s => norm(s.customerName) === norm(cardSale.customerName)
+        && norm(s.name) === norm(cardSale.name)
+        && String(s.date || '').slice(0, 10) === cardDay
+        && Number(s.quantity ?? s.qty ?? 1) === Number(cardSale.quantity));
+      if (!duplicate) sales.push(cardSale);
+    }
+    sales.sort((a,b) => new Date(b.date) - new Date(a.date));
+    const imp = (imports || []).filter(i => matchTime(i.date)).flatMap(i => (i.items || []).filter(isThisProduct).map(it => ({ ...it, date: i.date, status: i.status, supplierName: i.supplierName || 'NCC Ẩn', supplierId: i.supplierId || '' }))).sort((a,b) => new Date(b.date) - new Date(a.date));
+    const totalSoldQty = sales.reduce((s, x) => s + (Number(x.quantity ?? x.qty) || 0), 0);
+    const totalImportQty = imp.reduce((s, x) => s + (Number(x.qty ?? x.quantity) || 0), 0);
+    const totalSoldAmount = sales.reduce((s, x) => s + ((Number(x.quantity ?? x.qty) || 0) * (Number(x.price) || 0)), 0);
+    const totalImportAmount = imp.reduce((s, x) => s + ((Number(x.qty ?? x.quantity) || 0) * (Number(x.importCost) || 0)), 0);
+    const totalPaid = sales.filter(s => s.status === 'PAID').reduce((sum, x) => sum + ((Number(x.quantity ?? x.qty) || 0) * (Number(x.price) || 0)), 0);
+    const totalDebtRemain = sales.filter(s => s.status === 'DEBT').reduce((sum, x) => sum + ((Number(x.quantity ?? x.qty) || 0) * (Number(x.price) || 0)), 0);
     return { sales, imports: imp, totalSoldQty, totalImportQty, totalSoldAmount, totalImportAmount, totalPaid, totalDebtRemain };
-  }, [detailProduct, orders, imports, filterYear]);
+  }, [detailProduct, orders, imports, warrantyRequests, filterYear]);
 
   return (
     <div className="flex-1 flex flex-col p-4 md:p-6 bg-gray-50 overflow-hidden h-full">
