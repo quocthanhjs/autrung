@@ -1845,6 +1845,7 @@ function InventoryView({ products, orders, imports, warrantyRequests = [], custo
   const [searchTerm, setSearchTerm] = useState('');
   const [sortConfig, setSortConfig] = useState({ field: null, direction: 'none' });
   const [detailProduct, setDetailProduct] = useState(null);
+  const [productImportYear, setProductImportYear] = useState(String(getVietnamDateParts(new Date()).year));
   useEffect(() => {
     const onNavigate = (event) => {
       const detail = event?.detail || {};
@@ -2075,19 +2076,42 @@ function InventoryView({ products, orders, imports, warrantyRequests = [], custo
             </div>
             {(() => {
               const latestImport = (imports || []).flatMap(im => (im.items || []).filter(item => ((item.id || item.productId) && (item.id || item.productId) === detailProduct.id) || (!item.id && item.name === detailProduct.name)).map(item => ({ ...item, date: im.date, supplierName: im.supplierName || 'Chưa rõ nhà cung cấp', supplierId: im.supplierId || '' }))).sort((a, b) => new Date(b.date || 0) - new Date(a.date || 0))[0];
-              return <div className="bg-blue-50 p-3 rounded-xl border border-blue-100 grid grid-cols-2 md:grid-cols-4 gap-3">
+              return <div className="bg-blue-50 p-3 rounded-xl border border-blue-100 grid grid-cols-1 sm:grid-cols-3 gap-3">
                 <div><p className="text-[10px] text-blue-700 font-bold uppercase">Nhập gần nhất</p><p className="text-xs font-semibold text-gray-800">{latestImport ? formatDate(latestImport.date) : 'Chưa có dữ liệu'}</p></div>
                 <div><p className="text-[10px] text-blue-700 font-bold uppercase">Nhà cung cấp</p><p className="text-xs font-semibold text-gray-800">{latestImport?.supplierName ? <button type="button" onClick={() => { setDetailProduct(null); navigateMainTab('suppliers', latestImport.supplierId || '', latestImport.supplierName); }} className="text-blue-700 underline text-left">{latestImport.supplierName} · Xem hồ sơ</button> : (detailProduct.lastSupplierName || 'Chưa có dữ liệu')}</p></div>
                 <div><p className="text-[10px] text-blue-700 font-bold uppercase">Giá nhập gần nhất</p><p className="text-xs font-bold text-blue-800">{latestImport ? formatCurrency(latestImport.importCost) : 'Chưa có dữ liệu'}</p></div>
-                <div><p className="text-[10px] text-blue-700 font-bold uppercase">Tồn còn lại hiện tại</p><p className="text-xs font-bold text-blue-800">{Number(detailProduct.stock) || 0} sản phẩm</p></div>
               </div>;
             })()}
-            <div className="bg-orange-50 p-3 rounded-xl border border-orange-100">
-              <p className="text-[11px] text-orange-800 font-bold uppercase mb-2">5 lần nhập hàng gần nhất</p>
+            <div className="bg-orange-50 p-3 rounded-xl border border-orange-100 space-y-3">
               {(() => {
-                const lastImports = (imports || []).flatMap(im => (im.items || []).filter(item => ((item.id || item.productId) && (item.id || item.productId) === detailProduct.id) || (!item.id && item.name === detailProduct.name)).map(item => ({ date: im.date, supplierName: im.supplierName || 'Chưa rõ nhà cung cấp', supplierId: im.supplierId || '', qty: Number(item.qty ?? item.quantity ?? 0), importCost: Number(item.importCost) || 0, amount: Number(item.qty ?? item.quantity ?? 0) * (Number(item.importCost) || 0) }))).sort((a,b) => new Date(b.date || 0) - new Date(a.date || 0)).slice(0, 5).map(imp => { const importTime = new Date(imp.date || 0).getTime(); const laterImports = (imports || []).reduce((sum, rec) => sum + (new Date(rec.date || 0).getTime() > importTime ? (rec.items || []).filter(item => ((item.id || item.productId) && (item.id || item.productId) === detailProduct.id) || (!item.id && item.name === detailProduct.name)).reduce((n, item) => n + Number(item.qty ?? item.quantity ?? 0), 0) : 0), 0); const laterSales = (orders || []).reduce((sum, rec) => sum + (new Date(rec.date || 0).getTime() > importTime ? (rec.items || []).filter(item => ((item.id || item.productId) && (item.id || item.productId) === detailProduct.id) || (!item.id && item.name === detailProduct.name)).reduce((n, item) => n + Number(item.quantity || 0), 0) : 0), 0); return { ...imp, stock: (Number(detailProduct.stock) || 0) - laterImports + laterSales }; });
-                if (lastImports.length === 0) return <p className="text-xs text-orange-600/70">Chưa có dữ liệu nhập hàng đợt nào.</p>;
-                return <div className="overflow-auto"><table className="w-full text-xs min-w-[650px]"><thead className="bg-orange-100 text-orange-900"><tr><th className="p-2 text-left">Thời gian nhập</th><th className="p-2 text-left">Nhà cung cấp</th><th className="p-2 text-right">Giá nhập</th><th className="p-2 text-right">Tồn kho lúc nhập</th></tr></thead><tbody>{lastImports.map((imp, idx) => <tr key={idx} className="border-t border-orange-100 bg-white"><td className="p-2 whitespace-nowrap">{formatDate(imp.date)}</td><td className="p-2">{imp.supplierName}</td><td className="p-2 text-right font-semibold">{formatCurrency(imp.importCost)}</td><td className="p-2 text-right font-bold text-blue-700">{imp.stock}</td></tr>)}</tbody></table></div>;
+                const allProductImports = (imports || []).flatMap(im => (im.items || []).filter(item => {
+                  const itemId = item.id || item.productId || item.product_id || '';
+                  return (itemId && itemId === detailProduct.id) || String(item?.name || '').trim().toLocaleLowerCase('vi') === String(detailProduct.name || '').trim().toLocaleLowerCase('vi');
+                }).map(item => ({ date: im.date, supplierName: im.supplierName || 'Chưa rõ nhà cung cấp', supplierId: im.supplierId || '', qty: Number(item.qty ?? item.quantity ?? 0), importCost: Number(item.importCost) || 0 })));
+                const selectedImports = allProductImports.filter(imp => {
+                  if (productImportYear === 'ALL') return true;
+                  if (!imp.date) return false;
+                  const year = getVietnamDateParts(new Date(imp.date)).year;
+                  return String(year) === productImportYear;
+                });
+                const totalQty = selectedImports.reduce((sum, imp) => sum + (Number(imp.qty) || 0), 0);
+                const yearOptions = Array.from(new Set([getVietnamDateParts(new Date()).year, ...allProductImports.map(imp => imp.date ? getVietnamDateParts(new Date(imp.date)).year : null).filter(Boolean)])).sort((a,b) => b-a);
+                const recentImports = [...allProductImports].sort((a,b) => new Date(b.date || 0) - new Date(a.date || 0)).slice(0, 5);
+                return <>
+                  <div className="flex flex-wrap items-center justify-between gap-2">
+                    <div><p className="text-[11px] text-orange-800 font-bold uppercase">Tổng số lượng nhập</p><p className="text-xl font-black text-orange-900">{totalQty.toLocaleString('vi-VN')} sản phẩm</p><p className="text-xs text-orange-700">{productImportYear === 'ALL' ? 'Tất cả các năm' : `Năm ${productImportYear}`}</p></div>
+                    <label className="text-xs font-semibold text-orange-900 flex items-center gap-2">Xem tổng nhập
+                      <select value={productImportYear} onChange={e => setProductImportYear(e.target.value)} className="border border-orange-200 rounded-lg p-2 bg-white text-sm">
+                        {yearOptions.map(y => <option key={y} value={String(y)}>Năm {y}</option>)}
+                        <option value="ALL">Tất cả các năm</option>
+                      </select>
+                    </label>
+                  </div>
+                  <div><p className="text-[11px] text-orange-800 font-bold uppercase mb-2">5 lần nhập hàng gần nhất</p>
+                    {recentImports.length === 0 ? <p className="text-xs text-orange-700">Chưa có dữ liệu nhập hàng.</p> :
+                    <div className="overflow-auto"><table className="w-full text-xs min-w-[560px]"><thead className="bg-orange-100 text-orange-900"><tr><th className="p-2 text-left">Thời gian nhập</th><th className="p-2 text-left">Nhà cung cấp</th><th className="p-2 text-right">Giá nhập</th><th className="p-2 text-right">Số lượng nhập</th></tr></thead><tbody>{recentImports.map((imp, idx) => <tr key={`${imp.date}-${imp.supplierId}-${idx}`} className="border-t border-orange-100 bg-white"><td className="p-2 whitespace-nowrap">{formatDate(imp.date)}</td><td className="p-2">{imp.supplierName}</td><td className="p-2 text-right font-semibold">{formatCurrency(imp.importCost)}</td><td className="p-2 text-right font-bold text-purple-700">{Number(imp.qty).toLocaleString('vi-VN')}</td></tr>)}</tbody></table></div>}
+                  </div>
+                </>;
               })()}
             </div>
             <div className="grid grid-cols-4 gap-2 text-center">
