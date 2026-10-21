@@ -917,10 +917,25 @@ function POSView({ products, orders = [], customers, db, storeId, user, storeCon
   const handleCheckout = async () => {
     if (cart.length === 0 || (isDebt && !customerId)) return;
     try {
-      const c = customers.find(cust => cust.id === customerId);
+      // Bán tiền mặt không chọn khách: tạo/tái sử dụng hồ sơ "Khách lẻ"
+      // để giao dịch cũng xuất hiện trong thẻ Khách hàng.
+      let resolvedCustomerId = customerId || null;
+      let resolvedCustomer = customers.find(cust => cust.id === resolvedCustomerId) || null;
+      if (!resolvedCustomerId && !isDebt) {
+        resolvedCustomer = customers.find(cust => String(cust.name || '').trim().toLowerCase() === 'khách lẻ') || null;
+        if (!resolvedCustomer) {
+          const guestRef = await addDoc(collection(db, 'stores', storeId, 'customers'), {
+            name: 'Khách lẻ', phone: '', address: '', totalDebt: 0, createdAt: new Date().toISOString(), isWalkIn: true
+          });
+          resolvedCustomer = { id: guestRef.id, name: 'Khách lẻ', phone: '', address: '', totalDebt: 0, isWalkIn: true };
+        }
+        resolvedCustomerId = resolvedCustomer.id;
+        setCustomerId(resolvedCustomerId);
+      }
+      const c = resolvedCustomer;
       const orderData = {
         invoiceCode: generateInvoiceCode(orders),
-        customerId: customerId || null, customerName: c ? c.name : 'Khách lẻ', sellerUid: user.uid, sellerName: userData?.name || user?.displayName || user?.email || 'Nhân viên', note: orderNote,
+        customerId: resolvedCustomerId, customerName: c ? c.name : 'Khách lẻ', sellerUid: user.uid, sellerName: userData?.name || user?.displayName || user?.email || 'Nhân viên', note: orderNote,
         items: cart.map(i => ({ id: i.id, name: i.name, price: i.price, cost: i.cost || 0, quantity: i.quantity, warrantyValue: i.warrantyValue || '', warrantyUnit: i.warrantyUnit || 'tháng', note: i.note || '' })),
         total: cartTotal, totalCost: cart.reduce((s, item) => s + ((item.cost || 0) * item.quantity), 0),
         status: isDebt ? 'DEBT' : 'PAID', date: new Date().toISOString()
@@ -2737,8 +2752,8 @@ function ImportView({ products, imports = [], suppliers, db, storeId, user, user
         </div>
       ) : (
       <Modal isOpen={activeImportTab === 'create'} onClose={() => setActiveImportTab('history')} title={editingImport ? 'Sửa phiếu nhập hàng' : 'Tạo phiếu nhập hàng'} maxWidth="max-w-6xl">
-      <div className="flex flex-col lg:flex-row overflow-y-auto lg:overflow-hidden min-h-0 max-h-[85vh] lg:max-h-[80vh]">
-      <div className="flex-1 min-w-0 p-3 sm:p-4 md:p-6 flex flex-col overflow-visible lg:overflow-hidden">
+      <div className="flex flex-col lg:flex-row overflow-hidden min-h-0 max-h-[75vh]">
+      <div className="flex-1 p-4 md:p-6 flex flex-col overflow-hidden">
         <div className="mb-4 shrink-0 space-y-3">
           <h2 className="text-xl font-bold text-gray-800">Chọn sản phẩm nhập</h2>
           <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
@@ -2766,7 +2781,7 @@ function ImportView({ products, imports = [], suppliers, db, storeId, user, user
             {showGroupSuggestions && <div className="mt-1 border rounded-lg max-h-32 overflow-auto bg-white">{visibleGroups.slice(0,8).map((g,i)=><button type="button" key={`${g}-${i}`} onClick={()=>{setNewProdForm(v=>({...v,category:g}));setGroupSearch(g);setShowGroupSuggestions(false);}} className="block w-full text-left px-3 py-2 text-sm hover:bg-blue-50">{g}</button>)}{visibleGroups.length === 0 && <div className="px-3 py-2 text-xs text-gray-500">Chưa có nhóm hàng phù hợp.</div>}<button type="button" onClick={()=>{setNewGroupName(groupSearch || newProdForm.category);setShowAddGroupForm(true);setShowGroupSuggestions(false);}} className="w-full text-left px-3 py-2 text-sm text-blue-700 font-semibold border-t"><Plus size={14} className="inline mr-1"/>Thêm nhóm hàng mới</button></div>}
             {showAddGroupForm && <div className="mt-2 flex gap-2"><input value={newGroupName} onChange={e=>setNewGroupName(e.target.value)} placeholder="Tên nhóm hàng mới" className="min-w-0 flex-1 p-2 border rounded-lg text-sm"/><button type="button" onClick={handleAddGroupQuick} className="px-3 rounded-lg bg-blue-600 text-white text-sm font-bold">Chọn nhóm</button></div>}
           </div>
-          <div className="grid grid-cols-2 gap-3"><div><label className="block text-xs font-bold text-gray-500 mb-1">Giá vốn (đ) *</label><input required type="number" placeholder="0" value={newProdForm.cost} onChange={e=>setNewProdForm({...newProdForm,cost:e.target.value})} className="w-full p-2.5 border rounded-lg text-sm"/></div><div><label className="block text-xs font-bold text-gray-500 mb-1">Giá bán (đ) *</label><input required type="number" placeholder="0" value={newProdForm.price} onChange={e=>setNewProdForm({...newProdForm,price:e.target.value})} className="w-full p-2.5 border rounded-lg text-sm"/></div></div>
+          <div className="grid grid-cols-2 gap-3"><div><label className="block text-xs font-bold text-gray-500 mb-1">Giá vốn (đ) *</label><input required type="number" step="any" placeholder="0 (cho phép số âm)" value={newProdForm.cost} onChange={e=>setNewProdForm({...newProdForm,cost:e.target.value})} className="w-full p-2.5 border rounded-lg text-sm"/></div><div><label className="block text-xs font-bold text-gray-500 mb-1">Giá bán (đ) *</label><input required type="number" step="any" placeholder="0 (cho phép số âm)" value={newProdForm.price} onChange={e=>setNewProdForm({...newProdForm,price:e.target.value})} className="w-full p-2.5 border rounded-lg text-sm"/></div></div>
           <div><label className="block text-xs font-bold text-gray-500 mb-1">Số lượng tồn ban đầu *</label><input required type="number" placeholder="0" value={newProdForm.stock} onChange={e=>setNewProdForm({...newProdForm,stock:e.target.value})} className="w-full p-2.5 border rounded-lg text-sm"/></div>
           <button type="submit" className="w-full bg-blue-600 text-white font-bold p-2.5 rounded-lg text-sm">Lưu & đưa vào phiếu nhập</button>
         </form>}
@@ -2807,7 +2822,7 @@ function ImportView({ products, imports = [], suppliers, db, storeId, user, user
         </div>
       </div>
       
-      <div className="w-full lg:w-[460px] bg-white border-t lg:border-t-0 lg:border-l shadow-lg shrink-0 z-20 flex flex-col h-auto max-h-none lg:h-auto lg:max-h-full">
+      <div className="w-full lg:w-[460px] bg-white border-l shadow-lg shrink-0 z-20 flex flex-col h-[65vh] lg:h-auto">
         <div className="p-4 border-b bg-gray-50"><h2 className="font-bold flex items-center gap-2"><ArrowDownToLine size={20} className="text-gray-600"/> {editingImport ? `Sửa phiếu nhập ${editingImport.invoiceCode || editingImport.id?.slice(0,8) || ""}` : "Phiếu Nhập Kho"}</h2>{editingImport && <button onClick={() => { setEditingImport(null); setCart([]); setSupplierId(''); setIsDebt(false); }} className="text-xs text-red-600 mt-2">Hủy chỉnh sửa</button>}</div>
         <div className="flex-1 overflow-y-auto p-4 space-y-3">
           {cart.map(item => (
@@ -2822,7 +2837,7 @@ function ImportView({ products, imports = [], suppliers, db, storeId, user, user
           ))}
           {cart.length === 0 && <div className="text-center text-gray-400 py-12">Chưa chọn sản phẩm nào để nhập</div>}
         </div>
-        <div className="p-3 sm:p-4 border-t bg-gray-50 space-y-3">
+        <div className="p-4 border-t bg-gray-50 space-y-3">
           <div className="relative">
             <label className="block text-xs font-bold text-gray-500 mb-1">Nhà cung cấp *</label>
             <input required value={supplierSearch || ((suppliers || []).find(s=>s.id===supplierId)?.name || '')} onFocus={()=>setShowSupplierSuggestions(true)} onChange={e=>{setSupplierSearch(e.target.value);setSupplierId('');setShowSupplierSuggestions(true);}} placeholder="Tìm hoặc chọn nhà cung cấp..." className="w-full p-2.5 border rounded-lg outline-none text-sm bg-white font-medium"/>
