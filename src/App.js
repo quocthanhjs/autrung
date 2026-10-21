@@ -2,7 +2,7 @@ import React, { useState, useEffect, useMemo } from 'react';
 import { LayoutDashboard, ShoppingCart, Package, Users, Truck, Plus, Edit, Trash2, Check, X, Image as ImageIcon, ShoppingBag, TrendingUp, AlertCircle, ArrowDownToLine, Phone, DollarSign, CheckCircle2, Printer, FileText, CreditCard, Lock, LogOut, ShieldAlert, User as UserIcon, Database, UserCog, KeyRound, MonitorSmartphone, Mail, Download, Upload, ArrowUpDown, Search, Eye, EyeOff, Bell, Award, BarChart3, Receipt, ChevronDown, ChevronUp, Image, Store, Sliders, HardDrive, ChevronLeft, ChevronRight } from 'lucide-react';
 import { initializeApp } from 'firebase/app';
 import { getAuth, signInWithEmailAndPassword, signOut, onAuthStateChanged, sendPasswordResetEmail, EmailAuthProvider, reauthenticateWithCredential } from 'firebase/auth';
-import { getFirestore, doc, setDoc, getDoc, getDocs, addDoc, updateDoc, deleteDoc, onSnapshot, collection, writeBatch, query, orderBy, where } from 'firebase/firestore';
+import { getFirestore, doc, setDoc, getDoc, getDocs, addDoc, updateDoc, deleteDoc, onSnapshot, collection, writeBatch, query, orderBy, where, increment } from 'firebase/firestore';
 
 const firebaseConfig = {
   apiKey: "AIzaSyClQogCLby6OYpVzRwJ9181rmg1Lho5FV8",
@@ -928,9 +928,15 @@ function POSView({ products, orders = [], customers, db, storeId, user, storeCon
       const orderRef = await addDoc(collection(db, 'stores', storeId, 'orders'), orderData);
       
       let batch = writeBatch(db);
-      cart.forEach(item => {
-        const p = products.find(prod => prod.id === item.id);
-        if (p) batch.update(doc(db, 'stores', storeId, 'products', p.id), { stock: p.stock - item.quantity });
+      // Gom số lượng theo mã sản phẩm để trừ kho chính xác, kể cả khi một sản phẩm có nhiều dòng trong giỏ.
+      const soldQtyByProduct = cart.reduce((acc, item) => {
+        const productId = item.id;
+        const qty = Number(item.quantity) || 0;
+        if (productId && qty > 0) acc[productId] = (acc[productId] || 0) + qty;
+        return acc;
+      }, {});
+      Object.entries(soldQtyByProduct).forEach(([productId, qty]) => {
+        batch.update(doc(db, 'stores', storeId, 'products', productId), { stock: increment(-qty) });
       });
       if (isDebt && c) batch.update(doc(db, 'stores', storeId, 'customers', customerId), { totalDebt: (c.totalDebt || 0) + cartTotal });
       await batch.commit();
@@ -1174,9 +1180,14 @@ function SalesHistoryView({ orders, imports = [], products, customers, storeConf
       await addDoc(collection(db, 'stores', storeId, 'orders'), orderData);
       
       let batch = writeBatch(db);
-      itemsToSave.forEach(item => {
-        const p = products.find(prod => prod.id === item.id);
-        if (p) batch.update(doc(db, 'stores', storeId, 'products', p.id), { stock: p.stock - item.quantity });
+      const soldQtyByProduct = itemsToSave.reduce((acc, item) => {
+        const productId = item.id;
+        const qty = Number(item.quantity) || 0;
+        if (productId && qty > 0) acc[productId] = (acc[productId] || 0) + qty;
+        return acc;
+      }, {});
+      Object.entries(soldQtyByProduct).forEach(([productId, qty]) => {
+        batch.update(doc(db, 'stores', storeId, 'products', productId), { stock: increment(-qty) });
       });
       if (newOrderForm.status === 'DEBT' && c) batch.update(doc(db, 'stores', storeId, 'customers', newOrderForm.customerId), { totalDebt: (c.totalDebt || 0) + total });
       await batch.commit();
@@ -2727,11 +2738,22 @@ function ImportView({ products, imports = [], suppliers, db, storeId, user, user
       <Modal isOpen={activeImportTab === 'create'} onClose={() => setActiveImportTab('history')} title={editingImport ? 'Sửa phiếu nhập hàng' : 'Tạo phiếu nhập hàng'} maxWidth="max-w-6xl">
       <div className="flex flex-col lg:flex-row overflow-hidden min-h-0 max-h-[75vh]">
       <div className="flex-1 p-4 md:p-6 flex flex-col overflow-hidden">
-        <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center mb-4 gap-3 shrink-0">
-          <div className="flex flex-wrap items-center gap-2"><h2 className="text-xl font-bold text-gray-800">Chọn sản phẩm nhập</h2><button type="button" onClick={() => { setShowAddProdModal(v => !v); setNewProdForm(v => ({ ...v, name: v.name || searchTerm })); }} className="bg-blue-600 hover:bg-blue-700 text-white px-3 py-1.5 rounded-lg text-xs font-bold flex items-center gap-1 shadow"><Plus size={14}/> {showAddProdModal ? 'Đóng thêm mới' : 'Sản phẩm mới'}</button><button type="button" onClick={() => { setShowAddProdModal(true); setShowAddGroupForm(v => !v); setNewGroupName(groupSearch || newProdForm.category || ''); }} className="bg-indigo-600 hover:bg-indigo-700 text-white px-3 py-1.5 rounded-lg text-xs font-bold flex items-center gap-1 shadow"><Plus size={14}/> Nhóm hàng mới</button></div>
-          <div className="relative w-full sm:w-64"><Search size={16} className="absolute left-3 top-3 text-gray-400"/><input placeholder="Tìm hoặc chọn sản phẩm..." value={searchTerm} onFocus={()=>setShowProductSuggestions(true)} onChange={e=>{setSearchTerm(e.target.value); setImportCurrentPage(1); setShowProductSuggestions(true);}} className="w-full pl-9 pr-3 py-2 border rounded-lg bg-white outline-none text-sm"/>
-            <button type="button" onClick={()=>{setNewProdForm(v=>({...v,name:searchTerm || v.name || ''}));setShowAddProdModal(v=>!v);setShowProductSuggestions(false);}} className="mt-2 w-full text-left px-3 py-2 rounded-lg border border-blue-200 bg-blue-50 text-blue-700 font-semibold text-sm"><Plus size={14} className="inline mr-1"/>{showAddProdModal ? 'Đóng thêm sản phẩm mới' : 'Thêm sản phẩm mới'}</button>
-            {showProductSuggestions && <div className="absolute z-30 top-full left-0 right-0 mt-1 max-h-56 overflow-auto bg-white border rounded-lg shadow-lg">{filteredProducts.slice(0,8).map(p=><button type="button" key={p.id} onClick={()=>{addProductToCart(p);setSearchTerm(p.name);setShowProductSuggestions(false);}} className="block w-full text-left px-3 py-2 text-sm hover:bg-blue-50"><span className="font-semibold">{p.name}</span><span className="block text-xs text-gray-500">{p.category || 'Chưa phân nhóm'} · Tồn: {p.stock}</span></button>)}<button type="button" onClick={()=>{setShowAddProdModal(true);setShowProductSuggestions(false);setNewProdForm(v=>({...v,name:searchTerm}));}} className="w-full text-left px-3 py-2 text-sm text-blue-700 font-semibold border-t"><Plus size={14} className="inline mr-1"/>Thêm sản phẩm mới</button></div>}
+        <div className="mb-4 shrink-0 space-y-3">
+          <h2 className="text-xl font-bold text-gray-800">Chọn sản phẩm nhập</h2>
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+            <div className="relative min-w-0">
+              <label className="block text-xs font-bold text-gray-600 mb-1">Sản phẩm *</label>
+              <div className="relative"><Search size={16} className="absolute left-3 top-3 text-gray-400"/><input placeholder="Tìm hoặc chọn sản phẩm..." value={searchTerm} onFocus={()=>setShowProductSuggestions(true)} onChange={e=>{setSearchTerm(e.target.value);setImportCurrentPage(1);setShowProductSuggestions(true);}} className="w-full pl-9 pr-3 py-2.5 border rounded-lg bg-white outline-none text-sm"/></div>
+              <button type="button" onClick={()=>{setNewProdForm(v=>({...v,name:searchTerm || v.name || ''}));setShowAddProdModal(v=>!v);setShowProductSuggestions(false);}} className="mt-2 w-full text-left px-3 py-2.5 rounded-lg border border-blue-200 bg-blue-50 text-blue-700 font-semibold text-sm"><Plus size={14} className="inline mr-1"/>{showAddProdModal ? 'Đóng thêm sản phẩm mới' : 'Thêm sản phẩm mới'}</button>
+              {showProductSuggestions && <div className="absolute z-40 top-[4.4rem] left-0 right-0 max-h-56 overflow-auto bg-white border rounded-lg shadow-lg">{filteredProducts.slice(0,8).map(p=><button type="button" key={p.id} onClick={()=>{addProductToCart(p);setSearchTerm(p.name);setShowProductSuggestions(false);}} className="block w-full text-left px-3 py-2.5 text-sm hover:bg-blue-50"><span className="font-semibold">{p.name}</span><span className="block text-xs text-gray-500">{p.category || 'Chưa phân nhóm'} · Tồn: {p.stock}</span></button>)}{filteredProducts.length===0 && <div className="px-3 py-2 text-sm text-gray-500">Không tìm thấy sản phẩm.</div>}<button type="button" onClick={()=>{setNewProdForm(v=>({...v,name:searchTerm || v.name || ''}));setShowAddProdModal(true);setShowProductSuggestions(false);}} className="w-full text-left px-3 py-2.5 text-sm text-blue-700 font-semibold border-t"><Plus size={14} className="inline mr-1"/>Thêm sản phẩm mới</button></div>}
+            </div>
+            <div className="relative min-w-0">
+              <label className="block text-xs font-bold text-gray-600 mb-1">Nhóm hàng *</label>
+              <div className="relative"><Search size={16} className="absolute left-3 top-3 text-gray-400"/><input placeholder="Tìm hoặc chọn nhóm hàng..." value={groupSearch} onFocus={()=>setShowGroupSuggestions(true)} onChange={e=>{setGroupSearch(e.target.value);setShowGroupSuggestions(true);}} className="w-full pl-9 pr-3 py-2.5 border rounded-lg bg-white outline-none text-sm"/></div>
+              <button type="button" onClick={()=>{setNewGroupName(groupSearch || '');setShowAddGroupForm(v=>!v);setShowGroupSuggestions(false);}} className="mt-2 w-full text-left px-3 py-2.5 rounded-lg border border-blue-200 bg-blue-50 text-blue-700 font-semibold text-sm"><Plus size={14} className="inline mr-1"/>{showAddGroupForm ? 'Đóng thêm nhóm hàng mới' : 'Thêm nhóm hàng mới'}</button>
+              {showGroupSuggestions && <div className="absolute z-40 top-[4.4rem] left-0 right-0 max-h-56 overflow-auto bg-white border rounded-lg shadow-lg">{visibleGroups.slice(0,8).map((g,i)=><button type="button" key={`${g}-${i}`} onClick={()=>{setGroupSearch(g);setNewProdForm(v=>({...v,category:g}));setShowGroupSuggestions(false);}} className="block w-full text-left px-3 py-2.5 text-sm hover:bg-blue-50">{g}</button>)}{visibleGroups.length===0 && <div className="px-3 py-2 text-sm text-gray-500">Không tìm thấy nhóm hàng.</div>}<button type="button" onClick={()=>{setNewGroupName(groupSearch);setShowAddGroupForm(true);setShowGroupSuggestions(false);}} className="w-full text-left px-3 py-2.5 text-sm text-blue-700 font-semibold border-t"><Plus size={14} className="inline mr-1"/>Thêm nhóm hàng mới</button></div>}
+              {showAddGroupForm && <div className="mt-2 flex gap-2"><input value={newGroupName} onChange={e=>setNewGroupName(e.target.value)} placeholder="Tên nhóm hàng mới" className="min-w-0 flex-1 p-2.5 border rounded-lg text-sm"/><button type="button" onClick={handleAddGroupQuick} className="px-3 rounded-lg bg-blue-600 text-white text-sm font-bold">Chọn nhóm</button></div>}
+            </div>
           </div>
         </div>
 
