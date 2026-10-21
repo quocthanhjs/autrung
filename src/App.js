@@ -351,14 +351,14 @@ function LoginView({ onLoginSuccess }) {
 }
 
 
-const navigateMainTab = (tab, entity = null, entityName = '') => { if (typeof window !== 'undefined') { const target = typeof entity === 'string' ? { id: entity, name: entityName } : entity; const detail = { tab, entity: target, recordId: target?.id || '', recordName: target?.name || '' }; window.dispatchEvent(new CustomEvent('app:navigate-tab', { detail })); window.setTimeout(() => window.dispatchEvent(new CustomEvent('app:navigate-tab', { detail })), 80); } };
+const navigateMainTab = (tab, entity = null, entityName = '') => { if (typeof window !== 'undefined') { const target = typeof entity === 'string' ? { id: entity, name: entityName } : entity; const detail = { tab, entity: target, recordId: target?.id || '', recordName: target?.name || '' }; window.history.pushState({ ...(window.history.state || {}), appPopupNavigation: { tab, entity: target || null } }, ''); window.dispatchEvent(new CustomEvent('app:navigate-tab', { detail })); window.setTimeout(() => window.dispatchEvent(new CustomEvent('app:navigate-tab', { detail })), 80); } };
 
 export default function App() {
   const [user, setUser] = useState(null);
   const [userData, setUserData] = useState({ role: null, name: '', perms: {} });
   const [activeTab, setActiveTab] = useState('pos');
   const [navigationTarget, setNavigationTarget] = useState(null);
-  useEffect(() => { const handlePopupNavigate = (event) => { const tab = event?.detail?.tab; if (['products','customers','suppliers','warranty','sales_history','imports'].includes(tab)) { setNavigationTarget({ tab, id: event?.detail?.entity?.id || event?.detail?.recordId || '', name: event?.detail?.entity?.name || event?.detail?.recordName || '', nonce: Date.now() }); setActiveTab(tab); } }; window.addEventListener('app:navigate-tab', handlePopupNavigate); return () => window.removeEventListener('app:navigate-tab', handlePopupNavigate); }, []);
+  useEffect(() => { const handlePopupNavigate = (event) => { const tab = event?.detail?.tab; if (['products','customers','suppliers','warranty','sales_history','imports'].includes(tab)) { setNavigationTarget({ tab, id: event?.detail?.entity?.id || event?.detail?.recordId || '', name: event?.detail?.entity?.name || event?.detail?.recordName || '', nonce: Date.now() }); setActiveTab(tab); } }; const handleBrowserBack = (event) => { const nav = event.state?.appPopupNavigation; if (nav?.tab) { const detail = { tab: nav.tab, entity: nav.entity || null, recordId: nav.entity?.id || '', recordName: nav.entity?.name || '' }; window.dispatchEvent(new CustomEvent('app:navigate-tab', { detail })); } else { window.dispatchEvent(new CustomEvent('app:close-popups')); } }; window.addEventListener('app:navigate-tab', handlePopupNavigate); window.addEventListener('popstate', handleBrowserBack); return () => { window.removeEventListener('app:navigate-tab', handlePopupNavigate); window.removeEventListener('popstate', handleBrowserBack); }; }, []);
   const [storeConfig, setStoreConfig] = useState({
     name: 'QUẢN LÝ BÁN HÀNG', address: '', phone: '', logo: '', costCalcMethod: 'LATEST',
     printPaperSize: 'K80',
@@ -1554,6 +1554,8 @@ function ContactManager({ type, data, orders, navigationTarget, storeConfig, db,
   const [searchTerm, setSearchTerm] = useState('');
   const [detailTarget, setDetailTarget] = useState(null);
   useEffect(() => {
+    const closeOnBrowserBack = () => setDetailProduct(null);
+    window.addEventListener('app:close-popups', closeOnBrowserBack);
     const onNavigate = (event) => {
       const detail = event?.detail || {};
       const expectedTab = isCus ? 'customers' : 'suppliers';
@@ -1852,12 +1854,18 @@ function InventoryView({ products, orders, imports, warrantyRequests = [], custo
       if (detail.tab !== 'products' || !detail.entity) return;
       const target = detail.entity;
       const match = (products || []).find(row => (target.id && row.id === target.id) || (target.name && String(row.name || '').trim().toLowerCase() === String(target.name).trim().toLowerCase()));
-      if (match) { setSearchTerm(''); setInvCurrentPage(1); setDetailProduct(match); setShowAllDetailSales(true); }
+      if (match) { setSearchTerm(''); setInvCurrentPage(1); setDetailProduct(match); setProductImportYear(String(getVietnamDateParts(new Date()).year)); setShowAllDetailSales(true); }
     };
     window.addEventListener('app:navigate-tab', onNavigate);
-    return () => window.removeEventListener('app:navigate-tab', onNavigate);
+    return () => { window.removeEventListener('app:navigate-tab', onNavigate); window.removeEventListener('app:close-popups', closeOnBrowserBack); };
   }, [products]);
   const [showAllDetailSales, setShowAllDetailSales] = useState(false);
+  const openProductHistory = (product, showAll = false) => {
+    if (typeof window !== 'undefined') window.history.pushState({ ...(window.history.state || {}), appPopupNavigation: { tab: 'products', entity: { id: product.id, name: product.name } } }, '');
+    setDetailProduct(product);
+    setProductImportYear(String(getVietnamDateParts(new Date()).year));
+    setShowAllDetailSales(showAll);
+  };
   const currentDate = new Date();
   const currentVietnamDate = getVietnamDateParts(currentDate);
   const [filterMonth, setFilterMonth] = useState(currentVietnamDate.month.toString());
@@ -2045,12 +2053,12 @@ function InventoryView({ products, orders, imports, warrantyRequests = [], custo
               {paginatedProducts.map(p => {
                 const stockClass = p.stock < 0 ? 'text-red-600' : 'text-gray-800';
                 return (
-                  <tr key={p.id} className="border-b hover:bg-blue-50/50 cursor-pointer" onClick={() => { setDetailProduct(p); setShowAllDetailSales(false); }}>
+                  <tr key={p.id} className="border-b hover:bg-blue-50/50 cursor-pointer" onClick={() => openProductHistory(p, false)}>
                     <td className="p-4" onClick={e=>e.stopPropagation()}><input type="checkbox" checked={selectedIds.includes(p.id)} onChange={() => setSelectedIds(prev => prev.includes(p.id) ? prev.filter(x=>x!==p.id) : [...prev, p.id])} className="w-4 h-4"/></td>
                     <td className="p-4 font-medium text-blue-600 underline">{p.name}</td>
                     <td className="p-4"><p className="text-[11px] bg-gray-100 border inline-block px-1.5 py-0.5 rounded text-gray-600">{p.category || 'Chưa phân nhóm'}</p>{p.lastSupplierName && <p className="text-[10px] text-gray-400 mt-1">Từ: {p.lastSupplierName}</p>}</td><td className="p-4 whitespace-nowrap text-gray-600">{p.createdAt ? formatDate(p.createdAt) : '—'}</td>
                     <td className="p-4 text-gray-600">{formatCurrency(p.cost)}</td><td className="p-4 font-bold text-blue-600">{formatCurrency(p.price)}</td><td className={"p-4 font-bold " + stockClass}>{p.stock}</td>
-                    <td className="p-4 text-right flex justify-end gap-1" onClick={e=>e.stopPropagation()}><button onClick={() => { setDetailProduct(p); setShowAllDetailSales(false); }} title="Xem chi tiết nhập/bán" className="text-gray-600 bg-gray-100 p-2 rounded-lg hover:bg-gray-200"><Eye size={16}/></button><button onClick={() => {setForm(p); setIsModalOpen(true);}} className="text-blue-600 bg-blue-50 p-2 rounded-lg hover:bg-blue-100"><Edit size={16}/></button><button onClick={() => handleDelete(p.id)} className="text-red-600 bg-red-50 p-2 rounded-lg hover:bg-red-100"><Trash2 size={16}/></button></td>
+                    <td className="p-4 text-right flex justify-end gap-1" onClick={e=>e.stopPropagation()}><button onClick={() => openProductHistory(p, false)} title="Xem chi tiết nhập/bán" className="text-gray-600 bg-gray-100 p-2 rounded-lg hover:bg-gray-200"><Eye size={16}/></button><button onClick={() => {setForm(p); setIsModalOpen(true);}} className="text-blue-600 bg-blue-50 p-2 rounded-lg hover:bg-blue-100"><Edit size={16}/></button><button onClick={() => handleDelete(p.id)} className="text-red-600 bg-red-50 p-2 rounded-lg hover:bg-red-100"><Trash2 size={16}/></button></td>
                   </tr>
                 );
               })}
