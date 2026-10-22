@@ -3391,6 +3391,7 @@ function SettingsView({ db, storeId, showToast, storeConfig }) {
   const handleConfirmedDelete = async (e) => {
     e?.preventDefault?.();
     if (!deleteTarget || deletingData) return;
+
     if (!deletePassword || !deletePasswordConfirm) {
       showToast('Vui lòng nhập và xác nhận mật khẩu.', 'error');
       return;
@@ -3399,64 +3400,81 @@ function SettingsView({ db, storeId, showToast, storeConfig }) {
       showToast('Mật khẩu xác nhận không khớp.', 'error');
       return;
     }
-    const currentUser = auth.currentUser;
-    if (!currentUser?.email) {
-      showToast('Không xác định được tài khoản quản trị đang đăng nhập. Vui lòng đăng nhập lại.', 'error');
-      return;
-    }
+
     setDeletingData(true);
-    setDeleteProgress('Đang xác thực mật khẩu tài khoản...');
     try {
-      // Re-authenticate with Firebase Auth; matching two text fields alone is not sufficient.
-      const credential = EmailAuthProvider.credential(currentUser.email, deletePassword);
-      await reauthenticateWithCredential(currentUser, credential);
-      setDeleteProgress('Đã xác thực. Đang chuẩn bị xóa dữ liệu...');
+      // 1. Xác thực mật khẩu Admin
+      let isAuthenticated = false;
+      const currentUser = auth.currentUser;
 
-      // Chỉ xóa dữ liệu nghiệp vụ trong cửa hàng; giữ nguyên tài khoản, cấu hình cửa hàng,
-      // mẫu in và tài liệu cấu hình ở document stores/main_store.
-      // Bao gồm cả hồ sơ bảo hành và nhóm hàng để tránh dữ liệu cũ còn sót lại.
-      const collectionsToDelete = deleteTarget === 'all'
-        ? ['products', 'product_groups', 'orders', 'imports', 'customers', 'suppliers', 'expenses', 'warrantyRequests']
-        : [deleteTarget];
-
-      if (!storeId) throw new Error('MISSING_STORE_ID');
-      for (let collectionIndex = 0; collectionIndex < collectionsToDelete.length; collectionIndex++) {
-        const collectionName = collectionsToDelete[collectionIndex];
-        setDeleteProgress(`Đang đọc dữ liệu ${collectionName} (${collectionIndex + 1}/${collectionsToDelete.length})...`);
-        const snapshot = await getDocs(collection(db, 'stores', storeId, collectionName));
-        const docs = snapshot.docs;
-        if (docs.length === 0) {
-          setDeleteProgress(`Đã kiểm tra ${collectionName}: không có dữ liệu (${collectionIndex + 1}/${collectionsToDelete.length}).`);
-          continue;
-        }
-        for (let i = 0; i < docs.length; i += 400) {
-          const batchDocs = docs.slice(i, i + 400);
-          setDeleteProgress(`Đang xóa ${collectionName}: ${Math.min(i + batchDocs.length, docs.length)}/${docs.length} bản ghi (${collectionIndex + 1}/${collectionsToDelete.length} nhóm)...`);
-          const batch = writeBatch(db);
-          batchDocs.forEach((item) => batch.delete(item.ref));
-          await batch.commit();
+      // Kiểm tra qua Firebase Auth (nếu có email)
+      if (currentUser && currentUser.email) {
+        try {
+          const credential = EmailAuthProvider.credential(currentUser.email, deletePassword);
+          await reauthenticateWithCredential(currentUser, credential);
+          isAuthenticated = true;
+        } catch (authErr) {
+          isAuthenticated = false;
         }
       }
-      const deletedLabel = deleteTarget === 'all' ? 'toàn bộ dữ liệu' : ({ orders: 'đơn hàng', customers: 'khách hàng', suppliers: 'nhà cung cấp' }[deleteTarget] || deleteTarget);
-      showToast(`Đã xóa ${deletedLabel} thành công.`);
+
+      // Nếu không dùng Firebase Auth, đối chiếu trực tiếp mật khẩu Admin trong Firestore (users_db)
+      if (!isAuthenticated) {
+        const adminQ = query(collection(db, 'users_db'), where('role', '==', 'admin'));
+        const adminSnap = await getDocs(adminQ);
+        const isAdminPassCorrect = adminSnap.docs.some(d => d.data().password === deletePassword);
+
+        if (!isAdminPassCorrect) {
+          showToast('Mật khẩu tài khoản quản trị không chính xác!', 'error');
+          setDeletingData(false);
+          return;
+        }
+      }
+
+      // 2. Tiến hành xóa dữ liệu theo danh mục
+      const collectionsToDelete = deleteTarget === 'all'
+        ? ['products', 'orders', 'imports', 'customers', 'suppliers', 'expenses', 'product_groups']
+        : [deleteTarget];
+
+      let totalCount = 0;
+      for (const colName of collectionsToDelete) {
+        const snap = await getDocs(collection(db, 'stores', storeId, colName));
+        if (!snap.empty) {
+          let batch = writeBatch(db);
+          let count = 0;
+          for (const docItem of snap.docs) {
+            batch.delete(docItem.ref);
+            count++;
+            totalCount++;
+            if (count >= 400) {
+              await batch.commit();
+              batch = writeBatch(db);
+              count = 0;
+            }
+          }
+          if (count > 0) {
+            await batch.commit();
+          }
+        }
+      }
+
+      showToast(`Đã xóa sạch ${totalCount} bản ghi thành công!`);
       setDeleteTarget(null);
       setDeletePassword('');
       setDeletePasswordConfirm('');
-      setDeleteProgress('');
+
+      // Reload lại ứng dụng để xóa sạch cache hiển thị
+      setTimeout(() => {
+        window.location.reload();
+      }, 800);
+
     } catch (err) {
-      console.error('Delete data failed:', err);
-      if (err?.code === 'auth/invalid-credential' || err?.code === 'auth/wrong-password' || err?.code === 'auth/invalid-login-credentials') {
-        showToast('Mật khẩu tài khoản Firebase không đúng.', 'error');
-      } else if (err?.code === 'auth/requires-recent-login') {
-        showToast('Phiên đăng nhập đã cũ. Vui lòng đăng xuất, đăng nhập lại rồi thử lại.', 'error');
-      } else if (err?.code === 'permission-denied' || err?.code === 'firestore/permission-denied') {
-        showToast('Firebase từ chối quyền xóa dữ liệu (permission-denied). Cần kiểm tra Firestore Security Rules.', 'error');
-      } else if (err?.message === 'MISSING_STORE_ID') {
-        showToast('Không xác định được cửa hàng cần xóa (storeId trống). Dữ liệu chưa được xóa.', 'error');
+      console.error('Lỗi khi xóa dữ liệu:', err);
+      if (err.code === 'permission-denied') {
+        showToast('Lỗi: Firebase Rules chưa mở quyền xóa (Permission Denied)!', 'error');
       } else {
-        showToast(`Không thể xóa dữ liệu${err?.code ? ` (${err.code})` : ''}. Kiểm tra kết nối mạng và quyền Firebase.`, 'error');
+        showToast('Không thể xóa dữ liệu: ' + (err.message || 'Lỗi không xác định'), 'error');
       }
-      setDeleteProgress('');
     } finally {
       setDeletingData(false);
     }
