@@ -1189,16 +1189,43 @@ function SalesHistoryView({ orders, imports = [], products, customers, storeConf
   };
 
   const handleAddNewItemToForm = () => setNewOrderForm(prev => ({ ...prev, items: [...prev.items, { id: '', name: '', price: 0, cost: 0, quantity: 1, warrantyValue: '', warrantyUnit: 'tháng', note: '' }] }));
+  const normalizeOrderSearch = (value) => String(value || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/đ/g, 'd').replace(/Đ/g, 'D').trim().toLocaleLowerCase('vi');
+  // Index supplier names once when import data changes, instead of scanning every import
+  // row on every keystroke in the direct-order product search.
+  const productSupplierIndex = useMemo(() => {
+    const byId = new Map();
+    const byName = new Map();
+    const add = (map, key, supplier) => {
+      if (!key || !supplier) return;
+      if (!map.has(key)) map.set(key, new Set());
+      map.get(key).add(supplier);
+    };
+    (imports || []).forEach(imp => (imp.items || []).forEach(item => {
+      const supplier = imp.supplierName || imp.supplier;
+      if (!supplier) return;
+      if (item.productId) add(byId, String(item.productId), supplier);
+      if (item.id) add(byId, String(item.id), supplier);
+      if (item.name) add(byName, String(item.name).trim().toLocaleLowerCase('vi'), supplier);
+    }));
+    return { byId, byName };
+  }, [imports]);
   const getProductSupplierNames = (product) => {
     const names = new Set();
-    (imports || []).forEach(imp => (imp.items || []).forEach(item => {
-      const sameProduct = (item.productId && item.productId === product.id) || (item.id && item.id === product.id) || ((item.name || '').trim().toLocaleLowerCase('vi') === (product.name || '').trim().toLocaleLowerCase('vi'));
-      if (sameProduct && (imp.supplierName || imp.supplier)) names.add(imp.supplierName || imp.supplier);
-    }));
-    if (product.supplierName || product.supplier) names.add(product.supplierName || product.supplier);
+    if (product?.id) (productSupplierIndex.byId.get(String(product.id)) || []).forEach(n => names.add(n));
+    if (product?.name) (productSupplierIndex.byName.get(String(product.name).trim().toLocaleLowerCase('vi')) || []).forEach(n => names.add(n));
+    if (product?.supplierName || product?.supplier) names.add(product.supplierName || product.supplier);
     return Array.from(names);
   };
-  const normalizeOrderSearch = (value) => String(value || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/đ/g, 'd').replace(/Đ/g, 'D').trim().toLocaleLowerCase('vi');
+  // Normalize product and supplier text only when the product/import data changes.
+  const orderProductSearchIndex = useMemo(() => (products || []).map(product => {
+    const supplierNames = getProductSupplierNames(product);
+    return {
+      product,
+      supplierNames,
+      normalizedName: normalizeOrderSearch(product.name),
+      normalizedSuppliers: supplierNames.map(normalizeOrderSearch),
+    };
+  }), [products, imports, productSupplierIndex]);
 
   const isA4A5 = localPrintSize === 'A4' || localPrintSize === 'A5';
   const paperWidthClass = localPrintSize === 'K80' ? 'max-w-[300px]' : (localPrintSize === 'A4' ? 'max-w-[210mm]' : 'max-w-[148mm]');
@@ -1326,10 +1353,7 @@ function SalesHistoryView({ orders, imports = [], products, customers, storeConf
                     <label className="text-[10px] text-gray-500 font-bold uppercase">Tìm sản phẩm / nhà cung cấp</label>
                     <Search size={15} className="absolute left-3 top-[34px] text-gray-400" />
                     <input required={!it.id} value={orderProductSearch[idx] ?? (it.name || '')} onChange={e=>setOrderProductSearch(prev=>({...prev,[idx]:e.target.value}))} placeholder="Gõ tên sản phẩm hoặc nhà cung cấp..." className="w-full pl-9 pr-3 p-2 border rounded-lg text-sm font-bold bg-gray-50" />
-                    {(orderProductSearch[idx] || '').trim() && <div className="absolute z-30 top-full mt-1 left-0 right-0 max-h-56 overflow-auto rounded-xl border bg-white shadow-xl">{products.filter(p=>{
-                      const q=normalizeOrderSearch(orderProductSearch[idx]);
-                      return normalizeOrderSearch(p.name).includes(q) || getProductSupplierNames(p).some(n=>normalizeOrderSearch(n).includes(q));
-                    }).slice(0,60).map(p=><button type="button" key={p.id} onClick={()=>{const newItems=[...newOrderForm.items];newItems[idx]={...newItems[idx],id:p.id,name:p.name,price:p.price,cost:p.cost};setNewOrderForm({...newOrderForm,items:newItems});setOrderProductSearch(prev=>{const next={...prev};delete next[idx];return next;});}} className="w-full text-left px-3 py-2.5 hover:bg-blue-50 border-b last:border-b-0"><span className="block text-sm font-bold">{p.name}</span><span className="block text-xs text-gray-600">Giá bán: {formatCurrency(p.price)}{getProductSupplierNames(p).length ? ` · Nhà cung cấp: ${getProductSupplierNames(p).join(', ')}` : ''}</span></button>)}{!products.some(p=>{const q=normalizeOrderSearch(orderProductSearch[idx]);return normalizeOrderSearch(p.name).includes(q)||getProductSupplierNames(p).some(n=>normalizeOrderSearch(n).includes(q));}) && <div className="p-3 text-sm text-gray-500">Không tìm thấy sản phẩm hoặc nhà cung cấp phù hợp.</div>}</div>}
+                    {(orderProductSearch[idx] || '').trim() && <div className="absolute z-30 top-full mt-1 left-0 right-0 max-h-56 overflow-auto rounded-xl border bg-white shadow-xl">{(() => { const q = normalizeOrderSearch(orderProductSearch[idx]); const matches = orderProductSearchIndex.filter(entry => entry.normalizedName.includes(q) || entry.normalizedSuppliers.some(n => n.includes(q))); return <>{matches.slice(0,60).map(({product:p, supplierNames})=><button type="button" key={p.id} onClick={()=>{const newItems=[...newOrderForm.items];newItems[idx]={...newItems[idx],id:p.id,name:p.name,price:p.price,cost:p.cost};setNewOrderForm({...newOrderForm,items:newItems});setOrderProductSearch(prev=>{const next={...prev};delete next[idx];return next;});}} className="w-full text-left px-3 py-2.5 hover:bg-blue-50 border-b last:border-b-0"><span className="block text-sm font-bold">{p.name}</span><span className="block text-xs text-gray-600">Giá bán: {formatCurrency(p.price)}{supplierNames.length ? ` · Nhà cung cấp: ${supplierNames.join(', ')}` : ''}</span></button>)}{matches.length===0 && <div className="p-3 text-sm text-gray-500">Không tìm thấy sản phẩm hoặc nhà cung cấp phù hợp.</div>}</>; })()}</div>}
                     {it.id && <div className="mt-1 text-xs text-gray-500">Đã chọn: {it.name} {getProductSupplierNames(products.find(p=>p.id===it.id)||{}).length ? `· Nhà cung cấp: ${getProductSupplierNames(products.find(p=>p.id===it.id)||{}).join(', ')}` : ''}</div>}
                   </div>
                   <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
