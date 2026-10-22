@@ -1874,6 +1874,7 @@ function ContactManager({ type, data, orders, navigationTarget, storeConfig, db,
 
 function GroupManagementView({ products, db, storeId, showToast }) {
   const [groups, setGroups] = useState([]);
+  const [groupSearch, setGroupSearch] = useState('');
   const visibleGroups = useMemo(() => {
     const byName = new Map();
     (groups || []).forEach(g => { const name = String(g.name || '').trim(); if (name) byName.set(name.toLocaleLowerCase(), { ...g, name }); });
@@ -2116,7 +2117,7 @@ function InventoryView({ products, orders, imports, warrantyRequests = [], custo
           <button onClick={() => {setForm({name:'', category:'', price:'', cost:'', stock:''}); setIsModalOpen(true);}} className="bg-blue-600 text-white px-4 py-2 rounded-lg font-bold flex items-center gap-2 shrink-0"><Plus size={18}/> Thêm mới</button>
         </div>
       </div>
-      <details open className="mb-4 rounded-2xl border border-blue-200 bg-white shadow-md overflow-hidden">
+      <details className="mb-4 rounded-2xl border border-blue-200 bg-white shadow-md overflow-hidden">
         <summary className="cursor-pointer list-none px-4 py-3 bg-blue-50 text-blue-800 font-extrabold flex items-center justify-between"><span className="flex items-center gap-2"><Package size={18}/> Nhóm hàng</span><span className="text-xs font-semibold">Quản lý nhóm và sản phẩm trong nhóm ▾</span></summary>
         <div className="p-2 sm:p-3"><GroupManagementView products={products} db={db} storeId={storeId} showToast={showToast} /></div>
       </details>
