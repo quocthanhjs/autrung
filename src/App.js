@@ -3103,7 +3103,10 @@ function SettingsView({ db, storeId, showToast, storeConfig }) {
             const supplierSnap = await getDocs(collection(db, 'stores', storeId, 'suppliers'));
             const productDocs = productSnap.docs.map(d => ({ id: d.id, ...d.data() }));
             const productByName = new Map(productDocs.map(p => [String(p.name || '').trim().toLowerCase(), p]));
+            const productByCode = new Map(productDocs.map(p => [String(p.kiotVietCode || p.code || p.productCode || '').trim().toLowerCase(), p]).filter(([code]) => code));
             const supplierByName = new Map(supplierSnap.docs.map(d => [String(d.data().name || '').trim().toLowerCase(), { id: d.id, ...d.data() }]));
+            const existingImportSnap = await getDocs(collection(db, 'stores', storeId, 'imports'));
+            const existingReceiptCodes = new Set(existingImportSnap.docs.map(d => String(d.data().receiptCode || d.data().invoiceCode || d.data().kiotVietReceiptCode || '').trim().toLowerCase()).filter(Boolean));
             const receipts = {};
             const parseExcelDate = (value) => {
               if (!value) return new Date().toISOString();
@@ -3116,11 +3119,13 @@ function SettingsView({ db, storeId, showToast, storeConfig }) {
               const qty = Number(row['Số lượng'] || row['SL nhập'] || row['Số lượng nhập']) || 0;
               if (!productName || qty <= 0) return;
               const supplierName = String(row['Tên nhà cung cấp'] || row['Nhà cung cấp'] || '').trim() || 'Nhà cung cấp Excel';
-              const receiptCode = String(row['Mã phiếu nhập'] || row['Mã nhập hàng'] || row['Mã chứng từ'] || '').trim();
+              const receiptCode = String(row['Mã nhập hàng'] || row['Mã phiếu nhập'] || row['Mã chứng từ'] || '').trim();
               const date = parseExcelDate(row['Thời gian'] || row['Ngày nhập'] || row['Ngày tạo']);
-              const groupKey = receiptCode || `${supplierName}|${date.slice(0, 10)}`;
+              if (!receiptCode) throw new Error('File lịch sử nhập hàng thiếu cột Mã nhập hàng/Mã phiếu nhập. Không thể đồng bộ an toàn vì nhập lại có thể tạo phiếu trùng.');
+              const groupKey = receiptCode.toLowerCase();
               if (!receipts[groupKey]) receipts[groupKey] = { receiptCode, supplierName, date, items: [], total: 0, source: 'KiotViet Excel' };
-              const product = productByName.get(productName.toLowerCase());
+              const productCode = String(row['Mã hàng'] || '').trim().toLowerCase();
+              const product = (productCode && productByCode.get(productCode)) || productByName.get(productName.toLowerCase());
               const unitCost = Number(row['Giá nhập'] || row['Đơn giá nhập'] || row['Giá vốn'] || row['Đơn giá']) || 0;
               const lineTotal = Number(row['Thành tiền'] || row['Tổng tiền hàng']) || qty * unitCost;
               receipts[groupKey].items.push({ id: product?.id || '', name: productName, category: product?.category || String(row['Nhóm hàng'] || ''), qty, importCost: unitCost, price: Number(product?.price) || Number(row['Giá bán']) || 0 });
@@ -3131,6 +3136,8 @@ function SettingsView({ db, storeId, showToast, storeConfig }) {
             let importBatch = writeBatch(db);
             let writes = 0;
             for (const receipt of receiptEntries) {
+              // Đồng bộ tăng dần: mã phiếu nhập đã có thì bỏ qua, không tạo trùng.
+              if (receipt.receiptCode && existingReceiptCodes.has(receipt.receiptCode.toLowerCase())) continue;
               let supplier = supplierByName.get(receipt.supplierName.toLowerCase());
               if (!supplier) {
                 const supplierRef = doc(collection(db, 'stores', storeId, 'suppliers'));
@@ -3140,21 +3147,13 @@ function SettingsView({ db, storeId, showToast, storeConfig }) {
               }
               const validItems = receipt.items.filter(item => item.id && productDocs.some(p => p.id === item.id));
               const total = receipt.total || receipt.items.reduce((sum, item) => sum + Number(item.qty || 0) * Number(item.importCost || 0), 0);
-              const importRef = doc(collection(db, 'stores', storeId, 'imports'));
-              importBatch.set(importRef, { invoiceCode: receipt.receiptCode || '', receiptCode: receipt.receiptCode || '', supplierId: supplier.id, supplierName: receipt.supplierName, createdByUid: '', createdByName: 'Excel KiotViet', items: receipt.items, total, status: 'PAID', date: receipt.date, source: 'KiotViet Excel' }); writes++;
-              for (const item of validItems) {
-                const product = productDocs.find(p => p.id === item.id);
-                const currentStock = Number(product.stock) || 0;
-                const oldCost = Number(product.cost) || 0;
-                let newCost = Number(item.importCost) || oldCost;
-                const method = storeConfig?.costCalcMethod || 'LATEST';
-                if (method === 'AVERAGE' && currentStock + item.qty > 0) newCost = Math.round(((currentStock * oldCost) + (item.qty * newCost)) / (currentStock + item.qty));
-                else if (method === 'HIGHEST') newCost = Math.max(oldCost, newCost);
-                else if (method === 'LOWEST') newCost = oldCost === 0 ? newCost : Math.min(oldCost, newCost);
-                importBatch.update(doc(db, 'stores', storeId, 'products', product.id), { stock: currentStock + item.qty, cost: newCost, lastSupplierId: supplier.id, lastSupplierName: receipt.supplierName });
-                product.stock = currentStock + item.qty; product.cost = newCost; writes++;
-                if (writes >= 400) { await importBatch.commit(); importBatch = writeBatch(db); writes = 0; }
-              }
+              const importRef = receipt.receiptCode
+                ? doc(db, 'stores', storeId, 'imports', 'kv_' + receipt.receiptCode.replace(/[^a-zA-Z0-9_-]/g, '_'))
+                : doc(collection(db, 'stores', storeId, 'imports'));
+              importBatch.set(importRef, { invoiceCode: receipt.receiptCode || '', receiptCode: receipt.receiptCode || '', supplierId: supplier.id, supplierName: receipt.supplierName, createdByUid: '', createdByName: 'Excel KiotViet', items: receipt.items, total, status: 'PAID', date: receipt.date, source: 'KiotViet Excel', kiotVietReceiptCode: receipt.receiptCode || '' }); writes++;
+              if (receipt.receiptCode) existingReceiptCodes.add(receipt.receiptCode.toLowerCase());
+              // Không cộng tồn ở đây: file DanhSachSanPham là ảnh chụp tồn kho hiện tại.
+              // Cộng lại lịch sử nhập hàng sẽ làm tồn kho tăng sai mỗi lần đồng bộ.
               if (writes >= 400) { await importBatch.commit(); importBatch = writeBatch(db); writes = 0; }
               success++;
             }
@@ -3165,31 +3164,34 @@ function SettingsView({ db, storeId, showToast, storeConfig }) {
             const ordersMap = {};
             
             data.forEach(row => {
-              const orderId = row['Mã hóa đơn'];
+              const orderId = row['Mã hóa đơn'] || row['Mã đơn hàng'] || row['Mã đặt hàng'] || row['Mã phiếu'] || row['Mã giao dịch'];
               if (!orderId) return;
 
               // Nếu mã hóa đơn chưa có trong map, khởi tạo
               if (!ordersMap[orderId]) {
                 // Xử lý ngày tháng từ Excel serial number
                 let orderDate = new Date().toISOString();
-                if (row['Thời gian']) {
-                  if (typeof row['Thời gian'] === 'number') {
-                     orderDate = new Date(Math.round((row['Thời gian'] - 25569) * 86400 * 1000)).toISOString();
-                  } else {
-                     orderDate = new Date(row['Thời gian']).toISOString();
-                  }
+                if (row['Thời gian'] !== undefined && row['Thời gian'] !== null && row['Thời gian'] !== '') {
+                  const parsedOrderDate = typeof row['Thời gian'] === 'number'
+                    ? new Date(Math.round((row['Thời gian'] - 25569) * 86400 * 1000))
+                    : new Date(row['Thời gian']);
+                  if (!Number.isNaN(parsedOrderDate.getTime())) orderDate = parsedOrderDate.toISOString();
                 }
+                const invoiceTotal = Number(row['Khách cần trả']) || Number(row['Tổng tiền hàng']) || Number(row['Tổng thanh toán']) || 0;
+                const paidAmount = Number(row['Khách đã trả']) || Number(row['Tiền mặt'] || 0) + Number(row['Chuyển khoản'] || 0);
+                const explicitStatus = String(row['Trạng thái'] || '').trim();
 
                 ordersMap[orderId] = {
                   id: orderId,
-                  invoiceCode: orderId,
+                  invoiceCode: String(orderId).trim(),
                   customerName: row['Tên khách hàng'] || 'Khách lẻ',
-                  customerId: row['Mã khách hàng'] || null, // Lưu thêm mã KH nếu cần map sau này
+                  customerId: row['Mã khách hàng'] || null,
                   sellerName: row['Người tạo'] || row['Người bán'] || 'Hệ thống',
                   date: orderDate,
-                  status: row['Trạng thái'] === 'Hoàn thành' ? 'PAID' : 'DEBT',
-                  total: Number(row['Khách cần trả']) || Number(row['Tổng tiền hàng']) || 0,
-                  totalCost: 0, // Sẽ cộng dồn ở phần items (nếu Kiotviet có xuất giá vốn trong file đơn hàng)
+                  status: explicitStatus ? (['Hoàn thành', 'Đã thanh toán', 'Paid', 'PAID'].includes(explicitStatus) ? 'PAID' : 'DEBT') : (invoiceTotal > 0 && paidAmount >= invoiceTotal ? 'PAID' : 'DEBT'),
+                  total: invoiceTotal,
+                  hasInvoiceTotal: Boolean(invoiceTotal),
+                  totalCost: 0,
                   note: row['Ghi chú'] || '',
                   items: []
                 };
@@ -3198,24 +3200,38 @@ function SettingsView({ db, storeId, showToast, storeConfig }) {
               // Thêm sản phẩm vào mảng items của hóa đơn đó
               if (row['Tên hàng']) {
                 const qty = Number(row['Số lượng']) || 1;
-                // Kiotviet xuất 'Giá bán' (đơn giá) và 'Thành tiền' (giá bán * sl)
-                const price = Number(row['Giá bán']) || Number(row['Đơn giá']) || 0; 
-                
+                const price = Number(row['Giá bán']) || Number(row['Đơn giá']) || 0;
+                const lineTotal = Number(row['Thành tiền']) || (qty * price);
                 ordersMap[orderId].items.push({
+                  productCode: String(row['Mã hàng'] || '').trim(),
                   name: String(row['Tên hàng']),
                   quantity: qty,
                   price: price,
-                  cost: 0, // Kiotviet mặc định không xuất giá vốn trong bảng chi tiết đơn hàng
+                  cost: 0,
                   warrantyValue: '',
                   warrantyUnit: 'tháng',
                   note: row['Ghi chú hàng hóa'] || row['Mã hàng'] || ''
                 });
+                if (!ordersMap[orderId].hasInvoiceTotal) ordersMap[orderId].total += lineTotal;
               }
             });
             
-            // Ghi dữ liệu đã gom nhóm vào Firestore
+            if (!Object.keys(ordersMap).length) {
+              throw new Error('File chi tiết hóa đơn không có cột mã hóa đơn/mã đơn hàng/mã đặt hàng. Hãy xuất file có mã hóa đơn để nhập và đồng bộ hằng ngày không bị trùng.');
+            }
+            // Đồng bộ tăng dần theo mã hóa đơn: mã đã có thì cập nhật, mã mới thì thêm.
+            const existingOrdersSnap = await getDocs(collection(db, 'stores', storeId, 'orders'));
+            const existingOrdersByCode = new Map();
+            existingOrdersSnap.docs.forEach(d => {
+              const code = String(d.data().invoiceCode || d.data().orderCode || '').trim().toLowerCase();
+              if (code && !existingOrdersByCode.has(code)) existingOrdersByCode.set(code, d.id);
+            });
             for (const key in ordersMap) {
-              batch.set(doc(collection(db, 'stores', storeId, 'orders')), ordersMap[key]);
+              const existingId = existingOrdersByCode.get(String(key).trim().toLowerCase());
+              const safeOrderId = 'kv_' + String(key).trim().replace(/[^a-zA-Z0-9_-]/g, '_');
+              const orderRef = existingId ? doc(db, 'stores', storeId, 'orders', existingId) : doc(db, 'stores', storeId, 'orders', safeOrderId);
+              const { hasInvoiceTotal, ...orderData } = ordersMap[key];
+              batch.set(orderRef, { ...orderData, orderCode: String(key), source: 'KiotViet Excel' }, { merge: true });
               count++; 
               success++;
               if (count >= 400) { 
@@ -3233,14 +3249,25 @@ function SettingsView({ db, storeId, showToast, storeConfig }) {
             // vì vậy cập nhật tồn theo giá trị file, tuyệt đối không cộng thêm.
             let existingProductByCode = new Map();
             let existingProductByName = new Map();
-            if (type === 'products') {
-              const existingProductSnap = await getDocs(collection(db, 'stores', storeId, 'products'));
-              existingProductSnap.docs.forEach(d => {
-                const productData = d.data();
-                const code = String(productData.kiotVietCode || productData.code || productData.productCode || '').trim().toLowerCase();
-                const name = String(productData.name || '').trim().toLowerCase();
-                if (code && !existingProductByCode.has(code)) existingProductByCode.set(code, { id: d.id, ...productData });
-                if (name && !existingProductByName.has(name)) existingProductByName.set(name, { id: d.id, ...productData });
+            let existingCustomerByCode = new Map();
+            let existingSupplierByCode = new Map();
+            if (type === 'products' || type === 'customers' || type === 'suppliers') {
+              const collectionName = type;
+              const existingSnap = await getDocs(collection(db, 'stores', storeId, collectionName));
+              existingSnap.docs.forEach(d => {
+                const item = d.data();
+                if (type === 'products') {
+                  const code = String(item.kiotVietCode || item.code || item.productCode || '').trim().toLowerCase();
+                  const name = String(item.name || '').trim().toLowerCase();
+                  if (code && !existingProductByCode.has(code)) existingProductByCode.set(code, { id: d.id, ...item });
+                  if (name && !existingProductByName.has(name)) existingProductByName.set(name, { id: d.id, ...item });
+                } else if (type === 'customers') {
+                  const code = String(item.kiotVietCode || item.customerCode || item.code || '').trim().toLowerCase();
+                  if (code && !existingCustomerByCode.has(code)) existingCustomerByCode.set(code, { id: d.id, ...item });
+                } else if (type === 'suppliers') {
+                  const code = String(item.kiotVietCode || item.supplierCode || item.code || '').trim().toLowerCase();
+                  if (code && !existingSupplierByCode.has(code)) existingSupplierByCode.set(code, { id: d.id, ...item });
+                }
               });
             }
             for (let i = 0; i < data.length; i++) {
@@ -3293,23 +3320,45 @@ function SettingsView({ db, storeId, showToast, storeConfig }) {
               }
               else if (type === 'customers' && row['Tên khách hàng']) { 
                 const rawPhone = row['Điện thoại'] ? String(row['Điện thoại']) : ''; 
+                const customerCode = String(row['Mã khách hàng'] || '').trim();
                 p = { 
                   name: String(row['Tên khách hàng']), 
                   phone: rawPhone.replace('.0', ''), 
                   address: row['Địa chỉ'] || row['Phường/Xã'] || '',
-                  totalDebt: Number(row['Nợ cần thu hiện tại']) || 0, 
-                  createdAt: nowIso 
+                  totalDebt: Number(row['Nợ cần thu hiện tại']) || 0,
+                  kiotVietCode: customerCode,
+                  customerCode,
+                  ...(nowIso ? { createdAt: nowIso } : {})
                 }; 
+                const matched = customerCode ? existingCustomerByCode.get(customerCode.toLowerCase()) : null;
+                const customerRef = matched ? doc(db, 'stores', storeId, 'customers', matched.id) : doc(collection(db, 'stores', storeId, 'customers'));
+                if (matched) batch.set(customerRef, { ...p, createdAt: matched.createdAt || nowIso }, { merge: true });
+                else batch.set(customerRef, p);
+                if (customerCode) existingCustomerByCode.set(customerCode.toLowerCase(), { id: customerRef.id, ...p });
+                count++; success++;
+                if (count >= 400 || i === data.length - 1) { if (count > 0) { await batch.commit(); batch = writeBatch(db); count = 0; } }
+                continue;
               } 
               else if (type === 'suppliers' && row['Tên nhà cung cấp']) { 
                 const rawPhone = row['Điện thoại'] ? String(row['Điện thoại']) : ''; 
+                const supplierCode = String(row['Mã nhà cung cấp'] || '').trim();
                 p = { 
                   name: String(row['Tên nhà cung cấp']), 
                   phone: rawPhone.replace('.0', ''), 
                   address: row['Địa chỉ'] || row['Phường/Xã'] || '',
-                  totalDebt: Number(row['Nợ cần trả hiện tại']) || 0, 
-                  createdAt: nowIso 
+                  totalDebt: Number(row['Nợ cần trả hiện tại']) || 0,
+                  kiotVietCode: supplierCode,
+                  supplierCode,
+                  ...(nowIso ? { createdAt: nowIso } : {})
                 }; 
+                const matched = supplierCode ? existingSupplierByCode.get(supplierCode.toLowerCase()) : null;
+                const supplierRef = matched ? doc(db, 'stores', storeId, 'suppliers', matched.id) : doc(collection(db, 'stores', storeId, 'suppliers'));
+                if (matched) batch.set(supplierRef, { ...p, createdAt: matched.createdAt || nowIso }, { merge: true });
+                else batch.set(supplierRef, p);
+                if (supplierCode) existingSupplierByCode.set(supplierCode.toLowerCase(), { id: supplierRef.id, ...p });
+                count++; success++;
+                if (count >= 400 || i === data.length - 1) { if (count > 0) { await batch.commit(); batch = writeBatch(db); count = 0; } }
+                continue;
               } 
               else if (type === 'expenses') {
                 // Hỗ trợ file chi phí thường và file Sổ Quỹ KiotViet.
@@ -3383,7 +3432,7 @@ function SettingsView({ db, storeId, showToast, storeConfig }) {
           e.target.value = '';
         } catch(err) { 
           console.error(err);
-          showToast("Lỗi định dạng dữ liệu Excel", "error"); 
+          showToast(err?.message || "Lỗi định dạng dữ liệu Excel", "error"); 
           setLoadingFile(false); 
         }
       };
@@ -3414,11 +3463,11 @@ function SettingsView({ db, storeId, showToast, storeConfig }) {
   };
 
   const menuItems = [
-    { id: 'customers', label: 'Khách hàng (Nợ phải thu)' }, 
-    { id: 'suppliers', label: 'Nhà cung cấp (Nợ phải trả)' }, 
-    { id: 'products', label: 'Sản phẩm' }, 
-    { id: 'orders', label: 'Hóa đơn (Bán hàng)' },
-    { id: 'imports', label: 'Nhập hàng (Excel KiotViet)' },
+    { id: 'customers', label: 'Khách hàng — DanhSachKhachHang_*.xlsx' },
+    { id: 'suppliers', label: 'Nhà cung cấp — DanhSachNhaCungCap_*.xlsx' },
+    { id: 'products', label: 'Sản phẩm/tồn kho — DanhSachSanPham_*.xlsx' },
+    { id: 'orders', label: 'Đơn hàng — DanhSachChiTietHoaDon_*.xlsx' },
+    { id: 'imports', label: 'Lịch sử nhập hàng — DanhSachChiTietNhapHang_*.xlsx' },
     { id: 'expenses', label: 'Lịch sử Chi phí' }
   ];
 
