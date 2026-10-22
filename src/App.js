@@ -3015,6 +3015,14 @@ function SettingsView({ db, storeId, showToast, storeConfig }) {
   const [deletePasswordConfirm, setDeletePasswordConfirm] = useState('');
   const [deletingData, setDeletingData] = useState(false);
   const [deleteProgress, setDeleteProgress] = useState('');
+  // Chế độ xóa thủ công: tải một nhóm bản ghi, đánh dấu từng dòng rồi mới xóa.
+  const [manualDeleteCollection, setManualDeleteCollection] = useState('orders');
+  const [manualDeleteDocs, setManualDeleteDocs] = useState([]);
+  const [manualSelectedIds, setManualSelectedIds] = useState([]);
+  const [manualLoading, setManualLoading] = useState(false);
+  const [manualDeletePassword, setManualDeletePassword] = useState('');
+  const [manualDeletePasswordConfirm, setManualDeletePasswordConfirm] = useState('');
+  const [manualDeleteProgress, setManualDeleteProgress] = useState('');
 
   useEffect(() => {
     if (storeConfig) {
@@ -3471,6 +3479,101 @@ function SettingsView({ db, storeId, showToast, storeConfig }) {
     setDeletePasswordConfirm('');
   };
 
+  const manualDeleteCollectionOptions = [
+    { id: 'orders', label: 'Đơn hàng' },
+    { id: 'customers', label: 'Khách hàng' },
+    { id: 'suppliers', label: 'Nhà cung cấp' },
+    { id: 'products', label: 'Sản phẩm' },
+    { id: 'imports', label: 'Phiếu nhập hàng' },
+    { id: 'expenses', label: 'Chi phí' },
+    { id: 'warrantyRequests', label: 'Phiếu bảo hành' },
+    { id: 'product_groups', label: 'Nhóm hàng' }
+  ];
+
+  const getManualDeleteLabel = (item) => {
+    const data = item?.data || {};
+    const primary = data.invoiceCode || data.receiptCode || data.name || data.customerName || data.supplierName || data.productName || data.note || data.title || '';
+    const date = data.date ? formatDate(data.date) : '';
+    const phone = data.phone || data.customerPhone || '';
+    const amount = data.total ?? data.amount ?? data.price;
+    const extras = [date, phone, amount !== undefined ? formatCurrency(Number(amount) || 0) : ''].filter(Boolean);
+    return `${primary || 'Bản ghi'}${extras.length ? ` — ${extras.join(' · ')}` : ''} · ID: ${item.id}`;
+  };
+
+  const loadManualDeleteDocs = async () => {
+    if (!storeId || manualLoading) return;
+    setManualLoading(true);
+    setManualSelectedIds([]);
+    setManualDeleteProgress('Đang tải danh sách bản ghi…');
+    try {
+      const ref = collection(db, 'stores', storeId, manualDeleteCollection);
+      const snap = await getDocs(query(ref, limit(200)));
+      setManualDeleteDocs(snap.docs.map(d => ({ id: d.id, ref: d.ref, data: d.data() })));
+      setManualDeleteProgress(snap.empty ? 'Không có bản ghi trong nhóm này.' : `Đã tải ${snap.size} bản ghi đầu tiên. Đánh dấu những dòng cần xóa.`);
+    } catch (err) {
+      console.error('Load manual delete records failed:', err);
+      setManualDeleteProgress('Không tải được dữ liệu: ' + (err?.message || 'Lỗi không xác định'));
+      showToast('Không tải được danh sách để xóa. Hãy kiểm tra quyền Firestore.', 'error');
+    } finally {
+      setManualLoading(false);
+    }
+  };
+
+  const handleDeleteSelectedDocs = async () => {
+    if (deletingData || manualLoading) return;
+    const selected = manualDeleteDocs.filter(item => manualSelectedIds.includes(item.id));
+    if (!selected.length) {
+      showToast('Bạn chưa đánh dấu bản ghi nào.', 'error');
+      return;
+    }
+    if (!manualDeletePassword || !manualDeletePasswordConfirm) {
+      showToast('Vui lòng nhập và xác nhận mật khẩu Firebase.', 'error');
+      return;
+    }
+    if (manualDeletePassword !== manualDeletePasswordConfirm) {
+      showToast('Mật khẩu xác nhận không khớp.', 'error');
+      return;
+    }
+    const currentUser = auth.currentUser;
+    if (!currentUser?.email) {
+      showToast('Không xác định được tài khoản đang đăng nhập. Vui lòng đăng nhập lại.', 'error');
+      return;
+    }
+    const collectionLabel = manualDeleteCollectionOptions.find(x => x.id === manualDeleteCollection)?.label || manualDeleteCollection;
+    if (!window.confirm(`Bạn chắc chắn muốn xóa ${selected.length} bản ghi đã đánh dấu trong mục “${collectionLabel}”? Thao tác này không thể hoàn tác.`)) return;
+
+    setDeletingData(true);
+    setManualDeleteProgress('Đang xác thực mật khẩu Firebase…');
+    try {
+      const credential = EmailAuthProvider.credential(currentUser.email, manualDeletePassword);
+      await reauthenticateWithCredential(currentUser, credential);
+      // Mỗi lô tối đa 400 bản ghi, thấp hơn giới hạn 500 thao tác của Firestore.
+      for (let i = 0; i < selected.length; i += 400) {
+        const chunk = selected.slice(i, i + 400);
+        setManualDeleteProgress(`Đang xóa ${Math.min(i + chunk.length, selected.length)}/${selected.length} bản ghi…`);
+        const batch = writeBatch(db);
+        chunk.forEach(item => batch.delete(item.ref));
+        await batch.commit();
+      }
+      const deletedIds = new Set(selected.map(item => item.id));
+      setManualDeleteDocs(prev => prev.filter(item => !deletedIds.has(item.id)));
+      setManualSelectedIds([]);
+      setManualDeleteProgress(`Đã xóa ${selected.length} bản ghi được chọn.`);
+      setManualDeletePassword('');
+      setManualDeletePasswordConfirm('');
+      showToast(`Đã xóa ${selected.length} bản ghi đã đánh dấu.`);
+    } catch (err) {
+      console.error('Delete selected records failed:', err);
+      const code = err?.code || '';
+      if (code.startsWith('auth/')) showToast('Xác thực mật khẩu thất bại. Kiểm tra lại mật khẩu tài khoản Firebase.', 'error');
+      else if (code.includes('permission-denied')) showToast('Firebase từ chối quyền xóa. Cần kiểm tra Firestore Security Rules.', 'error');
+      else showToast(`Không xóa được bản ghi: ${err?.message || code || 'Lỗi không xác định'}`, 'error');
+      setManualDeleteProgress('Xóa chưa hoàn tất. Hãy tải lại danh sách để kiểm tra trạng thái thực tế.');
+    } finally {
+      setDeletingData(false);
+    }
+  };
+
   const handleConfirmedDelete = async (e) => {
     e?.preventDefault?.();
     if (!deleteTarget || deletingData) return;
@@ -3756,6 +3859,37 @@ function SettingsView({ db, storeId, showToast, storeConfig }) {
                   <button type="button" onClick={() => openDeleteConfirmation('suppliers')} className="bg-white border border-blue-300 text-blue-700 hover:bg-blue-100 font-bold py-2.5 px-4 rounded-xl transition-colors">Xóa nhà cung cấp</button>
                 </div>
               </div>
+            </div>
+            <div className="bg-amber-50 p-5 rounded-2xl border border-amber-200 shadow-sm space-y-4">
+              <div>
+                <h3 className="text-lg font-black text-amber-900 flex items-center gap-2"><Trash2 size={20}/> XÓA THỦ CÔNG — ĐÁNH DẤU TỪNG BẢN GHI</h3>
+                <p className="text-sm text-amber-800 mt-1">Chọn một mục, tải danh sách rồi đánh dấu đúng những dòng muốn xóa. Chỉ xóa các dòng đã chọn; không xóa cả bảng. Mỗi lần tải hiển thị tối đa 200 bản ghi đầu tiên.</p>
+              </div>
+              <div className="flex flex-col sm:flex-row gap-2">
+                <select value={manualDeleteCollection} onChange={e => { setManualDeleteCollection(e.target.value); setManualDeleteDocs([]); setManualSelectedIds([]); setManualDeleteProgress(''); }} disabled={manualLoading || deletingData} className="flex-1 border border-amber-300 rounded-xl p-3 bg-white font-semibold">
+                  {manualDeleteCollectionOptions.map(item => <option key={item.id} value={item.id}>{item.label}</option>)}
+                </select>
+                <button type="button" onClick={loadManualDeleteDocs} disabled={manualLoading || deletingData} className="bg-amber-700 hover:bg-amber-800 text-white font-bold px-5 py-3 rounded-xl disabled:opacity-50">{manualLoading ? 'Đang tải…' : 'Tải danh sách'}</button>
+              </div>
+              {manualDeleteDocs.length > 0 && <div className="flex flex-wrap items-center justify-between gap-2 text-sm">
+                <span className="font-bold text-gray-700">Đã đánh dấu {manualSelectedIds.length}/{manualDeleteDocs.length} bản ghi đang hiển thị</span>
+                <div className="flex gap-2">
+                  <button type="button" onClick={() => setManualSelectedIds(manualDeleteDocs.map(item => item.id))} className="px-3 py-1.5 rounded-lg border bg-white font-semibold">Chọn tất cả đang hiển thị</button>
+                  <button type="button" onClick={() => setManualSelectedIds([])} className="px-3 py-1.5 rounded-lg border bg-white font-semibold">Bỏ chọn</button>
+                </div>
+              </div>}
+              {manualDeleteDocs.length > 0 && <div className="max-h-80 overflow-y-auto rounded-xl border border-amber-200 bg-white divide-y divide-gray-100">
+                {manualDeleteDocs.map(item => <label key={item.id} className="flex items-start gap-3 p-3 hover:bg-amber-50 cursor-pointer">
+                  <input type="checkbox" checked={manualSelectedIds.includes(item.id)} onChange={e => setManualSelectedIds(prev => e.target.checked ? [...prev, item.id] : prev.filter(id => id !== item.id))} disabled={deletingData} className="mt-1 h-4 w-4 accent-amber-700" />
+                  <span className="text-sm text-gray-800 break-words">{getManualDeleteLabel(item)}</span>
+                </label>)}
+              </div>}
+              {manualDeleteProgress && <p className="text-sm font-semibold text-gray-700" aria-live="polite">{manualDeleteProgress}</p>}
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                <input type="password" autoComplete="current-password" value={manualDeletePassword} onChange={e => setManualDeletePassword(e.target.value)} placeholder="Mật khẩu tài khoản Firebase" disabled={deletingData} className="border border-amber-300 rounded-xl p-3 bg-white" />
+                <input type="password" autoComplete="current-password" value={manualDeletePasswordConfirm} onChange={e => setManualDeletePasswordConfirm(e.target.value)} placeholder="Nhập lại mật khẩu" disabled={deletingData} className="border border-amber-300 rounded-xl p-3 bg-white" />
+              </div>
+              <button type="button" onClick={handleDeleteSelectedDocs} disabled={deletingData || manualLoading || manualSelectedIds.length === 0} className="bg-red-600 hover:bg-red-700 text-white font-black px-5 py-3 rounded-xl disabled:opacity-50">{deletingData ? 'Đang xử lý…' : `Xóa ${manualSelectedIds.length} bản ghi đã đánh dấu`}</button>
             </div>
             <div className="bg-white p-6 rounded-2xl border shadow-sm">
               <h3 className="font-bold border-b pb-3 mb-5 text-gray-800 flex items-center gap-2"><FileText className="text-green-600"/> Nhập / Xuất File Excel</h3>
