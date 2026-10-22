@@ -2,7 +2,7 @@ import React, { useState, useEffect, useMemo } from 'react';
 import { LayoutDashboard, ShoppingCart, Package, Users, Truck, Plus, Edit, Trash2, Check, X, Image as ImageIcon, ShoppingBag, TrendingUp, AlertCircle, ArrowDownToLine, Phone, DollarSign, CheckCircle2, Printer, FileText, CreditCard, Lock, LogOut, ShieldAlert, User as UserIcon, Database, UserCog, KeyRound, MonitorSmartphone, Mail, Download, Upload, ArrowUpDown, Search, Eye, EyeOff, Bell, Award, BarChart3, Receipt, ChevronDown, ChevronUp, Image, Store, Sliders, HardDrive, ChevronLeft, ChevronRight } from 'lucide-react';
 import { initializeApp } from 'firebase/app';
 import { getAuth, signInWithEmailAndPassword, signOut, onAuthStateChanged, sendPasswordResetEmail, EmailAuthProvider, reauthenticateWithCredential } from 'firebase/auth';
-import { getFirestore, doc, setDoc, getDoc, getDocs, addDoc, updateDoc, deleteDoc, onSnapshot, collection, writeBatch, query, orderBy, where } from 'firebase/firestore';
+import { getFirestore, doc, setDoc, getDoc, getDocs, addDoc, updateDoc, deleteDoc, onSnapshot, collection, writeBatch, query, orderBy, where, limit } from 'firebase/firestore';
 
 const firebaseConfig = {
   apiKey: "AIzaSyClQogCLby6OYpVzRwJ9181rmg1Lho5FV8",
@@ -3014,6 +3014,7 @@ function SettingsView({ db, storeId, showToast, storeConfig }) {
   const [deletePassword, setDeletePassword] = useState('');
   const [deletePasswordConfirm, setDeletePasswordConfirm] = useState('');
   const [deletingData, setDeletingData] = useState(false);
+  const [deleteProgress, setDeleteProgress] = useState('');
 
   useEffect(() => {
     if (storeConfig) {
@@ -3413,13 +3414,23 @@ function SettingsView({ db, storeId, showToast, storeConfig }) {
         ? ['products', 'orders', 'imports', 'customers', 'suppliers', 'expenses', 'warrantyRequests']
         : [deleteTarget];
 
-      for (const collectionName of collectionsToDelete) {
-        const snapshot = await getDocs(collection(db, 'stores', storeId, collectionName));
-        const docs = snapshot.docs;
-        for (let i = 0; i < docs.length; i += 400) {
+      // Delete in small pages instead of loading an entire collection into memory.
+      // Re-query the first page after each batch so large stores don't stall the UI.
+      let totalDeleted = 0;
+      for (let collectionIndex = 0; collectionIndex < collectionsToDelete.length; collectionIndex++) {
+        const collectionName = collectionsToDelete[collectionIndex];
+        setDeleteProgress(`Đang xóa nhóm ${collectionIndex + 1}/${collectionsToDelete.length}: ${collectionName} (đã xóa ${totalDeleted} bản ghi)`);
+        const collectionRef = collection(db, 'stores', storeId, collectionName);
+        while (true) {
+          const snapshot = await getDocs(query(collectionRef, limit(300)));
+          if (snapshot.empty) break;
           const batch = writeBatch(db);
-          docs.slice(i, i + 400).forEach((item) => batch.delete(item.ref));
+          snapshot.docs.forEach((item) => batch.delete(item.ref));
           await batch.commit();
+          totalDeleted += snapshot.size;
+          setDeleteProgress(`Đang xóa nhóm ${collectionIndex + 1}/${collectionsToDelete.length}: ${collectionName} (đã xóa ${totalDeleted} bản ghi)`);
+          // Yield to the browser between batches so the page can repaint.
+          await new Promise(resolve => setTimeout(resolve, 0));
         }
       }
       const deletedLabel = deleteTarget === 'all' ? 'toàn bộ dữ liệu' : ({ orders: 'đơn hàng', customers: 'khách hàng', suppliers: 'nhà cung cấp' }[deleteTarget] || deleteTarget);
@@ -3427,6 +3438,7 @@ function SettingsView({ db, storeId, showToast, storeConfig }) {
       setDeleteTarget(null);
       setDeletePassword('');
       setDeletePasswordConfirm('');
+      setDeleteProgress('');
     } catch (err) {
       console.error('Delete data failed:', err);
       if (err?.code === 'auth/invalid-credential' || err?.code === 'auth/wrong-password' || err?.code === 'auth/invalid-login-credentials') {
@@ -3438,6 +3450,7 @@ function SettingsView({ db, storeId, showToast, storeConfig }) {
       }
     } finally {
       setDeletingData(false);
+      setDeleteProgress('');
     }
   };
 
@@ -3679,6 +3692,7 @@ function SettingsView({ db, storeId, showToast, storeConfig }) {
                     <input type="password" autoComplete="current-password" value={deletePasswordConfirm} onChange={e => setDeletePasswordConfirm(e.target.value)} required className="w-full border border-gray-300 rounded-xl p-3 outline-none focus:ring-2 focus:ring-blue-500" placeholder="Nhập lại mật khẩu" />
                   </div>
                   <p className="text-xs text-gray-500">Mật khẩu sẽ được xác thực với Firebase Authentication trước khi xóa. Mật khẩu không được lưu vào cơ sở dữ liệu.</p>
+                  {deletingData && <div className="rounded-xl border border-blue-200 bg-blue-50 p-3 text-sm text-blue-800" role="status"><div className="font-bold">Đang xử lý, vui lòng không đóng trang...</div><div className="mt-1">{deleteProgress || 'Đang xác thực và chuẩn bị xóa dữ liệu.'}</div></div>}
                   <div className="flex gap-3 pt-1">
                     <button type="button" disabled={deletingData} onClick={() => setDeleteTarget(null)} className="flex-1 border border-gray-300 text-gray-700 font-bold py-3 rounded-xl hover:bg-gray-50 disabled:opacity-50">Hủy</button>
                     <button type="submit" disabled={deletingData} className="flex-1 bg-blue-600 hover:bg-blue-700 text-white font-bold py-3 rounded-xl disabled:opacity-50">{deletingData ? 'Đang xóa...' : 'Xác nhận xóa'}</button>
