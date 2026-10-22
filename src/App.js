@@ -5,12 +5,12 @@ import { getAuth, signInWithEmailAndPassword, signOut, onAuthStateChanged, sendP
 import { getFirestore, doc, setDoc, getDoc, getDocs, addDoc, updateDoc, deleteDoc, onSnapshot, collection, writeBatch, query, orderBy, where, limit } from 'firebase/firestore';
 
 const firebaseConfig = {
-  apiKey: "AIzaSyClQogCLby6OYpVzRwJ9181rmg1Lho5FV8",
-  authDomain: "smartpos-5f5cf.firebaseapp.com",
-  projectId: "smartpos-5f5cf",
-  storageBucket: "smartpos-5f5cf.firebasestorage.app",
-  messagingSenderId: "458225351603",
-  appId: "1:458225351603:web:f67d06427def5a33dca9c6",
+  apiKey: "AIzaSyC9nnxzOOWIDTym9Lzo2Kn2J1gS0ro-QQs",
+  authDomain: "autrung-7d8be.firebaseapp.com",
+  projectId: "autrung-7d8be",
+  storageBucket: "autrung-7d8be.firebasestorage.app",
+  messagingSenderId: "682074587160",
+  appId: "1:682074587160:web:24da7989f82d94d589c36d"
 };
 
 const app = initializeApp(firebaseConfig);
