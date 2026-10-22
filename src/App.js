@@ -4,7 +4,6 @@ import { initializeApp } from 'firebase/app';
 import { getAuth, signInWithEmailAndPassword, signOut, onAuthStateChanged, sendPasswordResetEmail, EmailAuthProvider, reauthenticateWithCredential } from 'firebase/auth';
 import { getFirestore, doc, setDoc, getDoc, getDocs, addDoc, updateDoc, deleteDoc, onSnapshot, collection, writeBatch, query, orderBy, where, limit } from 'firebase/firestore';
 
-c//
 const firebaseConfig = {
   apiKey: "AIzaSyClQogCLby6OYpVzRwJ9181rmg1Lho5FV8",
   authDomain: "smartpos-5f5cf.firebaseapp.com",
