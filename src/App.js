@@ -3014,7 +3014,6 @@ function SettingsView({ db, storeId, showToast, storeConfig }) {
   const [deletePassword, setDeletePassword] = useState('');
   const [deletePasswordConfirm, setDeletePasswordConfirm] = useState('');
   const [deletingData, setDeletingData] = useState(false);
-  const [deleteProgress, setDeleteProgress] = useState('');
 
   useEffect(() => {
     if (storeConfig) {
@@ -3391,7 +3390,6 @@ function SettingsView({ db, storeId, showToast, storeConfig }) {
   const handleConfirmedDelete = async (e) => {
     e?.preventDefault?.();
     if (!deleteTarget || deletingData) return;
-
     if (!deletePassword || !deletePasswordConfirm) {
       showToast('Vui lòng nhập và xác nhận mật khẩu.', 'error');
       return;
@@ -3400,80 +3398,43 @@ function SettingsView({ db, storeId, showToast, storeConfig }) {
       showToast('Mật khẩu xác nhận không khớp.', 'error');
       return;
     }
-
+    const currentUser = auth.currentUser;
+    if (!currentUser?.email) {
+      showToast('Không xác định được tài khoản quản trị đang đăng nhập. Vui lòng đăng nhập lại.', 'error');
+      return;
+    }
     setDeletingData(true);
     try {
-      // 1. Xác thực mật khẩu Admin
-      let isAuthenticated = false;
-      const currentUser = auth.currentUser;
+      // Re-authenticate with Firebase Auth; matching two text fields alone is not sufficient.
+      const credential = EmailAuthProvider.credential(currentUser.email, deletePassword);
+      await reauthenticateWithCredential(currentUser, credential);
 
-      // Kiểm tra qua Firebase Auth (nếu có email)
-      if (currentUser && currentUser.email) {
-        try {
-          const credential = EmailAuthProvider.credential(currentUser.email, deletePassword);
-          await reauthenticateWithCredential(currentUser, credential);
-          isAuthenticated = true;
-        } catch (authErr) {
-          isAuthenticated = false;
-        }
-      }
-
-      // Nếu không dùng Firebase Auth, đối chiếu trực tiếp mật khẩu Admin trong Firestore (users_db)
-      if (!isAuthenticated) {
-        const adminQ = query(collection(db, 'users_db'), where('role', '==', 'admin'));
-        const adminSnap = await getDocs(adminQ);
-        const isAdminPassCorrect = adminSnap.docs.some(d => d.data().password === deletePassword);
-
-        if (!isAdminPassCorrect) {
-          showToast('Mật khẩu tài khoản quản trị không chính xác!', 'error');
-          setDeletingData(false);
-          return;
-        }
-      }
-
-      // 2. Tiến hành xóa dữ liệu theo danh mục
       const collectionsToDelete = deleteTarget === 'all'
-        ? ['products', 'orders', 'imports', 'customers', 'suppliers', 'expenses', 'product_groups']
+        ? ['products', 'orders', 'imports', 'customers', 'suppliers', 'expenses', 'warrantyRequests']
         : [deleteTarget];
 
-      let totalCount = 0;
-      for (const colName of collectionsToDelete) {
-        const snap = await getDocs(collection(db, 'stores', storeId, colName));
-        if (!snap.empty) {
-          let batch = writeBatch(db);
-          let count = 0;
-          for (const docItem of snap.docs) {
-            batch.delete(docItem.ref);
-            count++;
-            totalCount++;
-            if (count >= 400) {
-              await batch.commit();
-              batch = writeBatch(db);
-              count = 0;
-            }
-          }
-          if (count > 0) {
-            await batch.commit();
-          }
+      for (const collectionName of collectionsToDelete) {
+        const snapshot = await getDocs(collection(db, 'stores', storeId, collectionName));
+        const docs = snapshot.docs;
+        for (let i = 0; i < docs.length; i += 400) {
+          const batch = writeBatch(db);
+          docs.slice(i, i + 400).forEach((item) => batch.delete(item.ref));
+          await batch.commit();
         }
       }
-
-      showToast(`Đã xóa sạch ${totalCount} bản ghi thành công!`);
+      const deletedLabel = deleteTarget === 'all' ? 'toàn bộ dữ liệu' : ({ orders: 'đơn hàng', customers: 'khách hàng', suppliers: 'nhà cung cấp' }[deleteTarget] || deleteTarget);
+      showToast(`Đã xóa ${deletedLabel} thành công.`);
       setDeleteTarget(null);
       setDeletePassword('');
       setDeletePasswordConfirm('');
-
-      // Reload lại ứng dụng để xóa sạch cache hiển thị
-      setTimeout(() => {
-        window.location.reload();
-      }, 800);
-
     } catch (err) {
-      console.error('Lỗi khi xóa dữ liệu:', err);
-      if (err.code === 'permission-denied') {
-        showToast('Lỗi: Firebase Rules chưa mở quyền xóa (Permission Denied)!', 'error');
+      console.error('Delete data failed:', err);
+      if (err?.code === 'auth/invalid-credential' || err?.code === 'auth/wrong-password' || err?.code === 'auth/invalid-login-credentials') {
+        showToast('Mật khẩu tài khoản Firebase không đúng.', 'error');
+      } else if (err?.code === 'auth/requires-recent-login') {
+        showToast('Phiên đăng nhập đã cũ. Vui lòng đăng xuất, đăng nhập lại rồi thử lại.', 'error');
       } else {
-        showToast('Không thể xóa dữ liệu: ' + (err.message || 'Lỗi không xác định'), 'error');
+        showToast('Không thể xóa dữ liệu. Vui lòng kiểm tra quyền Firebase và thử lại.', 'error');
       }
     } finally {
       setDeletingData(false);
@@ -3673,7 +3634,7 @@ function SettingsView({ db, storeId, showToast, storeConfig }) {
               <div className="absolute -right-4 -top-4 text-blue-100 rotate-12"><HardDrive size={120} /></div>
               <div className="relative z-10">
                 <h3 className="text-lg font-black text-blue-800 mb-2 flex items-center gap-2"><ShieldAlert size={20}/> KHU VỰC NGUY HIỂM</h3>
-                <p className="text-sm text-blue-700 mb-5 font-medium max-w-lg">Xóa đơn hàng, nhập hàng, sản phẩm, nhóm hàng, bảo hành, khách hàng, nhà cung cấp, chi phí và dữ liệu nghiệp vụ liên quan. Giữ nguyên tài khoản đăng nhập, cài đặt cửa hàng và mẫu in. Mọi thao tác xóa yêu cầu xác thực lại mật khẩu; dữ liệu đã xóa không thể khôi phục.</p>
+                <p className="text-sm text-blue-700 mb-5 font-medium max-w-lg">Mọi thao tác xóa đều yêu cầu nhập mật khẩu tài khoản đang đăng nhập và xác nhận lại mật khẩu. Dữ liệu đã xóa không thể khôi phục.</p>
                 <button type="button" onClick={() => openDeleteConfirmation('all')} className="bg-blue-600 hover:bg-blue-700 text-white font-bold py-2.5 px-6 rounded-xl shadow-md transition-colors">Xóa sạch toàn bộ dữ liệu</button>
                 <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 mt-4">
                   <button type="button" onClick={() => openDeleteConfirmation('orders')} className="bg-white border border-blue-300 text-blue-700 hover:bg-blue-100 font-bold py-2.5 px-4 rounded-xl transition-colors">Xóa đơn hàng</button>
@@ -3718,7 +3679,6 @@ function SettingsView({ db, storeId, showToast, storeConfig }) {
                     <input type="password" autoComplete="current-password" value={deletePasswordConfirm} onChange={e => setDeletePasswordConfirm(e.target.value)} required className="w-full border border-gray-300 rounded-xl p-3 outline-none focus:ring-2 focus:ring-blue-500" placeholder="Nhập lại mật khẩu" />
                   </div>
                   <p className="text-xs text-gray-500">Mật khẩu sẽ được xác thực với Firebase Authentication trước khi xóa. Mật khẩu không được lưu vào cơ sở dữ liệu.</p>
-                  {deletingData && <div className="rounded-lg border border-blue-200 bg-blue-50 p-3 text-sm text-blue-800"><span className="font-bold">Tiến trình:</span> {deleteProgress || 'Đang xử lý...'}</div>}
                   <div className="flex gap-3 pt-1">
                     <button type="button" disabled={deletingData} onClick={() => setDeleteTarget(null)} className="flex-1 border border-gray-300 text-gray-700 font-bold py-3 rounded-xl hover:bg-gray-50 disabled:opacity-50">Hủy</button>
                     <button type="submit" disabled={deletingData} className="flex-1 bg-blue-600 hover:bg-blue-700 text-white font-bold py-3 rounded-xl disabled:opacity-50">{deletingData ? 'Đang xóa...' : 'Xác nhận xóa'}</button>
