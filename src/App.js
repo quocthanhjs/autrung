@@ -2,7 +2,7 @@ import React, { useState, useEffect, useMemo } from 'react';
 import { LayoutDashboard, ShoppingCart, Package, Users, Truck, Plus, Edit, Trash2, Check, X, Image as ImageIcon, ShoppingBag, TrendingUp, AlertCircle, ArrowDownToLine, Phone, DollarSign, CheckCircle2, Printer, FileText, CreditCard, Lock, LogOut, ShieldAlert, User as UserIcon, Database, UserCog, KeyRound, MonitorSmartphone, Mail, Download, Upload, ArrowUpDown, Search, Eye, EyeOff, Bell, Award, BarChart3, Receipt, ChevronDown, ChevronUp, Image, Store, Sliders, HardDrive, ChevronLeft, ChevronRight } from 'lucide-react';
 import { initializeApp } from 'firebase/app';
 import { getAuth, signInWithEmailAndPassword, signOut, onAuthStateChanged, sendPasswordResetEmail, EmailAuthProvider, reauthenticateWithCredential } from 'firebase/auth';
-import { getFirestore, doc, setDoc, getDoc, getDocs, addDoc, updateDoc, deleteDoc, onSnapshot, collection, writeBatch, query, orderBy, where } from 'firebase/firestore';
+import { getFirestore, doc, setDoc, getDoc, getDocs, addDoc, updateDoc, deleteDoc, onSnapshot, collection, writeBatch, query, orderBy, where, limit } from 'firebase/firestore';
 
 const firebaseConfig = {
   apiKey: "AIzaSyClQogCLby6OYpVzRwJ9181rmg1Lho5FV8",
@@ -3014,6 +3014,7 @@ function SettingsView({ db, storeId, showToast, storeConfig }) {
   const [deletePassword, setDeletePassword] = useState('');
   const [deletePasswordConfirm, setDeletePasswordConfirm] = useState('');
   const [deletingData, setDeletingData] = useState(false);
+  const [deleteProgress, setDeleteProgress] = useState('');
 
   useEffect(() => {
     if (storeConfig) {
@@ -3103,10 +3104,9 @@ function SettingsView({ db, storeId, showToast, storeConfig }) {
             const supplierSnap = await getDocs(collection(db, 'stores', storeId, 'suppliers'));
             const productDocs = productSnap.docs.map(d => ({ id: d.id, ...d.data() }));
             const productByName = new Map(productDocs.map(p => [String(p.name || '').trim().toLowerCase(), p]));
-            const productByCode = new Map(productDocs.map(p => [String(p.kiotVietCode || p.code || p.productCode || '').trim().toLowerCase(), p]).filter(([code]) => code));
             const supplierByName = new Map(supplierSnap.docs.map(d => [String(d.data().name || '').trim().toLowerCase(), { id: d.id, ...d.data() }]));
             const existingImportSnap = await getDocs(collection(db, 'stores', storeId, 'imports'));
-            const existingReceiptCodes = new Set(existingImportSnap.docs.map(d => String(d.data().receiptCode || d.data().invoiceCode || d.data().kiotVietReceiptCode || '').trim().toLowerCase()).filter(Boolean));
+            const existingReceiptCodes = new Set(existingImportSnap.docs.map(d => String(d.data().receiptCode || d.data().invoiceCode || '').trim()).filter(Boolean));
             const receipts = {};
             const parseExcelDate = (value) => {
               if (!value) return new Date().toISOString();
@@ -3119,13 +3119,11 @@ function SettingsView({ db, storeId, showToast, storeConfig }) {
               const qty = Number(row['Số lượng'] || row['SL nhập'] || row['Số lượng nhập']) || 0;
               if (!productName || qty <= 0) return;
               const supplierName = String(row['Tên nhà cung cấp'] || row['Nhà cung cấp'] || '').trim() || 'Nhà cung cấp Excel';
-              const receiptCode = String(row['Mã nhập hàng'] || row['Mã phiếu nhập'] || row['Mã chứng từ'] || '').trim();
+              const receiptCode = String(row['Mã phiếu nhập'] || row['Mã nhập hàng'] || row['Mã chứng từ'] || '').trim();
               const date = parseExcelDate(row['Thời gian'] || row['Ngày nhập'] || row['Ngày tạo']);
-              if (!receiptCode) throw new Error('File lịch sử nhập hàng thiếu cột Mã nhập hàng/Mã phiếu nhập. Không thể đồng bộ an toàn vì nhập lại có thể tạo phiếu trùng.');
-              const groupKey = receiptCode.toLowerCase();
+              const groupKey = receiptCode || `${supplierName}|${date.slice(0, 10)}`;
               if (!receipts[groupKey]) receipts[groupKey] = { receiptCode, supplierName, date, items: [], total: 0, source: 'KiotViet Excel' };
-              const productCode = String(row['Mã hàng'] || '').trim().toLowerCase();
-              const product = (productCode && productByCode.get(productCode)) || productByName.get(productName.toLowerCase());
+              const product = productByName.get(productName.toLowerCase());
               const unitCost = Number(row['Giá nhập'] || row['Đơn giá nhập'] || row['Giá vốn'] || row['Đơn giá']) || 0;
               const lineTotal = Number(row['Thành tiền'] || row['Tổng tiền hàng']) || qty * unitCost;
               receipts[groupKey].items.push({ id: product?.id || '', name: productName, category: product?.category || String(row['Nhóm hàng'] || ''), qty, importCost: unitCost, price: Number(product?.price) || Number(row['Giá bán']) || 0 });
@@ -3137,7 +3135,7 @@ function SettingsView({ db, storeId, showToast, storeConfig }) {
             let writes = 0;
             for (const receipt of receiptEntries) {
               // Đồng bộ tăng dần: mã phiếu nhập đã có thì bỏ qua, không tạo trùng.
-              if (receipt.receiptCode && existingReceiptCodes.has(receipt.receiptCode.toLowerCase())) continue;
+              if (receipt.receiptCode && existingReceiptCodes.has(receipt.receiptCode)) continue;
               let supplier = supplierByName.get(receipt.supplierName.toLowerCase());
               if (!supplier) {
                 const supplierRef = doc(collection(db, 'stores', storeId, 'suppliers'));
@@ -3151,7 +3149,7 @@ function SettingsView({ db, storeId, showToast, storeConfig }) {
                 ? doc(db, 'stores', storeId, 'imports', 'kv_' + receipt.receiptCode.replace(/[^a-zA-Z0-9_-]/g, '_'))
                 : doc(collection(db, 'stores', storeId, 'imports'));
               importBatch.set(importRef, { invoiceCode: receipt.receiptCode || '', receiptCode: receipt.receiptCode || '', supplierId: supplier.id, supplierName: receipt.supplierName, createdByUid: '', createdByName: 'Excel KiotViet', items: receipt.items, total, status: 'PAID', date: receipt.date, source: 'KiotViet Excel', kiotVietReceiptCode: receipt.receiptCode || '' }); writes++;
-              if (receipt.receiptCode) existingReceiptCodes.add(receipt.receiptCode.toLowerCase());
+              if (receipt.receiptCode) existingReceiptCodes.add(receipt.receiptCode);
               // Không cộng tồn ở đây: file DanhSachSanPham là ảnh chụp tồn kho hiện tại.
               // Cộng lại lịch sử nhập hàng sẽ làm tồn kho tăng sai mỗi lần đồng bộ.
               if (writes >= 400) { await importBatch.commit(); importBatch = writeBatch(db); writes = 0; }
@@ -3171,26 +3169,24 @@ function SettingsView({ db, storeId, showToast, storeConfig }) {
               if (!ordersMap[orderId]) {
                 // Xử lý ngày tháng từ Excel serial number
                 let orderDate = new Date().toISOString();
-                if (row['Thời gian'] !== undefined && row['Thời gian'] !== null && row['Thời gian'] !== '') {
-                  const parsedOrderDate = typeof row['Thời gian'] === 'number'
-                    ? new Date(Math.round((row['Thời gian'] - 25569) * 86400 * 1000))
-                    : new Date(row['Thời gian']);
-                  if (!Number.isNaN(parsedOrderDate.getTime())) orderDate = parsedOrderDate.toISOString();
+                if (row['Thời gian']) {
+                  if (typeof row['Thời gian'] === 'number') {
+                     orderDate = new Date(Math.round((row['Thời gian'] - 25569) * 86400 * 1000)).toISOString();
+                  } else {
+                     orderDate = new Date(row['Thời gian']).toISOString();
+                  }
                 }
-                const invoiceTotal = Number(row['Khách cần trả']) || Number(row['Tổng tiền hàng']) || Number(row['Tổng thanh toán']) || 0;
-                const paidAmount = Number(row['Khách đã trả']) || Number(row['Tiền mặt'] || 0) + Number(row['Chuyển khoản'] || 0);
-                const explicitStatus = String(row['Trạng thái'] || '').trim();
 
                 ordersMap[orderId] = {
                   id: orderId,
-                  invoiceCode: String(orderId).trim(),
+                  invoiceCode: orderId,
                   customerName: row['Tên khách hàng'] || 'Khách lẻ',
-                  customerId: row['Mã khách hàng'] || null,
+                  customerId: row['Mã khách hàng'] || null, // Lưu thêm mã KH nếu cần map sau này
                   sellerName: row['Người tạo'] || row['Người bán'] || 'Hệ thống',
                   date: orderDate,
-                  status: explicitStatus ? (['Hoàn thành', 'Đã thanh toán', 'Paid', 'PAID'].includes(explicitStatus) ? 'PAID' : 'DEBT') : (invoiceTotal > 0 && paidAmount >= invoiceTotal ? 'PAID' : 'DEBT'),
-                  total: invoiceTotal,
-                  hasInvoiceTotal: Boolean(invoiceTotal),
+                  status: row['Trạng thái'] === 'Hoàn thành' ? 'PAID' : 'DEBT',
+                  total: Number(row['Khách cần trả']) || Number(row['Tổng tiền hàng']) || Number(row['Tổng thanh toán']) || 0,
+                  hasInvoiceTotal: Boolean(Number(row['Khách cần trả']) || Number(row['Tổng tiền hàng']) || Number(row['Tổng thanh toán'])),
                   totalCost: 0,
                   note: row['Ghi chú'] || '',
                   items: []
@@ -3203,7 +3199,6 @@ function SettingsView({ db, storeId, showToast, storeConfig }) {
                 const price = Number(row['Giá bán']) || Number(row['Đơn giá']) || 0;
                 const lineTotal = Number(row['Thành tiền']) || (qty * price);
                 ordersMap[orderId].items.push({
-                  productCode: String(row['Mã hàng'] || '').trim(),
                   name: String(row['Tên hàng']),
                   quantity: qty,
                   price: price,
@@ -3223,13 +3218,12 @@ function SettingsView({ db, storeId, showToast, storeConfig }) {
             const existingOrdersSnap = await getDocs(collection(db, 'stores', storeId, 'orders'));
             const existingOrdersByCode = new Map();
             existingOrdersSnap.docs.forEach(d => {
-              const code = String(d.data().invoiceCode || d.data().orderCode || '').trim().toLowerCase();
+              const code = String(d.data().invoiceCode || d.data().orderCode || '').trim();
               if (code && !existingOrdersByCode.has(code)) existingOrdersByCode.set(code, d.id);
             });
             for (const key in ordersMap) {
-              const existingId = existingOrdersByCode.get(String(key).trim().toLowerCase());
-              const safeOrderId = 'kv_' + String(key).trim().replace(/[^a-zA-Z0-9_-]/g, '_');
-              const orderRef = existingId ? doc(db, 'stores', storeId, 'orders', existingId) : doc(db, 'stores', storeId, 'orders', safeOrderId);
+              const existingId = existingOrdersByCode.get(String(key).trim());
+              const orderRef = existingId ? doc(db, 'stores', storeId, 'orders', existingId) : doc(db, 'stores', storeId, 'orders', 'kv_' + String(key).replace(/[^a-zA-Z0-9_-]/g, '_'));
               const { hasInvoiceTotal, ...orderData } = ordersMap[key];
               batch.set(orderRef, { ...orderData, orderCode: String(key), source: 'KiotViet Excel' }, { merge: true });
               count++; 
@@ -3500,16 +3494,26 @@ function SettingsView({ db, storeId, showToast, storeConfig }) {
       await reauthenticateWithCredential(currentUser, credential);
 
       const collectionsToDelete = deleteTarget === 'all'
-        ? ['products', 'orders', 'imports', 'customers', 'suppliers', 'expenses']
+        ? ['products', 'orders', 'imports', 'customers', 'suppliers', 'expenses', 'warrantyRequests', 'product_groups']
         : [deleteTarget];
 
-      for (const collectionName of collectionsToDelete) {
-        const snapshot = await getDocs(collection(db, 'stores', storeId, collectionName));
-        const docs = snapshot.docs;
-        for (let i = 0; i < docs.length; i += 400) {
+      // Xóa theo từng trang nhỏ thay vì tải toàn bộ collection vào bộ nhớ một lần.
+      // Mỗi vòng luôn lấy trang đầu; sau khi xóa, các tài liệu tiếp theo tự dịch lên.
+      let totalDeleted = 0;
+      for (let c = 0; c < collectionsToDelete.length; c++) {
+        const collectionName = collectionsToDelete[c];
+        setDeleteProgress(`Đang xóa ${collectionName} (${c + 1}/${collectionsToDelete.length})… Đã xóa ${totalDeleted} bản ghi`);
+        const collectionRef = collection(db, 'stores', storeId, collectionName);
+        while (true) {
+          const snapshot = await getDocs(query(collectionRef, limit(400)));
+          if (snapshot.empty) break;
           const batch = writeBatch(db);
-          docs.slice(i, i + 400).forEach((item) => batch.delete(item.ref));
+          snapshot.docs.forEach(item => batch.delete(item.ref));
           await batch.commit();
+          totalDeleted += snapshot.size;
+          setDeleteProgress(`Đang xóa ${collectionName} (${c + 1}/${collectionsToDelete.length})… Đã xóa ${totalDeleted} bản ghi`);
+          // Nhường lượt cho giao diện cập nhật tiến độ giữa các lô.
+          await new Promise(resolve => setTimeout(resolve, 0));
         }
       }
       const deletedLabel = deleteTarget === 'all' ? 'toàn bộ dữ liệu' : ({ orders: 'đơn hàng', customers: 'khách hàng', suppliers: 'nhà cung cấp' }[deleteTarget] || deleteTarget);
@@ -3517,6 +3521,7 @@ function SettingsView({ db, storeId, showToast, storeConfig }) {
       setDeleteTarget(null);
       setDeletePassword('');
       setDeletePasswordConfirm('');
+      setDeleteProgress('');
     } catch (err) {
       console.error('Delete data failed:', err);
       if (err?.code === 'auth/invalid-credential' || err?.code === 'auth/wrong-password' || err?.code === 'auth/invalid-login-credentials') {
@@ -3524,10 +3529,11 @@ function SettingsView({ db, storeId, showToast, storeConfig }) {
       } else if (err?.code === 'auth/requires-recent-login') {
         showToast('Phiên đăng nhập đã cũ. Vui lòng đăng xuất, đăng nhập lại rồi thử lại.', 'error');
       } else {
-        showToast('Không thể xóa dữ liệu. Vui lòng kiểm tra quyền Firebase và thử lại.', 'error');
+        showToast(`Không thể xóa dữ liệu: ${err?.message || 'Vui lòng kiểm tra quyền Firebase và thử lại.'}`, 'error');
       }
     } finally {
       setDeletingData(false);
+      setDeleteProgress('');
     }
   };
 
@@ -3769,6 +3775,7 @@ function SettingsView({ db, storeId, showToast, storeConfig }) {
                     <input type="password" autoComplete="current-password" value={deletePasswordConfirm} onChange={e => setDeletePasswordConfirm(e.target.value)} required className="w-full border border-gray-300 rounded-xl p-3 outline-none focus:ring-2 focus:ring-blue-500" placeholder="Nhập lại mật khẩu" />
                   </div>
                   <p className="text-xs text-gray-500">Mật khẩu sẽ được xác thực với Firebase Authentication trước khi xóa. Mật khẩu không được lưu vào cơ sở dữ liệu.</p>
+                  {deletingData && <div className="rounded-lg bg-blue-50 border border-blue-100 p-3 text-sm font-semibold text-blue-700"><span className="inline-block animate-spin mr-2">⏳</span>{deleteProgress || 'Đang xác thực và chuẩn bị xóa dữ liệu…'}</div>}
                   <div className="flex gap-3 pt-1">
                     <button type="button" disabled={deletingData} onClick={() => setDeleteTarget(null)} className="flex-1 border border-gray-300 text-gray-700 font-bold py-3 rounded-xl hover:bg-gray-50 disabled:opacity-50">Hủy</button>
                     <button type="submit" disabled={deletingData} className="flex-1 bg-blue-600 hover:bg-blue-700 text-white font-bold py-3 rounded-xl disabled:opacity-50">{deletingData ? 'Đang xóa...' : 'Xác nhận xóa'}</button>
