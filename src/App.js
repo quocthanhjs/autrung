@@ -2,7 +2,7 @@ import React, { useState, useEffect, useMemo } from 'react';
 import { LayoutDashboard, ShoppingCart, Package, Users, Truck, Plus, Edit, Trash2, Check, X, Image as ImageIcon, ShoppingBag, TrendingUp, AlertCircle, ArrowDownToLine, Phone, DollarSign, CheckCircle2, Printer, FileText, CreditCard, Lock, LogOut, ShieldAlert, User as UserIcon, Database, UserCog, KeyRound, MonitorSmartphone, Mail, Download, Upload, ArrowUpDown, Search, Eye, EyeOff, Bell, Award, BarChart3, Receipt, ChevronDown, ChevronUp, Image, Store, Sliders, HardDrive, ChevronLeft, ChevronRight } from 'lucide-react';
 import { initializeApp } from 'firebase/app';
 import { getAuth, signInWithEmailAndPassword, signOut, onAuthStateChanged, sendPasswordResetEmail, EmailAuthProvider, reauthenticateWithCredential } from 'firebase/auth';
-import { getFirestore, doc, setDoc, getDoc, getDocs, addDoc, updateDoc, deleteDoc, onSnapshot, collection, writeBatch, query, orderBy, where, limit } from 'firebase/firestore';
+import { getFirestore, doc, setDoc, getDoc, getDocs, addDoc, updateDoc, deleteDoc, onSnapshot, collection, writeBatch, query, orderBy, where } from 'firebase/firestore';
 
 const firebaseConfig = {
   apiKey: "AIzaSyClQogCLby6OYpVzRwJ9181rmg1Lho5FV8",
@@ -475,7 +475,7 @@ export default function App() {
       </nav>
       <main className="flex-1 min-w-0 overflow-auto flex flex-col min-h-[calc(100vh-104px)] relative">
         {toast && <div className={"fixed top-4 right-4 z-50 px-6 py-3.5 rounded-xl shadow-xl flex items-center gap-2 text-white animate-in slide-in-from-top-2 " + (toast.type === 'success' ? 'bg-emerald-600' : 'bg-blue-600')}><div className="bg-white/20 p-1 rounded-full">{toast.type === 'success' ? <Check size={16} /> : <AlertCircle size={16} />}</div><span className="font-bold text-sm tracking-wide">{toast.msg}</span></div>}
-        {activeTab === 'reports' && <ReportsView orders={orders} imports={imports} expenses={expenses} />}
+        {activeTab === 'reports' && <ReportsView orders={orders} imports={imports} expenses={expenses} products={products} suppliers={suppliers} db={db} storeId={storeId} showToast={showToast} />}
         {activeTab === 'dashboard' && <DashboardView orders={orders} imports={imports} expenses={expenses} customers={customers} suppliers={suppliers} products={products} warrantyRequests={warrantyRequests} showToast={showToast} userData={userData} />}
         {activeTab === 'pos' && <POSView products={products} orders={orders} customers={customers} db={db} storeId={storeId} user={user} storeConfig={storeConfig} showToast={showToast} userData={userData} />}
         {activeTab === 'sales_history' && <SalesHistoryView orders={orders} imports={imports} products={products} customers={customers} storeConfig={storeConfig} db={db} storeId={storeId} user={user} userData={userData} showToast={showToast} />}
@@ -1071,6 +1071,7 @@ function SalesHistoryView({ orders, imports = [], products, customers, storeConf
   const [productTarget, setProductTarget] = useState(null);
   const [orderCustomerSearch, setOrderCustomerSearch] = useState('');
   const [orderProductSearch, setOrderProductSearch] = useState({});
+  const [selectedOrderIds, setSelectedOrderIds] = useState([]);
 
   useEffect(() => { setLocalPrintSize(storeConfig.printPaperSize || 'K80'); }, [storeConfig.printPaperSize]);
   useEffect(() => {
@@ -1131,6 +1132,26 @@ function SalesHistoryView({ orders, imports = [], products, customers, storeConf
         showToast("Đã xóa hóa đơn và hoàn kho thành công!");
       } catch (err) { showToast("Lỗi khi xóa hóa đơn", "error"); }
     }
+  };
+
+  const handleBatchDeleteOrders = async () => {
+    const chosen = (orders || []).filter(o => selectedOrderIds.includes(o.id));
+    if (!chosen.length) return;
+    if (!window.confirm(`Xóa ${chosen.length} đơn hàng đã chọn và hoàn lại số lượng vào tồn kho?`)) return;
+    try {
+      const stockDelta = new Map();
+      chosen.forEach(order => (order.items || []).forEach(item => {
+        const pid = item.id || item.productId;
+        if (pid) stockDelta.set(pid, (stockDelta.get(pid) || 0) + Number(item.quantity ?? item.qty ?? 1));
+      }));
+      const batch = writeBatch(db);
+      stockDelta.forEach((qty, pid) => {
+        const product = (products || []).find(p => p.id === pid);
+        if (product) batch.update(doc(db, 'stores', storeId, 'products', pid), { stock: Number(product.stock || 0) + qty });
+      });
+      chosen.forEach(order => batch.delete(doc(db, 'stores', storeId, 'orders', order.id)));
+      await batch.commit(); setSelectedOrderIds([]); showToast('Đã xóa đơn hàng đã chọn và hoàn kho');
+    } catch (err) { showToast('Không thể xóa các đơn hàng đã chọn: ' + (err.message || ''), 'error'); }
   };
 
   const handleSaveEditOrder = async (e) => {
@@ -1270,7 +1291,7 @@ function SalesHistoryView({ orders, imports = [], products, customers, storeConf
           <table className="w-full text-left text-sm">
             <thead className="bg-gray-50/80 sticky top-0 border-b backdrop-blur-sm z-10">
               <tr>
-                <th className="p-4 font-bold text-gray-600">Mã HĐ / Thời gian</th><th className="p-4 font-bold text-gray-600">Khách hàng</th><th className="p-4 font-bold text-gray-600">Chi tiết hàng bán & Bảo hành / Ghi chú</th><th className="p-4 font-bold text-gray-600">Tổng Tiền</th><th className="p-4 font-bold text-gray-600">Tiền Lãi</th><th className="p-4 font-bold text-gray-600">Trạng thái</th><th className="p-4 font-bold text-gray-600 text-right">Thao tác</th>
+                <th className="p-3 w-10"><input aria-label="Chọn tất cả đơn hàng đang hiển thị" type="checkbox" checked={paginatedOrders.length > 0 && paginatedOrders.every(o => selectedOrderIds.includes(o.id))} onChange={() => setSelectedOrderIds(prev => paginatedOrders.every(o => prev.includes(o.id)) ? prev.filter(id => !paginatedOrders.some(o => o.id === id)) : [...new Set([...prev, ...paginatedOrders.map(o => o.id)])])} className="w-4 h-4"/></th><th className="p-4 font-bold text-gray-600">Mã HĐ / Thời gian</th><th className="p-4 font-bold text-gray-600">Khách hàng</th><th className="p-4 font-bold text-gray-600">Chi tiết hàng bán & Bảo hành / Ghi chú</th><th className="p-4 font-bold text-gray-600">Tổng Tiền</th><th className="p-4 font-bold text-gray-600">Tiền Lãi</th><th className="p-4 font-bold text-gray-600">Trạng thái</th><th className="p-4 font-bold text-gray-600 text-right">Thao tác</th>
               </tr>
             </thead>
             <tbody>
@@ -1281,7 +1302,7 @@ function SalesHistoryView({ orders, imports = [], products, customers, storeConf
                 const statusClass = o.status === 'PAID' ? 'bg-green-100 text-green-700' : 'bg-orange-100 text-orange-700';
                 return (
                   <tr key={o.id} className="border-b hover:bg-blue-50/50 transition-colors">
-                    <td className="p-4"><p className="font-bold text-blue-600">#{o.invoiceCode || o.id.slice(0,6).toUpperCase()}</p><p className="text-xs text-gray-400 mt-0.5">{formatDate(o.date)}</p></td>
+                    <td className="p-3" onClick={e=>e.stopPropagation()}><input type="checkbox" aria-label={`Chọn đơn ${o.invoiceCode || o.id}`} checked={selectedOrderIds.includes(o.id)} onChange={() => setSelectedOrderIds(prev => prev.includes(o.id) ? prev.filter(id => id !== o.id) : [...prev, o.id])} className="w-4 h-4"/></td><td className="p-4"><p className="font-bold text-blue-600">#{o.invoiceCode || o.id.slice(0,6).toUpperCase()}</p><p className="text-xs text-gray-400 mt-0.5">{formatDate(o.date)}</p></td>
                     <td className="p-4 font-bold text-gray-800"><button type="button" className="text-blue-600 underline" onClick={() => setHistoryTarget({ id: o.customerId, name: o.customerName || 'Khách lẻ' })}>{o.customerName || 'Khách lẻ'}</button></td>
                     <td className="p-4">
                       <div className="space-y-1.5">
@@ -1309,7 +1330,7 @@ function SalesHistoryView({ orders, imports = [], products, customers, storeConf
                   </tr>
                 );
               })}
-              {paginatedOrders.length === 0 && (<tr><td colSpan="7" className="p-12 text-center text-gray-400 font-medium">Không tìm thấy hóa đơn nào trong thời điểm này</td></tr>)}
+              {paginatedOrders.length === 0 && (<tr><td colSpan="8" className="p-12 text-center text-gray-400 font-medium">Không tìm thấy hóa đơn nào trong thời điểm này</td></tr>)}
             </tbody>
           </table>
         </div>
@@ -2154,6 +2175,7 @@ function InventoryView({ products, orders, imports, warrantyRequests = [], custo
       {selectedIds.length > 0 && (
         <div className="bg-blue-50 border border-blue-200 p-2.5 rounded-xl mb-3 flex justify-between items-center"><span className="text-xs font-bold text-blue-700">Đã chọn {selectedIds.length} mục</span><button onClick={handleBatchDelete} className="bg-blue-600 hover:bg-blue-700 text-white px-3 py-1 rounded-lg text-xs font-bold flex items-center gap-1"><Trash2 size={14}/> Xóa đã chọn</button></div>
       )}
+      {selectedOrderIds.length > 0 && <div className="bg-blue-50 border border-blue-200 p-3 rounded-xl mb-3 flex items-center justify-between gap-3"><span className="font-bold text-blue-700 text-sm">Đã chọn {selectedOrderIds.length} đơn hàng</span><button onClick={handleBatchDeleteOrders} className="bg-blue-600 text-white px-3 py-2 rounded-lg font-bold flex items-center gap-2"><Trash2 size={16}/> Xóa đơn đã chọn</button></div>}
       <div className="flex-1 bg-white rounded-xl border shadow-sm overflow-hidden flex flex-col justify-between">
         <div className="overflow-auto flex-1">
           <table className="w-full text-left text-sm">
@@ -2344,6 +2366,7 @@ function WarrantyView({ products = [], customers = [], suppliers = [], warrantyR
   const [search, setSearch] = useState('');
   const [sortOrder, setSortOrder] = useState('desc');
   const [sortField, setSortField] = useState('sentAt');
+  const [selectedWarrantyIds, setSelectedWarrantyIds] = useState([]);
   const [paperSize, setPaperSize] = useState(storeConfig.warrantyPrintSize || 'A4');
   const locations = Array.isArray(storeConfig.warrantyLocations) ? storeConfig.warrantyLocations : [];
   const locationName = l => typeof l === 'string' ? l : (l?.name || '');
@@ -2525,6 +2548,13 @@ function WarrantyView({ products = [], customers = [], suppliers = [], warrantyR
       showToast('Không xóa được phiếu bảo hành', 'error');
     }
   };
+  const handleBatchDeleteWarranty = async () => {
+    const chosen = (warrantyRequests || []).filter(w => selectedWarrantyIds.includes(w.id));
+    if (!chosen.length) return;
+    if (!window.confirm(`Xóa ${chosen.length} phiếu bảo hành đã chọn? Thao tác này không thể hoàn tác.`)) return;
+    try { const batch = writeBatch(db); chosen.forEach(w => batch.delete(doc(db, 'stores', storeId, 'warrantyRequests', w.id))); await batch.commit(); setSelectedWarrantyIds([]); showToast('Đã xóa các phiếu bảo hành đã chọn'); }
+    catch (e) { showToast('Không xóa được các phiếu bảo hành đã chọn', 'error'); }
+  };
   const printRequest = (w, printMode = 'customer', printOptions = {}) => {
     const cfg = storeConfig[`warrantyPrint${paperSize}`] || storeConfig[paperSize] || {};
     const showDate = printOptions.showDate !== undefined ? printOptions.showDate : cfg.printShowDate !== false;
@@ -2594,16 +2624,17 @@ function WarrantyView({ products = [], customers = [], suppliers = [], warrantyR
     <div className="flex flex-col lg:flex-row gap-3 mb-3"><input value={search} onChange={e=>setSearch(e.target.value)} placeholder="Tìm nhanh STT, tên khách hàng, số điện thoại, sản phẩm, nơi bảo hành..." className="flex-1 p-2.5 border rounded-xl bg-white"/><select value={filter} onChange={e=>setFilter(e.target.value)} className="p-2.5 border rounded-xl bg-white"><option value="PENDING">Chưa hoàn thành</option><option value="COMPLETED">Đã hoàn thành</option><option value="ALL">Tất cả phiếu</option></select><select value={sortField} onChange={e=>setSortField(e.target.value)} className="p-2.5 border rounded-xl bg-white"><option value="customerName">Sắp xếp tên khách hàng</option><option value="warrantyLocation">Sắp xếp nơi nhận bảo hành</option><option value="sentAt">Sắp xếp thời gian gửi</option></select><button onClick={()=>setSortOrder(v=>v==='asc'?'desc':'asc')} className="p-2.5 border rounded-xl bg-white font-bold"><ArrowUpDown size={15} className="inline mr-1"/>{sortOrder==='asc'?'Tăng dần':'Giảm dần'}</button><select value={rowsPerPage} onChange={e=>setRowsPerPage(e.target.value)} className="p-2.5 border rounded-xl bg-white"><option value="10">10 dòng</option><option value="20">20 dòng</option><option value="50">50 dòng</option><option value="all">Tất cả</option></select><div className="flex items-center gap-2"><span className="text-sm">Khổ giấy</span><select value={paperSize} onChange={e=>setPaperSize(e.target.value)} className="p-2.5 border rounded-xl bg-white"><option>A4</option><option>A5</option></select></div></div>
     <section className="flex-1 overflow-auto bg-white rounded-xl border shadow-sm mb-4">
       <div className="p-4 border-b"><h3 className="text-lg font-bold text-gray-800">Chi tiết bảo hành</h3><p className="text-sm text-gray-500">Tập trung phiếu nhận bảo hành của khách hàng và phiếu gửi đến nơi bảo hành trong cùng một danh sách.</p></div>
-      <div className="overflow-x-auto"><table className="w-full text-left text-sm min-w-[1200px]"><thead className="bg-gray-100 sticky top-0"><tr><th className="p-3">STT</th><th className="p-3">Tên khách hàng</th><th className="p-3">Sản phẩm bảo hành</th><th className="p-3">Nơi nhận bảo hành</th><th className="p-3">Thời gian nhận</th><th className="p-3">Thời gian gửi</th><th className="p-3">Số điện thoại khách hàng</th><th className="p-3">Trạng thái bảo hành</th><th className="p-3">Thao tác</th></tr></thead><tbody>
-        {visible.map((w, i) => { const type = w.recordType || (w.supplierName ? 'location' : 'customer'); const isLocation = type === 'location'; return <tr key={w.id} className="border-t hover:bg-gray-50 align-top"><td className="p-3">{i+1}</td><td className="p-3 font-bold">{w.customerName || '—'}</td><td className="p-3">{(w.items || []).map((it, j) => <div key={j}>{it.name || '—'}</div>)}</td><td className="p-3">{w.warrantyLocation || '—'}</td><td className="p-3 whitespace-nowrap">{formatDate(w.createdAt || w.updatedAt || w.saleDate || '')}</td><td className="p-3 whitespace-nowrap">{w.sentAt ? formatDate(w.sentAt) : '—'}</td><td className="p-3">{w.phone || '—'}</td><td className="p-3">{w.status === 'COMPLETED' ? <span className="px-2 py-1 rounded-lg text-xs font-bold bg-green-100 text-green-700">Hoàn thành</span> : <span className="px-2 py-1 rounded-lg text-xs font-bold bg-amber-100 text-amber-800">{isLocation ? 'Đang gửi bảo hành' : 'Đang nhận bảo hành'}</span>}</td><td className="p-3"><div className="flex flex-col gap-2"><button onClick={()=>toggleWarrantyStatus(w)} className="px-3 py-1.5 rounded-lg border font-bold whitespace-nowrap">{w.status === 'COMPLETED' ? 'Chuyển lại đang bảo hành' : 'Đánh dấu hoàn thành'}</button><button onClick={()=>editRequest(w)} className="px-3 py-1.5 rounded-lg border font-bold flex items-center gap-1"><Edit size={14}/> Sửa chi tiết</button><button onClick={()=>setPrintTarget(w)} className="px-3 py-1.5 rounded-lg border font-bold flex items-center gap-1"><Printer size={14}/> In lại phiếu</button><button onClick={()=>deleteRequest(w)} className="px-3 py-1.5 rounded-lg border border-blue-200 text-blue-600 font-bold flex items-center gap-1"><Trash2 size={14}/> Xóa phiếu</button></div></td></tr>; })}
-        {visible.length===0 && <tr><td colSpan={9} className="p-8 text-center text-gray-400">Chưa có lịch sử bảo hành.</td></tr>}
+      <div className="overflow-x-auto">{selectedWarrantyIds.length > 0 && <div className="p-3 flex items-center justify-between bg-blue-50 border-b"><span className="font-bold text-blue-700">Đã chọn {selectedWarrantyIds.length} phiếu bảo hành</span><button onClick={handleBatchDeleteWarranty} className="px-3 py-2 rounded-lg bg-blue-600 text-white font-bold flex items-center gap-2"><Trash2 size={15}/> Xóa phiếu đã chọn</button></div>}<table className="w-full text-left text-sm min-w-[1200px]"><thead className="bg-gray-100 sticky top-0"><tr><th className="p-3"><input type="checkbox" aria-label="Chọn tất cả phiếu bảo hành đang hiển thị" checked={visible.length > 0 && visible.every(w => selectedWarrantyIds.includes(w.id))} onChange={() => setSelectedWarrantyIds(prev => visible.every(w => prev.includes(w.id)) ? prev.filter(id => !visible.some(w => w.id === id)) : [...new Set([...prev, ...visible.map(w => w.id)])])} className="w-4 h-4"/></th><th className="p-3">STT</th><th className="p-3">Tên khách hàng</th><th className="p-3">Sản phẩm bảo hành</th><th className="p-3">Nơi nhận bảo hành</th><th className="p-3">Thời gian nhận</th><th className="p-3">Thời gian gửi</th><th className="p-3">Số điện thoại khách hàng</th><th className="p-3">Trạng thái bảo hành</th><th className="p-3">Thao tác</th></tr></thead><tbody>
+        {visible.map((w, i) => { const type = w.recordType || (w.supplierName ? 'location' : 'customer'); const isLocation = type === 'location'; return <tr key={w.id} className="border-t hover:bg-gray-50 align-top"><td className="p-3" onClick={e=>e.stopPropagation()}><input type="checkbox" aria-label={`Chọn phiếu bảo hành ${w.warrantyCode || w.id}`} checked={selectedWarrantyIds.includes(w.id)} onChange={() => setSelectedWarrantyIds(prev => prev.includes(w.id) ? prev.filter(id => id !== w.id) : [...prev, w.id])} className="w-4 h-4"/></td><td className="p-3">{i+1}</td><td className="p-3 font-bold">{w.customerName || '—'}</td><td className="p-3">{(w.items || []).map((it, j) => <div key={j}>{it.name || '—'}</div>)}</td><td className="p-3">{w.warrantyLocation || '—'}</td><td className="p-3 whitespace-nowrap">{formatDate(w.createdAt || w.updatedAt || w.saleDate || '')}</td><td className="p-3 whitespace-nowrap">{w.sentAt ? formatDate(w.sentAt) : '—'}</td><td className="p-3">{w.phone || '—'}</td><td className="p-3">{w.status === 'COMPLETED' ? <span className="px-2 py-1 rounded-lg text-xs font-bold bg-green-100 text-green-700">Hoàn thành</span> : <span className="px-2 py-1 rounded-lg text-xs font-bold bg-amber-100 text-amber-800">{isLocation ? 'Đang gửi bảo hành' : 'Đang nhận bảo hành'}</span>}</td><td className="p-3"><div className="flex flex-col gap-2"><button onClick={()=>toggleWarrantyStatus(w)} className="px-3 py-1.5 rounded-lg border font-bold whitespace-nowrap">{w.status === 'COMPLETED' ? 'Chuyển lại đang bảo hành' : 'Đánh dấu hoàn thành'}</button><button onClick={()=>editRequest(w)} className="px-3 py-1.5 rounded-lg border font-bold flex items-center gap-1"><Edit size={14}/> Sửa chi tiết</button><button onClick={()=>setPrintTarget(w)} className="px-3 py-1.5 rounded-lg border font-bold flex items-center gap-1"><Printer size={14}/> In lại phiếu</button><button onClick={()=>deleteRequest(w)} className="px-3 py-1.5 rounded-lg border border-blue-200 text-blue-600 font-bold flex items-center gap-1"><Trash2 size={14}/> Xóa phiếu</button></div></td></tr>; })}
+        {visible.length===0 && <tr><td colSpan={10} className="p-8 text-center text-gray-400">Chưa có lịch sử bảo hành.</td></tr>}
       </tbody></table></div>
     </section>
     <div className="flex flex-wrap gap-2 text-xs"><button type="button" onClick={() => navigateMainTab('products')} className="text-blue-700 underline">Mở thẻ Sản phẩm</button><button type="button" onClick={() => navigateMainTab('customers')} className="text-blue-700 underline">Mở thẻ Khách hàng</button><button type="button" onClick={() => navigateMainTab('suppliers')} className="text-blue-700 underline">Mở thẻ Nhà cung cấp</button></div>
     {printTarget && <div className="fixed inset-0 z-[100] bg-black/50 flex items-center justify-center p-4"><div className="bg-white rounded-2xl shadow-xl w-full max-w-md p-5 space-y-4"><h3 className="text-lg font-black">Chọn thẻ in phiếu bảo hành</h3><p className="text-sm text-gray-600">Mã phiếu: {printTarget.warrantyCode || printTarget.id}</p><div className="space-y-2 rounded-xl border bg-gray-50 p-3"><label className="flex items-center gap-2 text-sm font-semibold"><input type="checkbox" checked={showPrintSaleDate} onChange={e=>setShowPrintSaleDate(e.target.checked)}/> Hiển thị thời gian đã bán / đã mua</label><label className="flex items-center gap-2 text-sm font-semibold"><input type="checkbox" checked={showPrintWarrantyDuration} onChange={e=>setShowPrintWarrantyDuration(e.target.checked)}/> Hiển thị thời gian bảo hành</label><label className="flex items-center gap-2 text-sm font-semibold"><input type="checkbox" checked={showPrintLogo} onChange={e=>setShowPrintLogo(e.target.checked)}/> Hiển thị logo công ty</label></div><button onClick={()=>{printRequest(printTarget,'customer',{showDate:showPrintSaleDate,showDuration:showPrintWarrantyDuration,showLogo:showPrintLogo});setPrintTarget(null);}} className="w-full p-3 rounded-xl bg-purple-600 text-white font-bold">Thẻ khách hàng<span className="block text-xs font-normal">Chỉ hiện thông tin và ghi chú của khách hàng</span></button><button onClick={()=>{printRequest(printTarget,'location',{showDate:showPrintSaleDate,showDuration:showPrintWarrantyDuration,showLogo:showPrintLogo});setPrintTarget(null);}} className="w-full p-3 rounded-xl bg-blue-600 text-white font-bold">Thẻ nơi gửi bảo hành<span className="block text-xs font-normal">Ẩn thông tin khách hàng, chỉ hiện thông tin nơi gửi</span></button><button onClick={()=>setPrintTarget(null)} className="w-full p-2 rounded-xl border font-bold">Hủy</button></div></div>}
   </div>;
 }
-function ReportsView({ orders = [], imports = [], expenses = [] }) {
+function ReportsView({ orders = [], imports = [], expenses = [], products = [], suppliers = [], db, storeId, showToast }) {
+  const [selectedReportIds, setSelectedReportIds] = useState({ sales: [], imports: [], expenses: [] });
   const now = getVietnamDateParts(new Date());
   const todayKey = getVietnamDateKey(new Date());
   const [periodMode, setPeriodMode] = useState('day');
@@ -2618,9 +2649,9 @@ function ReportsView({ orders = [], imports = [], expenses = [] }) {
     if (periodMode === 'month') return key.slice(0,7) === selectedMonth;
     return key.slice(0,4) === selectedYear;
   };
-  const salesRows = orders.filter(o => dateMatches(o.date)).map(o => ({ date:o.date, name:o.customerName || o.customer || 'Khách lẻ', detail:(o.items||[]).map(i=>`${i.name||'Sản phẩm'} × ${i.quantity||1}`).join(', '), amount:Number(o.total ?? o.totalAmount ?? 0), id:o.invoiceCode || o.code || o.id }));
-  const importRows = imports.filter(i => dateMatches(i.date)).map(i => ({ date:i.date, name:i.supplierName || i.supplier || 'Chưa có nhà cung cấp', detail:(i.items||[]).map(p=>`${p.name||'Sản phẩm'} × ${p.quantity||1}`).join(', '), amount:Number(i.total ?? i.totalAmount ?? i.totalCost ?? (i.items||[]).reduce((sum,p)=>sum+(Number(p.quantity)||0)*(Number(p.importCost ?? p.costPrice ?? p.cost)||0),0)), id:i.code || i.id }));
-  const expenseRows = expenses.filter(e => dateMatches(e.date)).map(e => ({ date:e.date, name:e.note || e.description || 'Chi phí', detail:e.note || e.description || '', amount:Number(e.amount)||0, id:e.id }));
+  const salesRows = orders.filter(o => dateMatches(o.date)).map(o => ({ date:o.date, name:o.customerName || o.customer || 'Khách lẻ', detail:(o.items||[]).map(i=>`${i.name||'Sản phẩm'} × ${i.quantity||1}`).join(', '), amount:Number(o.total ?? o.totalAmount ?? 0), id:o.invoiceCode || o.code || o.id, sourceId:o.id }));
+  const importRows = imports.filter(i => dateMatches(i.date)).map(i => ({ date:i.date, name:i.supplierName || i.supplier || 'Chưa có nhà cung cấp', detail:(i.items||[]).map(p=>`${p.name||'Sản phẩm'} × ${p.quantity||1}`).join(', '), amount:Number(i.total ?? i.totalAmount ?? i.totalCost ?? (i.items||[]).reduce((sum,p)=>sum+(Number(p.quantity)||0)*(Number(p.importCost ?? p.costPrice ?? p.cost)||0),0)), id:i.code || i.id, sourceId:i.id }));
+  const expenseRows = expenses.filter(e => dateMatches(e.date)).map(e => ({ date:e.date, name:e.note || e.description || 'Chi phí', detail:e.note || e.description || '', amount:Number(e.amount)||0, id:e.id, sourceId:e.id }));
   const money = value => `${(Number(value)||0).toLocaleString('vi-VN')} đ`;
   const printReport = (title, rows, total) => {
     const safe = value => String(value ?? '').replace(/[&<>"']/g, c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
@@ -2628,11 +2659,27 @@ function ReportsView({ orders = [], imports = [], expenses = [] }) {
     win.document.write(`<!doctype html><html lang="vi"><head><meta charset="utf-8"><title>${safe(title)}</title><style>body{font-family:Arial,sans-serif;padding:20px;color:#111}h1{text-align:center;font-size:20px}table{width:100%;border-collapse:collapse;margin-top:16px}th,td{border:1px solid #555;padding:7px;text-align:left}th{background:#eee}.total{text-align:right;font-weight:bold;margin-top:14px}@media print{button{display:none}}</style></head><body><h1>${safe(title)}</h1><p>Thời gian: ${safe(periodMode==='day'?selectedDate:periodMode==='month'?selectedMonth:selectedYear)}</p><table><thead><tr><th>STT</th><th>Ngày</th><th>Khách hàng/Nội dung</th><th>Chi tiết</th><th>Số tiền</th></tr></thead><tbody>${rows.map((r,i)=>`<tr><td>${i+1}</td><td>${safe(r.date?formatDate(r.date):'—')}</td><td>${safe(r.name)}</td><td>${safe(r.detail)}</td><td>${safe(money(r.amount))}</td></tr>`).join('')}</tbody></table><p class="total">Tổng: ${safe(money(total))}</p><script>window.onload=()=>window.print()</script></body></html>`);
     win.document.close();
   };
+  const deleteSelectedReportRows = async (key, rows) => {
+    const chosen = rows.filter(r => selectedReportIds[key].includes(r.sourceId));
+    if (!chosen.length) return;
+    const collectionName = key === 'sales' ? 'orders' : key === 'imports' ? 'imports' : 'expenses';
+    if (!window.confirm(`Xóa ${chosen.length} dòng đã chọn trong ${titleForReport(key)}?`)) return;
+    try {
+      const batch = writeBatch(db); const stockDelta = new Map(); const debtDelta = new Map();
+      if (key === 'sales') chosen.forEach(row => { const order = orders.find(o => o.id === row.sourceId); (order?.items || []).forEach(it => { const pid = it.id || it.productId; if (pid) stockDelta.set(pid, (stockDelta.get(pid) || 0) + Number(it.quantity ?? it.qty ?? 1)); }); });
+      if (key === 'imports') chosen.forEach(row => { const rec = imports.find(im => im.id === row.sourceId); (rec?.items || []).forEach(it => { const pid = it.id || it.productId; if (pid) stockDelta.set(pid, (stockDelta.get(pid) || 0) - Number(it.qty ?? it.quantity ?? 0)); }); if (rec?.status === 'DEBT' && rec.supplierId) debtDelta.set(rec.supplierId, (debtDelta.get(rec.supplierId) || 0) - Number(rec.total || 0)); });
+      stockDelta.forEach((delta, pid) => { const product = products.find(p => p.id === pid); if (product) batch.update(doc(db, 'stores', storeId, 'products', pid), { stock: Math.max(0, Number(product.stock || 0) + delta) }); });
+      debtDelta.forEach((delta, sid) => { const supplier = suppliers.find(x => x.id === sid); if (supplier) batch.update(doc(db, 'stores', storeId, 'suppliers', sid), { totalDebt: Math.max(0, Number(supplier.totalDebt || 0) + delta) }); });
+      chosen.forEach(r => batch.delete(doc(db, 'stores', storeId, collectionName, r.sourceId)));
+      await batch.commit(); setSelectedReportIds(prev => ({ ...prev, [key]: [] })); showToast(key === 'sales' || key === 'imports' ? 'Đã xóa dữ liệu đã chọn và điều chỉnh tồn kho/công nợ' : 'Đã xóa các dòng báo cáo đã chọn');
+    } catch (e) { showToast('Không xóa được dữ liệu báo cáo đã chọn', 'error'); }
+  };
+  const titleForReport = key => key === 'sales' ? 'báo cáo bán hàng' : key === 'imports' ? 'báo cáo nhập hàng' : 'báo cáo chi phí';
   const renderReport = (key, title, rows) => {
     const limit = rowsByReport[key] === 'all' ? rows.length : Number(rowsByReport[key]) || 10;
     const shown = rows.slice(0, limit);
     const total = rows.reduce((sum, row)=>sum+row.amount,0);
-    return <section key={key} className="bg-white rounded-2xl border shadow-sm p-4 space-y-3"><div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2"><div><h3 className="text-lg font-bold text-gray-800">{title}</h3><p className="text-sm text-gray-500">Số tiền: <strong className="text-blue-600">{money(total)}</strong> · {rows.length} dòng</p></div><div className="flex flex-wrap items-center gap-2"><label className="text-sm">Hiển thị <select className="border rounded-lg p-2" value={rowsByReport[key]} onChange={e=>setRowsByReport(prev=>({...prev,[key]:e.target.value}))}><option value="10">10</option><option value="20">20</option><option value="50">50</option><option value="all">Tất cả</option></select></label><button onClick={()=>printReport(title, rows, total)} className="px-3 py-2 rounded-lg bg-blue-600 text-white font-bold flex items-center gap-2"><Printer size={16}/> In báo cáo</button></div></div><div className="overflow-x-auto"><table className="w-full text-sm min-w-[600px]"><thead className="bg-blue-50"><tr><th className="p-2 text-left">STT</th><th className="p-2 text-left">Ngày</th><th className="p-2 text-left">Khách hàng/Nội dung</th><th className="p-2 text-left">Chi tiết</th><th className="p-2 text-right">Số tiền</th></tr></thead><tbody>{shown.map((r,i)=><tr key={r.id||`${key}-${i}`} className="border-t"><td className="p-2">{i+1}</td><td className="p-2 whitespace-nowrap">{r.date?formatDate(r.date):'—'}</td><td className="p-2">{r.name}</td><td className="p-2">{r.detail||'—'}</td><td className="p-2 text-right font-semibold">{money(r.amount)}</td></tr>)}{shown.length===0&&<tr><td colSpan="5" className="p-5 text-center text-gray-400">Không có dữ liệu trong khoảng thời gian đã chọn.</td></tr>}</tbody></table></div></section>;
+    return <section key={key} className="bg-white rounded-2xl border shadow-sm p-4 space-y-3"><div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2"><div><h3 className="text-lg font-bold text-gray-800">{title}</h3><p className="text-sm text-gray-500">Số tiền: <strong className="text-blue-600">{money(total)}</strong> · {rows.length} dòng</p></div><div className="flex flex-wrap items-center gap-2"><label className="text-sm">Hiển thị <select className="border rounded-lg p-2" value={rowsByReport[key]} onChange={e=>setRowsByReport(prev=>({...prev,[key]:e.target.value}))}><option value="10">10</option><option value="20">20</option><option value="50">50</option><option value="all">Tất cả</option></select></label>{selectedReportIds[key].length > 0 && <button onClick={()=>deleteSelectedReportRows(key, rows)} className="px-3 py-2 rounded-lg bg-red-600 text-white font-bold flex items-center gap-2"><Trash2 size={16}/> Xóa đã chọn ({selectedReportIds[key].length})</button>}<button onClick={()=>printReport(title, rows, total)} className="px-3 py-2 rounded-lg bg-blue-600 text-white font-bold flex items-center gap-2"><Printer size={16}/> In báo cáo</button></div></div><div className="overflow-x-auto"><table className="w-full text-sm min-w-[600px]"><thead className="bg-blue-50"><tr><th className="p-2"><input type="checkbox" aria-label={`Chọn tất cả ${title}`} checked={shown.length > 0 && shown.every(r => selectedReportIds[key].includes(r.sourceId))} onChange={() => setSelectedReportIds(prev => ({ ...prev, [key]: shown.every(r => prev[key].includes(r.sourceId)) ? prev[key].filter(id => !shown.some(r => r.sourceId === id)) : [...new Set([...prev[key], ...shown.map(r => r.sourceId)])] }))} className="w-4 h-4"/></th><th className="p-2 text-left">STT</th><th className="p-2 text-left">Ngày</th><th className="p-2 text-left">Khách hàng/Nội dung</th><th className="p-2 text-left">Chi tiết</th><th className="p-2 text-right">Số tiền</th></tr></thead><tbody>{shown.map((r,i)=><tr key={r.sourceId||`${key}-${i}`} className="border-t"><td className="p-2"><input type="checkbox" aria-label={`Chọn dòng ${r.id}`} checked={selectedReportIds[key].includes(r.sourceId)} onChange={() => setSelectedReportIds(prev => ({ ...prev, [key]: prev[key].includes(r.sourceId) ? prev[key].filter(id => id !== r.sourceId) : [...prev[key], r.sourceId] }))} className="w-4 h-4"/></td><td className="p-2">{i+1}</td><td className="p-2 whitespace-nowrap">{r.date?formatDate(r.date):'—'}</td><td className="p-2">{r.name}</td><td className="p-2">{r.detail||'—'}</td><td className="p-2 text-right font-semibold">{money(r.amount)}</td></tr>)}{shown.length===0&&<tr><td colSpan="6" className="p-5 text-center text-gray-400">Không có dữ liệu trong khoảng thời gian đã chọn.</td></tr>}</tbody></table></div></section>;
   };
   return <div className="p-4 md:p-6 space-y-4 overflow-auto"><div><h2 className="text-2xl font-bold text-gray-800 flex items-center gap-2"><FileText className="text-blue-600"/> Báo cáo</h2><p className="text-sm text-gray-500">Báo cáo bán hàng, nhập hàng và chi phí theo khoảng thời gian.</p></div><section className="bg-white rounded-2xl border shadow-sm p-4"><div className="flex flex-wrap items-end gap-3"><label className="text-sm font-semibold">Xem theo<select value={periodMode} onChange={e=>setPeriodMode(e.target.value)} className="block mt-1 border rounded-lg p-2"><option value="day">Ngày</option><option value="month">Tháng</option><option value="year">Năm</option></select></label>{periodMode==='day'&&<label className="text-sm font-semibold">Ngày<input type="date" value={selectedDate} onChange={e=>setSelectedDate(e.target.value)} className="block mt-1 border rounded-lg p-2"/></label>}{periodMode==='month'&&<label className="text-sm font-semibold">Tháng<input type="month" value={selectedMonth} onChange={e=>setSelectedMonth(e.target.value)} className="block mt-1 border rounded-lg p-2"/></label>}{periodMode==='year'&&<label className="text-sm font-semibold">Năm<select value={selectedYear} onChange={e=>setSelectedYear(e.target.value)} className="block mt-1 border rounded-lg p-2">{Array.from({length:12},(_,i)=>now.year-i).map(y=><option key={y} value={String(y)}>{y}</option>)}</select></label>}</div></section>{renderReport('sales','Báo cáo bán hàng',salesRows)}{renderReport('imports','Báo cáo nhập hàng',importRows)}{renderReport('expenses','Báo cáo chi phí',expenseRows)}</div>;
 }
@@ -2749,6 +2796,7 @@ function ImportView({ products, imports = [], suppliers, db, storeId, user, user
   const [historySupplierFilter, setHistorySupplierFilter] = useState('ALL');
   const [historyFromDate, setHistoryFromDate] = useState('');
   const [historyToDate, setHistoryToDate] = useState('');
+  const [selectedImportIds, setSelectedImportIds] = useState([]);
   const handleHistorySort = (field) => setHistorySort(prev => ({ field, direction: prev.field === field && prev.direction === 'desc' ? 'asc' : 'desc' }));
   const [importTotalPeriod, setImportTotalPeriod] = useState('month');
   const [importTotalMonth, setImportTotalMonth] = useState(String(getVietnamDateParts(new Date()).month));
@@ -2859,6 +2907,18 @@ function ImportView({ products, imports = [], suppliers, db, storeId, user, user
   });
   const paginatedImports = historyRowsPerPage === 'all' ? filteredHistoryImports : filteredHistoryImports.slice((historyCurrentPage - 1) * (Number(historyRowsPerPage) || 10), historyCurrentPage * (Number(historyRowsPerPage) || 10));
   const totalHistoryPages = historyRowsPerPage === 'all' ? 1 : Math.ceil(filteredHistoryImports.length / (Number(historyRowsPerPage) || 10));
+  const handleBatchDeleteImports = async () => {
+    const chosen = filteredHistoryImports.filter(im => selectedImportIds.includes(im.id));
+    if (!chosen.length) return;
+    if (!window.confirm(`Xóa ${chosen.length} phiếu nhập đã chọn? Tồn kho và công nợ nhà cung cấp sẽ được điều chỉnh.`)) return;
+    try {
+      const batch = writeBatch(db); const stockDelta = new Map(); const debtDelta = new Map();
+      chosen.forEach(im => { (im.items || []).forEach(it => { const pid = it.id || it.productId; if (pid) stockDelta.set(pid, (stockDelta.get(pid) || 0) - Number(it.qty ?? it.quantity ?? 0)); }); if (im.status === 'DEBT' && im.supplierId) debtDelta.set(im.supplierId, (debtDelta.get(im.supplierId) || 0) - Number(im.total || 0)); batch.delete(doc(db, 'stores', storeId, 'imports', im.id)); });
+      stockDelta.forEach((delta, pid) => { const product = products.find(p => p.id === pid); if (product) batch.update(doc(db, 'stores', storeId, 'products', pid), { stock: Math.max(0, Number(product.stock || 0) + delta) }); });
+      debtDelta.forEach((delta, sid) => { const supplier = suppliers.find(x => x.id === sid); if (supplier) batch.update(doc(db, 'stores', storeId, 'suppliers', sid), { totalDebt: Math.max(0, Number(supplier.totalDebt || 0) + delta) }); });
+      await batch.commit(); setSelectedImportIds([]); showToast('Đã xóa các phiếu nhập đã chọn và điều chỉnh tồn kho/công nợ');
+    } catch (err) { showToast('Không thể xóa phiếu nhập: ' + (err.message || ''), 'error'); }
+  };
   const importPeriodRows = sortedImports.filter(im => {
     if (!im.date) return false;
     const d = getVietnamDateParts(new Date(im.date));
@@ -2878,7 +2938,7 @@ function ImportView({ products, imports = [], suppliers, db, storeId, user, user
         <div className="flex-1 overflow-auto p-4 md:p-6 space-y-4">
           <div className="flex flex-wrap items-center justify-between gap-3"><div><h2 className="text-xl font-bold text-gray-800">Lịch sử nhập hàng</h2><p className="text-sm text-gray-500 mt-1">Danh sách các phiếu nhập hàng đã ghi nhận, bao gồm phiếu nhập từ Excel.</p></div><div className="flex flex-wrap gap-2"><button onClick={() => setActiveImportTab('create')} className="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2.5 rounded-xl text-sm font-bold flex items-center gap-2"><Plus size={16}/> Tạo phiếu nhập</button></div></div>
           <div className="bg-white rounded-xl border shadow-sm p-4"><div className="flex flex-wrap items-center gap-2 mb-2"><span className="font-bold text-sm text-purple-700">Tổng tiền nhập theo</span><select value={importTotalPeriod} onChange={e=>setImportTotalPeriod(e.target.value)} className="border rounded p-1.5 text-sm"><option value="year">Năm</option></select><select value={importTotalYear} onChange={e=>setImportTotalYear(e.target.value)} className="border rounded p-1.5 text-sm">{Array.from({length:8},(_,i)=>getVietnamDateParts(new Date()).year-i).map(y=><option key={y} value={String(y)}>{y}</option>)}</select></div><div className="text-2xl font-extrabold text-purple-700">{formatCurrency(importPeriodTotal)}</div><div className="text-xs text-gray-500">{importPeriodRows.length} phiếu nhập trong khoảng đã chọn · mặc định tháng hiện tại</div></div>
-          <div className="bg-white rounded-xl border shadow-sm overflow-hidden"><div className="p-3 border-b bg-gray-50 grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-2"><div className="relative"><Search size={16} className="absolute left-3 top-3 text-gray-400"/><input value={historySearch} onChange={e=>{setHistorySearch(e.target.value);setHistoryCurrentPage(1);}} placeholder="Tìm mã phiếu, nhà cung cấp, chi tiết hàng hóa..." className="w-full pl-9 pr-3 py-2 border rounded-lg bg-white text-sm"/></div><select value={historySupplierFilter} onChange={e=>{setHistorySupplierFilter(e.target.value);setHistoryCurrentPage(1);}} className="p-2 border rounded-lg bg-white text-sm"><option value="ALL">Tất cả nhà cung cấp</option>{suppliers.map(s=><option key={s.id} value={s.id}>{s.name}</option>)}</select><label className="flex items-center gap-2 text-xs font-semibold">Từ ngày<input type="date" value={historyFromDate} onChange={e=>{setHistoryFromDate(e.target.value);setHistoryCurrentPage(1);}} className="min-w-0 flex-1 p-2 border rounded-lg bg-white"/></label><label className="flex items-center gap-2 text-xs font-semibold">Đến ngày<input type="date" value={historyToDate} onChange={e=>{setHistoryToDate(e.target.value);setHistoryCurrentPage(1);}} className="min-w-0 flex-1 p-2 border rounded-lg bg-white"/></label></div><div className="overflow-auto"><table className="w-full text-left text-sm min-w-[850px]"><thead className="bg-gray-100 text-gray-600"><tr><th className="p-3 cursor-pointer hover:bg-gray-200 whitespace-nowrap" onClick={() => handleHistorySort('date')}>Ngày nhập {historySort.field==='date' ? (historySort.direction==='asc' ? '↑' : '↓') : '↕'}</th><th className="p-3 cursor-pointer hover:bg-gray-200" onClick={() => handleHistorySort('code')}>Mã phiếu {historySort.field==='code' ? (historySort.direction==='asc' ? '↑' : '↓') : '↕'}</th><th className="p-3 cursor-pointer hover:bg-gray-200" onClick={() => handleHistorySort('supplier')}>Nhà cung cấp {historySort.field==='supplier' ? (historySort.direction==='asc' ? '↑' : '↓') : '↕'}</th><th className="p-3 cursor-pointer hover:bg-gray-200" onClick={() => handleHistorySort('items')}>Chi tiết hàng hóa {historySort.field==='items' ? (historySort.direction==='asc' ? '↑' : '↓') : '↕'}</th><th className="p-3 text-right cursor-pointer hover:bg-gray-200" onClick={() => handleHistorySort('total')}>Tổng tiền {historySort.field==='total' ? (historySort.direction==='asc' ? '↑' : '↓') : '↕'}</th><th className="p-3 cursor-pointer hover:bg-gray-200" onClick={() => handleHistorySort('status')}>Trạng thái {historySort.field==='status' ? (historySort.direction==='asc' ? '↑' : '↓') : '↕'}</th>{importColumns.actions && <th className="p-3 text-right">Thao tác</th>}</tr></thead><tbody>{paginatedImports.map((im, idx) => <tr key={im.id || idx} className="border-t hover:bg-gray-50 align-top"><td className="p-3 whitespace-nowrap">{im.date ? formatDate(im.date) : '—'}</td><td className="p-3 font-semibold">{im.invoiceCode || im.receiptCode || (im.id ? im.id.slice(0, 8) : '—')}</td><td className="p-3">{im.supplierName || 'Chưa rõ nhà cung cấp'}</td><td className="p-3">{(im.items || []).length ? <div className="space-y-1">{im.items.map((it, i) => <div key={i}>{it.name || 'Sản phẩm'} × {Number(it.qty ?? it.quantity ?? 0)}</div>)}</div> : 'Không có chi tiết hàng hóa'}</td><td className="p-3 text-right font-bold whitespace-nowrap">{formatCurrency(Number(im.total) || 0)}</td><td className="p-3"><span className={`px-2 py-1 rounded-lg text-xs font-bold ${im.status === 'DEBT' ? 'bg-orange-50 text-orange-700' : 'bg-green-50 text-green-700'}`}>{im.status === 'DEBT' ? 'Ghi nợ' : 'Đã thanh toán'}</span></td>{importColumns.actions && <td className="p-3"><div className="flex justify-end gap-1"><button onClick={() => setDetailImport(im)} className="text-gray-600 bg-gray-100 p-2 rounded-lg hover:bg-gray-200" title="Xem chi tiết phiếu nhập"><Eye size={15}/></button><button onClick={() => { setEditingImport(im); setSupplierId(im.supplierId || suppliers.find(x => x.name === im.supplierName)?.id || ''); setCart((im.items || []).map(it => ({...it, id: it.id || it.productId, qty: Number(it.qty ?? it.quantity ?? 1), importCost: Number(it.importCost ?? it.cost ?? 0)}))); setIsDebt(im.status === 'DEBT'); setActiveImportTab('create'); }} className="text-blue-600 bg-blue-50 p-2 rounded-lg hover:bg-blue-100" title="Sửa phiếu nhập"><Edit size={15}/></button><button onClick={async () => { if (!window.confirm('Xóa phiếu nhập này? Tồn kho và công nợ nhà cung cấp sẽ được điều chỉnh lại.')) return; try { const batch = writeBatch(db); (im.items || []).forEach(it => { const pid = it.id || it.productId; const p = products.find(prod => prod.id === pid); if (p) batch.update(doc(db, 'stores', storeId, 'products', pid), { stock: Number(p.stock || 0) - Number(it.qty ?? it.quantity ?? 0) }); }); const sup = suppliers.find(x => x.id === im.supplierId); if (im.status === 'DEBT' && sup) batch.update(doc(db, 'stores', storeId, 'suppliers', sup.id), { totalDebt: Math.max(0, Number(sup.totalDebt || 0) - Number(im.total || 0)) }); batch.delete(doc(db, 'stores', storeId, 'imports', im.id)); await batch.commit(); showToast('Đã xóa phiếu nhập'); } catch (err) { showToast('Không xóa được phiếu nhập: ' + err.message, 'error'); } }} className="text-blue-600 bg-blue-50 p-2 rounded-lg hover:bg-blue-100" title="Xóa phiếu nhập"><Trash2 size={15}/></button></div></td>}</tr>)}{paginatedImports.length === 0 && <tr><td colSpan={7} className="p-10 text-center text-gray-400">Chưa có lịch sử nhập hàng.</td></tr>}</tbody></table><PaginationControls currentPage={historyCurrentPage} totalPages={totalHistoryPages} rowsPerPage={historyRowsPerPage} onPageChange={setHistoryCurrentPage} onRowsChange={r=>{setHistoryRowsPerPage(r);setHistoryCurrentPage(1);}} totalItems={filteredHistoryImports.length}/></div></div>
+          <div className="bg-white rounded-xl border shadow-sm overflow-hidden"><div className="p-3 border-b bg-gray-50 grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-2"><div className="relative"><Search size={16} className="absolute left-3 top-3 text-gray-400"/><input value={historySearch} onChange={e=>{setHistorySearch(e.target.value);setHistoryCurrentPage(1);}} placeholder="Tìm mã phiếu, nhà cung cấp, chi tiết hàng hóa..." className="w-full pl-9 pr-3 py-2 border rounded-lg bg-white text-sm"/></div><select value={historySupplierFilter} onChange={e=>{setHistorySupplierFilter(e.target.value);setHistoryCurrentPage(1);}} className="p-2 border rounded-lg bg-white text-sm"><option value="ALL">Tất cả nhà cung cấp</option>{suppliers.map(s=><option key={s.id} value={s.id}>{s.name}</option>)}</select><label className="flex items-center gap-2 text-xs font-semibold">Từ ngày<input type="date" value={historyFromDate} onChange={e=>{setHistoryFromDate(e.target.value);setHistoryCurrentPage(1);}} className="min-w-0 flex-1 p-2 border rounded-lg bg-white"/></label><label className="flex items-center gap-2 text-xs font-semibold">Đến ngày<input type="date" value={historyToDate} onChange={e=>{setHistoryToDate(e.target.value);setHistoryCurrentPage(1);}} className="min-w-0 flex-1 p-2 border rounded-lg bg-white"/></label></div><div className="overflow-auto">{selectedImportIds.length > 0 && <div className="p-3 flex items-center justify-between bg-blue-50 border-b"><span className="font-bold text-blue-700">Đã chọn {selectedImportIds.length} phiếu nhập</span><button onClick={handleBatchDeleteImports} className="px-3 py-2 rounded-lg bg-blue-600 text-white font-bold flex items-center gap-2"><Trash2 size={15}/> Xóa phiếu đã chọn</button></div>}<table className="w-full text-left text-sm min-w-[850px]"><thead className="bg-gray-100 text-gray-600"><tr><th className="p-3"><input type="checkbox" aria-label="Chọn tất cả phiếu nhập đang hiển thị" checked={paginatedImports.length > 0 && paginatedImports.every(im => selectedImportIds.includes(im.id))} onChange={() => setSelectedImportIds(prev => paginatedImports.every(im => prev.includes(im.id)) ? prev.filter(id => !paginatedImports.some(im => im.id === id)) : [...new Set([...prev, ...paginatedImports.map(im => im.id)])])} className="w-4 h-4"/></th><th className="p-3 cursor-pointer hover:bg-gray-200 whitespace-nowrap" onClick={() => handleHistorySort('date')}>Ngày nhập {historySort.field==='date' ? (historySort.direction==='asc' ? '↑' : '↓') : '↕'}</th><th className="p-3 cursor-pointer hover:bg-gray-200" onClick={() => handleHistorySort('code')}>Mã phiếu {historySort.field==='code' ? (historySort.direction==='asc' ? '↑' : '↓') : '↕'}</th><th className="p-3 cursor-pointer hover:bg-gray-200" onClick={() => handleHistorySort('supplier')}>Nhà cung cấp {historySort.field==='supplier' ? (historySort.direction==='asc' ? '↑' : '↓') : '↕'}</th><th className="p-3 cursor-pointer hover:bg-gray-200" onClick={() => handleHistorySort('items')}>Chi tiết hàng hóa {historySort.field==='items' ? (historySort.direction==='asc' ? '↑' : '↓') : '↕'}</th><th className="p-3 text-right cursor-pointer hover:bg-gray-200" onClick={() => handleHistorySort('total')}>Tổng tiền {historySort.field==='total' ? (historySort.direction==='asc' ? '↑' : '↓') : '↕'}</th><th className="p-3 cursor-pointer hover:bg-gray-200" onClick={() => handleHistorySort('status')}>Trạng thái {historySort.field==='status' ? (historySort.direction==='asc' ? '↑' : '↓') : '↕'}</th>{importColumns.actions && <th className="p-3 text-right">Thao tác</th>}</tr></thead><tbody>{paginatedImports.map((im, idx) => <tr key={im.id || idx} className="border-t hover:bg-gray-50 align-top"><td className="p-3" onClick={e=>e.stopPropagation()}><input type="checkbox" aria-label={`Chọn phiếu nhập ${im.id}`} checked={selectedImportIds.includes(im.id)} onChange={() => setSelectedImportIds(prev => prev.includes(im.id) ? prev.filter(id => id !== im.id) : [...prev, im.id])} className="w-4 h-4"/></td><td className="p-3 whitespace-nowrap">{im.date ? formatDate(im.date) : '—'}</td><td className="p-3 font-semibold">{im.invoiceCode || im.receiptCode || (im.id ? im.id.slice(0, 8) : '—')}</td><td className="p-3">{im.supplierName || 'Chưa rõ nhà cung cấp'}</td><td className="p-3">{(im.items || []).length ? <div className="space-y-1">{im.items.map((it, i) => <div key={i}>{it.name || 'Sản phẩm'} × {Number(it.qty ?? it.quantity ?? 0)}</div>)}</div> : 'Không có chi tiết hàng hóa'}</td><td className="p-3 text-right font-bold whitespace-nowrap">{formatCurrency(Number(im.total) || 0)}</td><td className="p-3"><span className={`px-2 py-1 rounded-lg text-xs font-bold ${im.status === 'DEBT' ? 'bg-orange-50 text-orange-700' : 'bg-green-50 text-green-700'}`}>{im.status === 'DEBT' ? 'Ghi nợ' : 'Đã thanh toán'}</span></td>{importColumns.actions && <td className="p-3"><div className="flex justify-end gap-1"><button onClick={() => setDetailImport(im)} className="text-gray-600 bg-gray-100 p-2 rounded-lg hover:bg-gray-200" title="Xem chi tiết phiếu nhập"><Eye size={15}/></button><button onClick={() => { setEditingImport(im); setSupplierId(im.supplierId || suppliers.find(x => x.name === im.supplierName)?.id || ''); setCart((im.items || []).map(it => ({...it, id: it.id || it.productId, qty: Number(it.qty ?? it.quantity ?? 1), importCost: Number(it.importCost ?? it.cost ?? 0)}))); setIsDebt(im.status === 'DEBT'); setActiveImportTab('create'); }} className="text-blue-600 bg-blue-50 p-2 rounded-lg hover:bg-blue-100" title="Sửa phiếu nhập"><Edit size={15}/></button><button onClick={async () => { if (!window.confirm('Xóa phiếu nhập này? Tồn kho và công nợ nhà cung cấp sẽ được điều chỉnh lại.')) return; try { const batch = writeBatch(db); (im.items || []).forEach(it => { const pid = it.id || it.productId; const p = products.find(prod => prod.id === pid); if (p) batch.update(doc(db, 'stores', storeId, 'products', pid), { stock: Number(p.stock || 0) - Number(it.qty ?? it.quantity ?? 0) }); }); const sup = suppliers.find(x => x.id === im.supplierId); if (im.status === 'DEBT' && sup) batch.update(doc(db, 'stores', storeId, 'suppliers', sup.id), { totalDebt: Math.max(0, Number(sup.totalDebt || 0) - Number(im.total || 0)) }); batch.delete(doc(db, 'stores', storeId, 'imports', im.id)); await batch.commit(); showToast('Đã xóa phiếu nhập'); } catch (err) { showToast('Không xóa được phiếu nhập: ' + err.message, 'error'); } }} className="text-blue-600 bg-blue-50 p-2 rounded-lg hover:bg-blue-100" title="Xóa phiếu nhập"><Trash2 size={15}/></button></div></td>}</tr>)}{paginatedImports.length === 0 && <tr><td colSpan={7} className="p-10 text-center text-gray-400">Chưa có lịch sử nhập hàng.</td></tr>}</tbody></table><PaginationControls currentPage={historyCurrentPage} totalPages={totalHistoryPages} rowsPerPage={historyRowsPerPage} onPageChange={setHistoryCurrentPage} onRowsChange={r=>{setHistoryRowsPerPage(r);setHistoryCurrentPage(1);}} totalItems={filteredHistoryImports.length}/></div></div>
         </div>
       ) : (
       <Modal isOpen={activeImportTab === 'create'} onClose={() => setActiveImportTab('history')} title={editingImport ? 'Sửa phiếu nhập hàng' : 'Tạo phiếu nhập hàng'} maxWidth="max-w-6xl">
@@ -3014,15 +3074,6 @@ function SettingsView({ db, storeId, showToast, storeConfig }) {
   const [deletePassword, setDeletePassword] = useState('');
   const [deletePasswordConfirm, setDeletePasswordConfirm] = useState('');
   const [deletingData, setDeletingData] = useState(false);
-  const [deleteProgress, setDeleteProgress] = useState('');
-  // Chế độ xóa thủ công: tải một nhóm bản ghi, đánh dấu từng dòng rồi mới xóa.
-  const [manualDeleteCollection, setManualDeleteCollection] = useState('orders');
-  const [manualDeleteDocs, setManualDeleteDocs] = useState([]);
-  const [manualSelectedIds, setManualSelectedIds] = useState([]);
-  const [manualLoading, setManualLoading] = useState(false);
-  const [manualDeletePassword, setManualDeletePassword] = useState('');
-  const [manualDeletePasswordConfirm, setManualDeletePasswordConfirm] = useState('');
-  const [manualDeleteProgress, setManualDeleteProgress] = useState('');
 
   useEffect(() => {
     if (storeConfig) {
@@ -3112,9 +3163,10 @@ function SettingsView({ db, storeId, showToast, storeConfig }) {
             const supplierSnap = await getDocs(collection(db, 'stores', storeId, 'suppliers'));
             const productDocs = productSnap.docs.map(d => ({ id: d.id, ...d.data() }));
             const productByName = new Map(productDocs.map(p => [String(p.name || '').trim().toLowerCase(), p]));
+            const productByCode = new Map(productDocs.map(p => [String(p.kiotVietCode || p.code || p.productCode || '').trim().toLowerCase(), p]).filter(([code]) => code));
             const supplierByName = new Map(supplierSnap.docs.map(d => [String(d.data().name || '').trim().toLowerCase(), { id: d.id, ...d.data() }]));
             const existingImportSnap = await getDocs(collection(db, 'stores', storeId, 'imports'));
-            const existingReceiptCodes = new Set(existingImportSnap.docs.map(d => String(d.data().receiptCode || d.data().invoiceCode || '').trim()).filter(Boolean));
+            const existingReceiptCodes = new Set(existingImportSnap.docs.map(d => String(d.data().receiptCode || d.data().invoiceCode || d.data().kiotVietReceiptCode || '').trim().toLowerCase()).filter(Boolean));
             const receipts = {};
             const parseExcelDate = (value) => {
               if (!value) return new Date().toISOString();
@@ -3127,11 +3179,13 @@ function SettingsView({ db, storeId, showToast, storeConfig }) {
               const qty = Number(row['Số lượng'] || row['SL nhập'] || row['Số lượng nhập']) || 0;
               if (!productName || qty <= 0) return;
               const supplierName = String(row['Tên nhà cung cấp'] || row['Nhà cung cấp'] || '').trim() || 'Nhà cung cấp Excel';
-              const receiptCode = String(row['Mã phiếu nhập'] || row['Mã nhập hàng'] || row['Mã chứng từ'] || '').trim();
+              const receiptCode = String(row['Mã nhập hàng'] || row['Mã phiếu nhập'] || row['Mã chứng từ'] || '').trim();
               const date = parseExcelDate(row['Thời gian'] || row['Ngày nhập'] || row['Ngày tạo']);
-              const groupKey = receiptCode || `${supplierName}|${date.slice(0, 10)}`;
+              if (!receiptCode) throw new Error('File lịch sử nhập hàng thiếu cột Mã nhập hàng/Mã phiếu nhập. Không thể đồng bộ an toàn vì nhập lại có thể tạo phiếu trùng.');
+              const groupKey = receiptCode.toLowerCase();
               if (!receipts[groupKey]) receipts[groupKey] = { receiptCode, supplierName, date, items: [], total: 0, source: 'KiotViet Excel' };
-              const product = productByName.get(productName.toLowerCase());
+              const productCode = String(row['Mã hàng'] || '').trim().toLowerCase();
+              const product = (productCode && productByCode.get(productCode)) || productByName.get(productName.toLowerCase());
               const unitCost = Number(row['Giá nhập'] || row['Đơn giá nhập'] || row['Giá vốn'] || row['Đơn giá']) || 0;
               const lineTotal = Number(row['Thành tiền'] || row['Tổng tiền hàng']) || qty * unitCost;
               receipts[groupKey].items.push({ id: product?.id || '', name: productName, category: product?.category || String(row['Nhóm hàng'] || ''), qty, importCost: unitCost, price: Number(product?.price) || Number(row['Giá bán']) || 0 });
@@ -3143,7 +3197,7 @@ function SettingsView({ db, storeId, showToast, storeConfig }) {
             let writes = 0;
             for (const receipt of receiptEntries) {
               // Đồng bộ tăng dần: mã phiếu nhập đã có thì bỏ qua, không tạo trùng.
-              if (receipt.receiptCode && existingReceiptCodes.has(receipt.receiptCode)) continue;
+              if (receipt.receiptCode && existingReceiptCodes.has(receipt.receiptCode.toLowerCase())) continue;
               let supplier = supplierByName.get(receipt.supplierName.toLowerCase());
               if (!supplier) {
                 const supplierRef = doc(collection(db, 'stores', storeId, 'suppliers'));
@@ -3157,7 +3211,7 @@ function SettingsView({ db, storeId, showToast, storeConfig }) {
                 ? doc(db, 'stores', storeId, 'imports', 'kv_' + receipt.receiptCode.replace(/[^a-zA-Z0-9_-]/g, '_'))
                 : doc(collection(db, 'stores', storeId, 'imports'));
               importBatch.set(importRef, { invoiceCode: receipt.receiptCode || '', receiptCode: receipt.receiptCode || '', supplierId: supplier.id, supplierName: receipt.supplierName, createdByUid: '', createdByName: 'Excel KiotViet', items: receipt.items, total, status: 'PAID', date: receipt.date, source: 'KiotViet Excel', kiotVietReceiptCode: receipt.receiptCode || '' }); writes++;
-              if (receipt.receiptCode) existingReceiptCodes.add(receipt.receiptCode);
+              if (receipt.receiptCode) existingReceiptCodes.add(receipt.receiptCode.toLowerCase());
               // Không cộng tồn ở đây: file DanhSachSanPham là ảnh chụp tồn kho hiện tại.
               // Cộng lại lịch sử nhập hàng sẽ làm tồn kho tăng sai mỗi lần đồng bộ.
               if (writes >= 400) { await importBatch.commit(); importBatch = writeBatch(db); writes = 0; }
@@ -3177,24 +3231,26 @@ function SettingsView({ db, storeId, showToast, storeConfig }) {
               if (!ordersMap[orderId]) {
                 // Xử lý ngày tháng từ Excel serial number
                 let orderDate = new Date().toISOString();
-                if (row['Thời gian']) {
-                  if (typeof row['Thời gian'] === 'number') {
-                     orderDate = new Date(Math.round((row['Thời gian'] - 25569) * 86400 * 1000)).toISOString();
-                  } else {
-                     orderDate = new Date(row['Thời gian']).toISOString();
-                  }
+                if (row['Thời gian'] !== undefined && row['Thời gian'] !== null && row['Thời gian'] !== '') {
+                  const parsedOrderDate = typeof row['Thời gian'] === 'number'
+                    ? new Date(Math.round((row['Thời gian'] - 25569) * 86400 * 1000))
+                    : new Date(row['Thời gian']);
+                  if (!Number.isNaN(parsedOrderDate.getTime())) orderDate = parsedOrderDate.toISOString();
                 }
+                const invoiceTotal = Number(row['Khách cần trả']) || Number(row['Tổng tiền hàng']) || Number(row['Tổng thanh toán']) || 0;
+                const paidAmount = Number(row['Khách đã trả']) || Number(row['Tiền mặt'] || 0) + Number(row['Chuyển khoản'] || 0);
+                const explicitStatus = String(row['Trạng thái'] || '').trim();
 
                 ordersMap[orderId] = {
                   id: orderId,
-                  invoiceCode: orderId,
+                  invoiceCode: String(orderId).trim(),
                   customerName: row['Tên khách hàng'] || 'Khách lẻ',
-                  customerId: row['Mã khách hàng'] || null, // Lưu thêm mã KH nếu cần map sau này
+                  customerId: row['Mã khách hàng'] || null,
                   sellerName: row['Người tạo'] || row['Người bán'] || 'Hệ thống',
                   date: orderDate,
-                  status: row['Trạng thái'] === 'Hoàn thành' ? 'PAID' : 'DEBT',
-                  total: Number(row['Khách cần trả']) || Number(row['Tổng tiền hàng']) || Number(row['Tổng thanh toán']) || 0,
-                  hasInvoiceTotal: Boolean(Number(row['Khách cần trả']) || Number(row['Tổng tiền hàng']) || Number(row['Tổng thanh toán'])),
+                  status: explicitStatus ? (['Hoàn thành', 'Đã thanh toán', 'Paid', 'PAID'].includes(explicitStatus) ? 'PAID' : 'DEBT') : (invoiceTotal > 0 && paidAmount >= invoiceTotal ? 'PAID' : 'DEBT'),
+                  total: invoiceTotal,
+                  hasInvoiceTotal: Boolean(invoiceTotal),
                   totalCost: 0,
                   note: row['Ghi chú'] || '',
                   items: []
@@ -3207,6 +3263,7 @@ function SettingsView({ db, storeId, showToast, storeConfig }) {
                 const price = Number(row['Giá bán']) || Number(row['Đơn giá']) || 0;
                 const lineTotal = Number(row['Thành tiền']) || (qty * price);
                 ordersMap[orderId].items.push({
+                  productCode: String(row['Mã hàng'] || '').trim(),
                   name: String(row['Tên hàng']),
                   quantity: qty,
                   price: price,
@@ -3226,12 +3283,13 @@ function SettingsView({ db, storeId, showToast, storeConfig }) {
             const existingOrdersSnap = await getDocs(collection(db, 'stores', storeId, 'orders'));
             const existingOrdersByCode = new Map();
             existingOrdersSnap.docs.forEach(d => {
-              const code = String(d.data().invoiceCode || d.data().orderCode || '').trim();
+              const code = String(d.data().invoiceCode || d.data().orderCode || '').trim().toLowerCase();
               if (code && !existingOrdersByCode.has(code)) existingOrdersByCode.set(code, d.id);
             });
             for (const key in ordersMap) {
-              const existingId = existingOrdersByCode.get(String(key).trim());
-              const orderRef = existingId ? doc(db, 'stores', storeId, 'orders', existingId) : doc(db, 'stores', storeId, 'orders', 'kv_' + String(key).replace(/[^a-zA-Z0-9_-]/g, '_'));
+              const existingId = existingOrdersByCode.get(String(key).trim().toLowerCase());
+              const safeOrderId = 'kv_' + String(key).trim().replace(/[^a-zA-Z0-9_-]/g, '_');
+              const orderRef = existingId ? doc(db, 'stores', storeId, 'orders', existingId) : doc(db, 'stores', storeId, 'orders', safeOrderId);
               const { hasInvoiceTotal, ...orderData } = ordersMap[key];
               batch.set(orderRef, { ...orderData, orderCode: String(key), source: 'KiotViet Excel' }, { merge: true });
               count++; 
@@ -3479,101 +3537,6 @@ function SettingsView({ db, storeId, showToast, storeConfig }) {
     setDeletePasswordConfirm('');
   };
 
-  const manualDeleteCollectionOptions = [
-    { id: 'orders', label: 'Đơn hàng' },
-    { id: 'customers', label: 'Khách hàng' },
-    { id: 'suppliers', label: 'Nhà cung cấp' },
-    { id: 'products', label: 'Sản phẩm' },
-    { id: 'imports', label: 'Phiếu nhập hàng' },
-    { id: 'expenses', label: 'Chi phí' },
-    { id: 'warrantyRequests', label: 'Phiếu bảo hành' },
-    { id: 'product_groups', label: 'Nhóm hàng' }
-  ];
-
-  const getManualDeleteLabel = (item) => {
-    const data = item?.data || {};
-    const primary = data.invoiceCode || data.receiptCode || data.name || data.customerName || data.supplierName || data.productName || data.note || data.title || '';
-    const date = data.date ? formatDate(data.date) : '';
-    const phone = data.phone || data.customerPhone || '';
-    const amount = data.total ?? data.amount ?? data.price;
-    const extras = [date, phone, amount !== undefined ? formatCurrency(Number(amount) || 0) : ''].filter(Boolean);
-    return `${primary || 'Bản ghi'}${extras.length ? ` — ${extras.join(' · ')}` : ''} · ID: ${item.id}`;
-  };
-
-  const loadManualDeleteDocs = async () => {
-    if (!storeId || manualLoading) return;
-    setManualLoading(true);
-    setManualSelectedIds([]);
-    setManualDeleteProgress('Đang tải danh sách bản ghi…');
-    try {
-      const ref = collection(db, 'stores', storeId, manualDeleteCollection);
-      const snap = await getDocs(query(ref, limit(200)));
-      setManualDeleteDocs(snap.docs.map(d => ({ id: d.id, ref: d.ref, data: d.data() })));
-      setManualDeleteProgress(snap.empty ? 'Không có bản ghi trong nhóm này.' : `Đã tải ${snap.size} bản ghi đầu tiên. Đánh dấu những dòng cần xóa.`);
-    } catch (err) {
-      console.error('Load manual delete records failed:', err);
-      setManualDeleteProgress('Không tải được dữ liệu: ' + (err?.message || 'Lỗi không xác định'));
-      showToast('Không tải được danh sách để xóa. Hãy kiểm tra quyền Firestore.', 'error');
-    } finally {
-      setManualLoading(false);
-    }
-  };
-
-  const handleDeleteSelectedDocs = async () => {
-    if (deletingData || manualLoading) return;
-    const selected = manualDeleteDocs.filter(item => manualSelectedIds.includes(item.id));
-    if (!selected.length) {
-      showToast('Bạn chưa đánh dấu bản ghi nào.', 'error');
-      return;
-    }
-    if (!manualDeletePassword || !manualDeletePasswordConfirm) {
-      showToast('Vui lòng nhập và xác nhận mật khẩu Firebase.', 'error');
-      return;
-    }
-    if (manualDeletePassword !== manualDeletePasswordConfirm) {
-      showToast('Mật khẩu xác nhận không khớp.', 'error');
-      return;
-    }
-    const currentUser = auth.currentUser;
-    if (!currentUser?.email) {
-      showToast('Không xác định được tài khoản đang đăng nhập. Vui lòng đăng nhập lại.', 'error');
-      return;
-    }
-    const collectionLabel = manualDeleteCollectionOptions.find(x => x.id === manualDeleteCollection)?.label || manualDeleteCollection;
-    if (!window.confirm(`Bạn chắc chắn muốn xóa ${selected.length} bản ghi đã đánh dấu trong mục “${collectionLabel}”? Thao tác này không thể hoàn tác.`)) return;
-
-    setDeletingData(true);
-    setManualDeleteProgress('Đang xác thực mật khẩu Firebase…');
-    try {
-      const credential = EmailAuthProvider.credential(currentUser.email, manualDeletePassword);
-      await reauthenticateWithCredential(currentUser, credential);
-      // Mỗi lô tối đa 400 bản ghi, thấp hơn giới hạn 500 thao tác của Firestore.
-      for (let i = 0; i < selected.length; i += 400) {
-        const chunk = selected.slice(i, i + 400);
-        setManualDeleteProgress(`Đang xóa ${Math.min(i + chunk.length, selected.length)}/${selected.length} bản ghi…`);
-        const batch = writeBatch(db);
-        chunk.forEach(item => batch.delete(item.ref));
-        await batch.commit();
-      }
-      const deletedIds = new Set(selected.map(item => item.id));
-      setManualDeleteDocs(prev => prev.filter(item => !deletedIds.has(item.id)));
-      setManualSelectedIds([]);
-      setManualDeleteProgress(`Đã xóa ${selected.length} bản ghi được chọn.`);
-      setManualDeletePassword('');
-      setManualDeletePasswordConfirm('');
-      showToast(`Đã xóa ${selected.length} bản ghi đã đánh dấu.`);
-    } catch (err) {
-      console.error('Delete selected records failed:', err);
-      const code = err?.code || '';
-      if (code.startsWith('auth/')) showToast('Xác thực mật khẩu thất bại. Kiểm tra lại mật khẩu tài khoản Firebase.', 'error');
-      else if (code.includes('permission-denied')) showToast('Firebase từ chối quyền xóa. Cần kiểm tra Firestore Security Rules.', 'error');
-      else showToast(`Không xóa được bản ghi: ${err?.message || code || 'Lỗi không xác định'}`, 'error');
-      setManualDeleteProgress('Xóa chưa hoàn tất. Hãy tải lại danh sách để kiểm tra trạng thái thực tế.');
-    } finally {
-      setDeletingData(false);
-    }
-  };
-
   const handleConfirmedDelete = async (e) => {
     e?.preventDefault?.();
     if (!deleteTarget || deletingData) return;
@@ -3590,71 +3553,41 @@ function SettingsView({ db, storeId, showToast, storeConfig }) {
       showToast('Không xác định được tài khoản quản trị đang đăng nhập. Vui lòng đăng nhập lại.', 'error');
       return;
     }
-    if (!storeId) {
-      showToast('Chưa xác định được cửa hàng cần xóa dữ liệu. Vui lòng tải lại trang và đăng nhập lại.', 'error');
-      return;
-    }
-
-    // Firebase requests can remain pending when the connection is interrupted.
-    // A timeout makes the UI recover and tells the user which step is stuck.
-    const withTimeout = (promise, label, timeoutMs = 25000) => new Promise((resolve, reject) => {
-      const timer = setTimeout(() => reject(new Error(`${label} quá 25 giây. Hãy kiểm tra kết nối Internet, quyền truy cập Firebase và thử lại.`)), timeoutMs);
-      Promise.resolve(promise).then(
-        value => { clearTimeout(timer); resolve(value); },
-        error => { clearTimeout(timer); reject(error); }
-      );
-    });
-
     setDeletingData(true);
     try {
-      setDeleteProgress('Đang xác thực mật khẩu tài khoản…');
+      // Re-authenticate with Firebase Auth; matching two text fields alone is not sufficient.
       const credential = EmailAuthProvider.credential(currentUser.email, deletePassword);
-      await withTimeout(reauthenticateWithCredential(currentUser, credential), 'Xác thực Firebase');
+      await reauthenticateWithCredential(currentUser, credential);
 
       const collectionsToDelete = deleteTarget === 'all'
-        ? ['products', 'orders', 'imports', 'customers', 'suppliers', 'expenses', 'warrantyRequests', 'product_groups']
+        ? ['products', 'orders', 'imports', 'customers', 'suppliers', 'expenses']
         : [deleteTarget];
 
-      let totalDeleted = 0;
-      for (let c = 0; c < collectionsToDelete.length; c++) {
-        const collectionName = collectionsToDelete[c];
-        const collectionRef = collection(db, 'stores', storeId, collectionName);
-        while (true) {
-          setDeleteProgress(`Đang đọc dữ liệu ${collectionName} (${c + 1}/${collectionsToDelete.length})… Đã xóa ${totalDeleted} bản ghi`);
-          const snapshot = await withTimeout(getDocs(query(collectionRef, limit(400))), `Đọc dữ liệu ${collectionName}`);
-          if (snapshot.empty) break;
+      for (const collectionName of collectionsToDelete) {
+        const snapshot = await getDocs(collection(db, 'stores', storeId, collectionName));
+        const docs = snapshot.docs;
+        for (let i = 0; i < docs.length; i += 400) {
           const batch = writeBatch(db);
-          snapshot.docs.forEach(item => batch.delete(item.ref));
-          setDeleteProgress(`Đang xóa ${collectionName}… ${snapshot.size} bản ghi trong lô này; đã xóa ${totalDeleted} bản ghi trước đó`);
-          await withTimeout(batch.commit(), `Ghi xóa dữ liệu ${collectionName}`);
-          totalDeleted += snapshot.size;
-          setDeleteProgress(`Đã xóa ${totalDeleted} bản ghi; đang tiếp tục ${collectionName} (${c + 1}/${collectionsToDelete.length})`);
-          await new Promise(resolve => setTimeout(resolve, 0));
+          docs.slice(i, i + 400).forEach((item) => batch.delete(item.ref));
+          await batch.commit();
         }
       }
       const deletedLabel = deleteTarget === 'all' ? 'toàn bộ dữ liệu' : ({ orders: 'đơn hàng', customers: 'khách hàng', suppliers: 'nhà cung cấp' }[deleteTarget] || deleteTarget);
-      showToast(`Đã xóa ${deletedLabel} thành công (${totalDeleted} bản ghi).`);
+      showToast(`Đã xóa ${deletedLabel} thành công.`);
       setDeleteTarget(null);
       setDeletePassword('');
       setDeletePasswordConfirm('');
-      setDeleteProgress('');
     } catch (err) {
       console.error('Delete data failed:', err);
-      const code = err?.code || '';
-      if (code === 'auth/invalid-credential' || code === 'auth/wrong-password' || code === 'auth/invalid-login-credentials') {
+      if (err?.code === 'auth/invalid-credential' || err?.code === 'auth/wrong-password' || err?.code === 'auth/invalid-login-credentials') {
         showToast('Mật khẩu tài khoản Firebase không đúng.', 'error');
-      } else if (code === 'auth/requires-recent-login') {
+      } else if (err?.code === 'auth/requires-recent-login') {
         showToast('Phiên đăng nhập đã cũ. Vui lòng đăng xuất, đăng nhập lại rồi thử lại.', 'error');
-      } else if (code === 'permission-denied' || code === 'firestore/permission-denied') {
-        showToast('Firebase từ chối quyền xóa dữ liệu. Cần kiểm tra Firestore Security Rules.', 'error');
-      } else if (String(err?.message || '').includes('quá 25 giây')) {
-        showToast(err.message, 'error');
       } else {
-        showToast(`Không thể xóa dữ liệu${code ? ` (${code})` : ''}: ${err?.message || 'Vui lòng kiểm tra quyền Firebase và kết nối mạng.'}`, 'error');
+        showToast('Không thể xóa dữ liệu. Vui lòng kiểm tra quyền Firebase và thử lại.', 'error');
       }
     } finally {
       setDeletingData(false);
-      setDeleteProgress('');
     }
   };
 
@@ -3860,37 +3793,6 @@ function SettingsView({ db, storeId, showToast, storeConfig }) {
                 </div>
               </div>
             </div>
-            <div className="bg-amber-50 p-5 rounded-2xl border border-amber-200 shadow-sm space-y-4">
-              <div>
-                <h3 className="text-lg font-black text-amber-900 flex items-center gap-2"><Trash2 size={20}/> XÓA THỦ CÔNG — ĐÁNH DẤU TỪNG BẢN GHI</h3>
-                <p className="text-sm text-amber-800 mt-1">Chọn một mục, tải danh sách rồi đánh dấu đúng những dòng muốn xóa. Chỉ xóa các dòng đã chọn; không xóa cả bảng. Mỗi lần tải hiển thị tối đa 200 bản ghi đầu tiên.</p>
-              </div>
-              <div className="flex flex-col sm:flex-row gap-2">
-                <select value={manualDeleteCollection} onChange={e => { setManualDeleteCollection(e.target.value); setManualDeleteDocs([]); setManualSelectedIds([]); setManualDeleteProgress(''); }} disabled={manualLoading || deletingData} className="flex-1 border border-amber-300 rounded-xl p-3 bg-white font-semibold">
-                  {manualDeleteCollectionOptions.map(item => <option key={item.id} value={item.id}>{item.label}</option>)}
-                </select>
-                <button type="button" onClick={loadManualDeleteDocs} disabled={manualLoading || deletingData} className="bg-amber-700 hover:bg-amber-800 text-white font-bold px-5 py-3 rounded-xl disabled:opacity-50">{manualLoading ? 'Đang tải…' : 'Tải danh sách'}</button>
-              </div>
-              {manualDeleteDocs.length > 0 && <div className="flex flex-wrap items-center justify-between gap-2 text-sm">
-                <span className="font-bold text-gray-700">Đã đánh dấu {manualSelectedIds.length}/{manualDeleteDocs.length} bản ghi đang hiển thị</span>
-                <div className="flex gap-2">
-                  <button type="button" onClick={() => setManualSelectedIds(manualDeleteDocs.map(item => item.id))} className="px-3 py-1.5 rounded-lg border bg-white font-semibold">Chọn tất cả đang hiển thị</button>
-                  <button type="button" onClick={() => setManualSelectedIds([])} className="px-3 py-1.5 rounded-lg border bg-white font-semibold">Bỏ chọn</button>
-                </div>
-              </div>}
-              {manualDeleteDocs.length > 0 && <div className="max-h-80 overflow-y-auto rounded-xl border border-amber-200 bg-white divide-y divide-gray-100">
-                {manualDeleteDocs.map(item => <label key={item.id} className="flex items-start gap-3 p-3 hover:bg-amber-50 cursor-pointer">
-                  <input type="checkbox" checked={manualSelectedIds.includes(item.id)} onChange={e => setManualSelectedIds(prev => e.target.checked ? [...prev, item.id] : prev.filter(id => id !== item.id))} disabled={deletingData} className="mt-1 h-4 w-4 accent-amber-700" />
-                  <span className="text-sm text-gray-800 break-words">{getManualDeleteLabel(item)}</span>
-                </label>)}
-              </div>}
-              {manualDeleteProgress && <p className="text-sm font-semibold text-gray-700" aria-live="polite">{manualDeleteProgress}</p>}
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                <input type="password" autoComplete="current-password" value={manualDeletePassword} onChange={e => setManualDeletePassword(e.target.value)} placeholder="Mật khẩu tài khoản Firebase" disabled={deletingData} className="border border-amber-300 rounded-xl p-3 bg-white" />
-                <input type="password" autoComplete="current-password" value={manualDeletePasswordConfirm} onChange={e => setManualDeletePasswordConfirm(e.target.value)} placeholder="Nhập lại mật khẩu" disabled={deletingData} className="border border-amber-300 rounded-xl p-3 bg-white" />
-              </div>
-              <button type="button" onClick={handleDeleteSelectedDocs} disabled={deletingData || manualLoading || manualSelectedIds.length === 0} className="bg-red-600 hover:bg-red-700 text-white font-black px-5 py-3 rounded-xl disabled:opacity-50">{deletingData ? 'Đang xử lý…' : `Xóa ${manualSelectedIds.length} bản ghi đã đánh dấu`}</button>
-            </div>
             <div className="bg-white p-6 rounded-2xl border shadow-sm">
               <h3 className="font-bold border-b pb-3 mb-5 text-gray-800 flex items-center gap-2"><FileText className="text-green-600"/> Nhập / Xuất File Excel</h3>
               {loadingFile && <div className="mb-4 text-blue-600 font-bold flex items-center gap-2"><div className="animate-spin h-5 w-5 border-2 border-blue-600 border-t-transparent rounded-full"></div> Đang xử lý file, vui lòng đợi...</div>}
@@ -3927,7 +3829,6 @@ function SettingsView({ db, storeId, showToast, storeConfig }) {
                     <input type="password" autoComplete="current-password" value={deletePasswordConfirm} onChange={e => setDeletePasswordConfirm(e.target.value)} required className="w-full border border-gray-300 rounded-xl p-3 outline-none focus:ring-2 focus:ring-blue-500" placeholder="Nhập lại mật khẩu" />
                   </div>
                   <p className="text-xs text-gray-500">Mật khẩu sẽ được xác thực với Firebase Authentication trước khi xóa. Mật khẩu không được lưu vào cơ sở dữ liệu.</p>
-                  {deletingData && <div className="rounded-lg bg-blue-50 border border-blue-100 p-3 text-sm font-semibold text-blue-700"><span className="inline-block animate-spin mr-2">⏳</span>{deleteProgress || 'Đang xác thực và chuẩn bị xóa dữ liệu…'}</div>}
                   <div className="flex gap-3 pt-1">
                     <button type="button" disabled={deletingData} onClick={() => setDeleteTarget(null)} className="flex-1 border border-gray-300 text-gray-700 font-bold py-3 rounded-xl hover:bg-gray-50 disabled:opacity-50">Hủy</button>
                     <button type="submit" disabled={deletingData} className="flex-1 bg-blue-600 hover:bg-blue-700 text-white font-bold py-3 rounded-xl disabled:opacity-50">{deletingData ? 'Đang xóa...' : 'Xác nhận xóa'}</button>
