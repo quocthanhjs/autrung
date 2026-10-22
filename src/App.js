@@ -3416,6 +3416,39 @@ function SettingsView({ db, storeId, showToast, storeConfig }) {
   const baseFontSize = Number(activeCfg.printFontSize) || 12;
 
   const LivePreviewReceipt = () => {
+    if (editingWarrantyPrint) {
+      const warrantySize = form.warrantyPrintSize || 'A4';
+      const warrantyCfg = form[`warrantyPrint${warrantySize}`] || {};
+      const warrantyWidth = warrantySize === 'A5' ? '148mm' : '210mm';
+      const warrantyFontSize = Number(warrantyCfg.printFontSize) || 12;
+      const showLogo = warrantyCfg.printShowLogo !== false && !!form.logo;
+      const showStoreName = warrantyCfg.printShowStoreName !== false;
+      const showAddress = warrantyCfg.printShowStoreAddress !== false && !!form.address;
+      const showPhone = warrantyCfg.printShowStorePhone !== false && !!form.phone;
+      const showDate = warrantyCfg.printShowDate !== false;
+      const showDuration = warrantyCfg.printShowWarrantyDuration !== false;
+      const showNote = warrantyCfg.printShowNote !== false;
+      const offsetName = Number(warrantyCfg.storeNameXOffset) || 0;
+      const offsetAddress = Number(warrantyCfg.storeAddressXOffset) || 0;
+      const offsetPhone = Number(warrantyCfg.storePhoneXOffset) || 0;
+      return (
+        <div className="bg-white shadow-2xl border border-gray-200 mx-auto transition-all overflow-hidden" style={{ width: warrantyWidth, maxWidth: '100%', minHeight: warrantySize === 'A5' ? '210mm' : '297mm', fontSize: `${warrantyFontSize}px`, padding: '12mm', color: '#000', fontFamily: 'Arial, sans-serif', boxSizing: 'border-box' }}>
+          {(showLogo || showStoreName || showAddress || showPhone) && <div style={{display:'flex',alignItems:'center',gap:'16px',borderBottom:'1px dashed #777',paddingBottom:'12px'}}>
+            {showLogo && <img src={form.logo} alt="Logo" style={{maxWidth:'75px',maxHeight:'55px',objectFit:'contain'}}/>}
+            <div style={{flex:1,minWidth:0}}>
+              {showStoreName && <div style={{fontWeight:700,fontSize:`${warrantyFontSize + 3}px`,transform:`translateX(${offsetName}px)`,overflowWrap:'anywhere'}}>{form.name || 'QUẢN LÝ BÁN HÀNG'}</div>}
+              {showAddress && <div style={{marginTop:'3px',transform:`translateX(${offsetAddress}px)`,overflowWrap:'anywhere'}}>Địa chỉ: {form.address}</div>}
+              {showPhone && <div style={{marginTop:'3px',transform:`translateX(${offsetPhone}px)`}}>Điện thoại: {form.phone}</div>}
+            </div>
+          </div>}
+          <h2 style={{textAlign:'center',fontSize:`${warrantyFontSize + 5}px`,margin:'18px 0',fontWeight:700}}>{warrantyCfg.printInvoiceTitle || 'PHIẾU GỞI BẢO HÀNH'}</h2>
+          <div style={{lineHeight:1.7}}><div><b>Mã phiếu:</b> BHXXXXXXXX</div><div><b>Thời gian gửi:</b> 22/10/2026</div><div><b>Nơi nhận:</b> Tên nơi bảo hành</div><div><b>Địa chỉ:</b> Địa chỉ nơi bảo hành</div><div><b>Số điện thoại:</b> 0xxx xxx xxx</div></div>
+          <table style={{width:'100%',borderCollapse:'collapse',tableLayout:'fixed',marginTop:'18px',fontSize:`${warrantyFontSize}px`}}><thead><tr>{['STT','Sản phẩm',...(showDate?['Thời gian nhập']:[]),...(showDuration?['Thời gian bảo hành']:[]),...(showNote?['Ghi chú']:[])].map(h=><th key={h} style={{border:'1px solid #555',padding:'6px',background:'#f2f2f2',textAlign:'center',overflowWrap:'anywhere'}}>{h}</th>)}</tr></thead><tbody>{[1,2,3].map((n)=><tr key={n}>{[''+n,'Tên sản phẩm',...(showDate?['22/10/2026']:[]),...(showDuration?['12 tháng']:[]),...(showNote?['Ghi chú']:[])].map((v,i)=><td key={i} style={{border:'1px solid #555',padding:'6px',height:'30px',overflowWrap:'anywhere'}}>{v}</td>)}</tr>)}</tbody></table>
+          <div style={{display:'flex',justifyContent:'space-between',marginTop:'45px',textAlign:'center'}}><div style={{width:'40%'}}>Người gửi<br/><br/><br/>(Ký, ghi rõ họ tên)</div><div style={{width:'40%'}}>Nơi nhận bảo hành<br/><br/><br/>(Ký, ghi rõ họ tên)</div></div>
+          {warrantyCfg.printFooter && <div style={{textAlign:'center',marginTop:'20px'}}>{warrantyCfg.printFooter}</div>}
+        </div>
+      );
+    }
     return (
       <div className={`bg-white shadow-2xl border border-gray-200 mx-auto transition-all ${paperWidthClass}`} style={{ fontSize: `${baseFontSize}px`, padding: isA4A5 ? '20px' : '15px', color: '#000', fontFamily: 'sans-serif' }}>
         <ReceiptTemplate order={null} storeConfig={{...form, printPaperSize: editPaperSize}} isA4A5={isA4A5} baseFontSize={baseFontSize} />
