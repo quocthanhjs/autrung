@@ -3228,6 +3228,21 @@ function SettingsView({ db, storeId, showToast, storeConfig }) {
           } 
           // --- LOGIC NHẬP CÁC DANH MỤC KHÁC ---
           else {
+            // Với danh sách sản phẩm KiotViet, đồng bộ theo mã hàng (ưu tiên)
+            // hoặc tên hàng (dự phòng). Tồn kho trong file là tồn hiện tại,
+            // vì vậy cập nhật tồn theo giá trị file, tuyệt đối không cộng thêm.
+            let existingProductByCode = new Map();
+            let existingProductByName = new Map();
+            if (type === 'products') {
+              const existingProductSnap = await getDocs(collection(db, 'stores', storeId, 'products'));
+              existingProductSnap.docs.forEach(d => {
+                const productData = d.data();
+                const code = String(productData.kiotVietCode || productData.code || productData.productCode || '').trim().toLowerCase();
+                const name = String(productData.name || '').trim().toLowerCase();
+                if (code && !existingProductByCode.has(code)) existingProductByCode.set(code, { id: d.id, ...productData });
+                if (name && !existingProductByName.has(name)) existingProductByName.set(name, { id: d.id, ...productData });
+              });
+            }
             for (let i = 0; i < data.length; i++) {
               let p = null; 
               const row = data[i]; 
@@ -3241,14 +3256,40 @@ function SettingsView({ db, storeId, showToast, storeConfig }) {
               }
               
               if (type === 'products' && row['Tên hàng']) {
-                p = { 
-                  name: String(row['Tên hàng']), 
-                  category: row['Nhóm hàng(3 Cấp)'] || row['Nhóm hàng'] || '', 
-                  price: Number(row['Giá bán']) || 0, 
-                  cost: Number(row['Giá vốn']) || 0, 
-                  stock: Number(row['Tồn kho']) || 0, 
-                  createdAt: nowIso 
+                const productName = String(row['Tên hàng']).trim();
+                const productCode = String(row['Mã hàng'] ?? '').trim();
+                const productBarcode = String(row['Mã vạch'] ?? '').trim();
+                const codeKey = productCode.toLowerCase();
+                const nameKey = productName.toLowerCase();
+                const matchedProduct = (codeKey && existingProductByCode.get(codeKey)) || existingProductByName.get(nameKey);
+                p = {
+                  name: productName,
+                  category: row['Nhóm hàng(3 Cấp)'] || row['Nhóm hàng'] || '',
+                  price: Number(row['Giá bán']) || 0,
+                  cost: Number(row['Giá vốn']) || 0,
+                  // KiotViet export này là ảnh chụp tồn kho hiện tại, không phải phiếu nhập.
+                  stock: row['Tồn kho'] === undefined || row['Tồn kho'] === null || row['Tồn kho'] === '' ? 0 : Number(row['Tồn kho']),
+                  kiotVietCode: productCode,
+                  barcode: productBarcode,
+                  ...(matchedProduct ? {} : { createdAt: nowIso })
                 };
+                const productRef = matchedProduct
+                  ? doc(db, 'stores', storeId, 'products', matchedProduct.id)
+                  : doc(collection(db, 'stores', storeId, 'products'));
+                if (matchedProduct) batch.update(productRef, p);
+                else batch.set(productRef, p);
+                if (codeKey) existingProductByCode.set(codeKey, { id: productRef.id, ...p });
+                if (nameKey) existingProductByName.set(nameKey, { id: productRef.id, ...p });
+                count++;
+                success++;
+                if (count >= 400 || i === data.length - 1) {
+                  if (count > 0) {
+                    await batch.commit();
+                    batch = writeBatch(db);
+                    count = 0;
+                  }
+                }
+                continue;
               }
               else if (type === 'customers' && row['Tên khách hàng']) { 
                 const rawPhone = row['Điện thoại'] ? String(row['Điện thoại']) : ''; 
