@@ -78,6 +78,9 @@ const PaginationControls = ({ currentPage, totalPages, rowsPerPage, onPageChange
           <option value="10">10</option>
           <option value="20">20</option>
           <option value="50">50</option>
+          <option value="100">100</option>
+          <option value="200">200</option>
+          <option value="500">500</option>
           <option value="all">Tất cả</option>
         </select>
         <span className="text-gray-500 text-xs font-medium">/ Tổng số {totalItems} mục</span>
@@ -818,7 +821,7 @@ function DashboardView({ orders, imports, expenses, customers, suppliers, produc
       <section className="bg-white p-5 rounded-2xl shadow-sm border border-gray-200 space-y-4">
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
           <div><h3 className="font-bold text-gray-800 text-lg flex items-center gap-2"><ShieldAlert size={20} className="text-purple-600"/> Hàng đã gửi bảo hành chưa hoàn thành</h3><p className="text-xs text-gray-500 mt-1">Ưu tiên hiển thị phiếu gửi lâu nhất trước.</p></div>
-          <div className="flex items-center gap-2"><button onClick={()=>setWarrantySortOrder(v=>v==='oldest'?'newest':'oldest')} className="text-xs bg-gray-100 px-3 py-2 rounded-lg font-bold">{warrantySortOrder==='oldest'?'Lâu nhất trước':'Gần nhất trước'}</button><label className="flex items-center gap-2 text-sm font-semibold text-gray-600">Hiển thị <select value={warrantyRows} onChange={e=>setWarrantyRows(e.target.value)} className="border rounded-lg px-3 py-2 bg-white"><option value="10">10 dòng</option><option value="20">20 dòng</option><option value="50">50 dòng</option><option value="all">Tất cả</option></select></label></div>
+          <div className="flex items-center gap-2"><button onClick={()=>setWarrantySortOrder(v=>v==='oldest'?'newest':'oldest')} className="text-xs bg-gray-100 px-3 py-2 rounded-lg font-bold">{warrantySortOrder==='oldest'?'Lâu nhất trước':'Gần nhất trước'}</button><label className="flex items-center gap-2 text-sm font-semibold text-gray-600">Hiển thị <select value={warrantyRows} onChange={e=>setWarrantyRows(e.target.value)} className="border rounded-lg px-3 py-2 bg-white"><option value="10">10 dòng</option><option value="20">20 dòng</option><option value="50">50 dòng</option><option value="100">100 dòng</option><option value="200">200 dòng</option><option value="500">500 dòng</option><option value="all">Tất cả</option></select></label></div>
         </div>
         {(() => { const pending = (warrantyRequests || []).filter(w => w.status !== 'COMPLETED').sort((a,b)=>warrantySortOrder==='oldest'?new Date(a.sentAt || a.createdAt || 0)-new Date(b.sentAt || b.createdAt || 0):new Date(b.sentAt || b.createdAt || 0)-new Date(a.sentAt || a.createdAt || 0)); const sortedPending = sortDashboardRows(pending,'pendingWarranty',(w,f)=>f==='date'?(w.sentAt||w.createdAt||''):f==='customer'?(w.customerName||''):f==='location'?(w.warrantyLocation||''):f==='items'?(w.items||[]).map(i=>i.name||'').join(', '):(w.status||'')); const shown = warrantyRows === 'all' ? sortedPending : sortedPending.slice(0, Number(warrantyRows) || 10); return <div className="overflow-auto border rounded-xl"><table className="w-full text-left text-sm min-w-[700px]"><thead className="bg-purple-50"><tr>{[['date','Thời gian gửi','dash_warranty_date'],['customer','Khách hàng','dash_warranty_customer'],['location','Nơi bảo hành','dash_warranty_location'],['items','Sản phẩm','dash_warranty_items'],['status','Tình trạng','dash_warranty_status']].filter(([, ,perm])=>canShowColumn(perm)).map(([field,label])=><th key={field} onClick={()=>toggleDashboardColumnSort('pendingWarranty',field)} className="p-3 cursor-pointer select-none hover:bg-purple-100">{label} <ArrowUpDown size={11} className="inline"/></th>)}</tr></thead><tbody>{shown.map(w=><tr key={w.id} className="border-t">{canShowColumn('dash_warranty_date') && <td className="p-3 whitespace-nowrap">{formatDate(w.sentAt || w.createdAt)}</td>}{canShowColumn('dash_warranty_customer') && <td className="p-3 font-bold">{w.customerName || 'Khách lẻ'}<p className="text-xs text-gray-500">{w.phone || ''}</p></td>}{canShowColumn('dash_warranty_location') && <td className="p-3">{w.warrantyLocation || '—'}</td>}{canShowColumn('dash_warranty_items') && <td className="p-3">{(w.items || []).map(i=>`${i.name} × ${i.quantity || 1}`).join(', ')}</td>}{canShowColumn('dash_warranty_status') && <td className="p-3"><span className="px-2 py-1 rounded bg-amber-100 text-amber-800 text-xs font-bold">Đang bảo hành</span></td>}</tr>)}{shown.length===0 && <tr><td colSpan="5" className="p-6 text-center text-gray-400">Không có phiếu bảo hành đang chờ nhận hàng.</td></tr>}</tbody></table></div>; })()}
       </section>
@@ -1060,7 +1063,6 @@ function SalesHistoryView({ orders, imports = [], products, customers, storeConf
   const [searchTerm, setSearchTerm] = useState('');
   const [salesRowsPerPage, setSalesRowsPerPage] = useState('10');
   const [salesCurrentPage, setSalesCurrentPage] = useState(1);
-  const [selectedOrderIds, setSelectedOrderIds] = useState([]);
   const [editingOrder, setEditingOrder] = useState(null);
   const [viewingOrderPrint, setViewingOrderPrint] = useState(null);
   const [localPrintSize, setLocalPrintSize] = useState(storeConfig.printPaperSize || 'K80');
@@ -1072,6 +1074,7 @@ function SalesHistoryView({ orders, imports = [], products, customers, storeConf
   const [productTarget, setProductTarget] = useState(null);
   const [orderCustomerSearch, setOrderCustomerSearch] = useState('');
   const [orderProductSearch, setOrderProductSearch] = useState({});
+  const [selectedOrderIds, setSelectedOrderIds] = useState([]);
 
   useEffect(() => { setLocalPrintSize(storeConfig.printPaperSize || 'K80'); }, [storeConfig.printPaperSize]);
   useEffect(() => {
@@ -1137,19 +1140,21 @@ function SalesHistoryView({ orders, imports = [], products, customers, storeConf
   const handleBatchDeleteOrders = async () => {
     const chosen = (orders || []).filter(o => selectedOrderIds.includes(o.id));
     if (!chosen.length) return;
-    if (!window.confirm(`Xác nhận xóa ${chosen.length} đơn hàng đã chọn? Tồn kho sẽ được hoàn lại theo các sản phẩm trong đơn.`)) return;
+    if (!window.confirm(`Xóa ${chosen.length} đơn hàng đã chọn và hoàn lại số lượng vào tồn kho?`)) return;
     try {
-      const batch = writeBatch(db);
-      const stockChanges = new Map();
+      const stockDelta = new Map();
       chosen.forEach(order => (order.items || []).forEach(item => {
         const pid = item.id || item.productId;
-        if (!pid) return;
-        stockChanges.set(pid, (stockChanges.get(pid) || 0) + Number(item.quantity ?? item.qty ?? 1));
+        if (pid) stockDelta.set(pid, (stockDelta.get(pid) || 0) + Number(item.quantity ?? item.qty ?? 1));
       }));
-      stockChanges.forEach((qty, pid) => { const product = (products || []).find(p => p.id === pid); if (product) batch.update(doc(db, 'stores', storeId, 'products', pid), { stock: Number(product.stock || 0) + qty }); });
+      const batch = writeBatch(db);
+      stockDelta.forEach((qty, pid) => {
+        const product = (products || []).find(p => p.id === pid);
+        if (product) batch.update(doc(db, 'stores', storeId, 'products', pid), { stock: Number(product.stock || 0) + qty });
+      });
       chosen.forEach(order => batch.delete(doc(db, 'stores', storeId, 'orders', order.id)));
-      await batch.commit(); setSelectedOrderIds([]); showToast(`Đã xóa ${chosen.length} đơn hàng và hoàn kho.`);
-    } catch (err) { showToast('Không xóa được các đơn hàng đã chọn: ' + err.message, 'error'); }
+      await batch.commit(); setSelectedOrderIds([]); showToast('Đã xóa đơn hàng đã chọn và hoàn kho');
+    } catch (err) { showToast('Không thể xóa các đơn hàng đã chọn: ' + (err.message || ''), 'error'); }
   };
 
   const handleSaveEditOrder = async (e) => {
@@ -1289,7 +1294,7 @@ function SalesHistoryView({ orders, imports = [], products, customers, storeConf
           <table className="w-full text-left text-sm">
             <thead className="bg-gray-50/80 sticky top-0 border-b backdrop-blur-sm z-10">
               <tr>
-                <th className="p-4 w-10"><input aria-label="Chọn tất cả đơn hàng đang hiển thị" type="checkbox" checked={paginatedOrders.length > 0 && paginatedOrders.every(o => selectedOrderIds.includes(o.id))} onChange={() => setSelectedOrderIds(prev => paginatedOrders.every(o => prev.includes(o.id)) ? prev.filter(id => !paginatedOrders.some(o => o.id === id)) : [...new Set([...prev, ...paginatedOrders.map(o => o.id)])])} className="w-4 h-4"/></th><th className="p-4 font-bold text-gray-600">Mã HĐ / Thời gian</th><th className="p-4 font-bold text-gray-600">Khách hàng</th><th className="p-4 font-bold text-gray-600">Chi tiết hàng bán & Bảo hành / Ghi chú</th><th className="p-4 font-bold text-gray-600">Tổng Tiền</th><th className="p-4 font-bold text-gray-600">Tiền Lãi</th><th className="p-4 font-bold text-gray-600">Trạng thái</th><th className="p-4 font-bold text-gray-600 text-right">Thao tác</th>
+                <th className="p-3 w-10"><input aria-label="Chọn tất cả đơn hàng đang hiển thị" type="checkbox" checked={paginatedOrders.length > 0 && paginatedOrders.every(o => selectedOrderIds.includes(o.id))} onChange={() => setSelectedOrderIds(prev => paginatedOrders.every(o => prev.includes(o.id)) ? prev.filter(id => !paginatedOrders.some(o => o.id === id)) : [...new Set([...prev, ...paginatedOrders.map(o => o.id)])])} className="w-4 h-4"/></th><th className="p-4 font-bold text-gray-600">Mã HĐ / Thời gian</th><th className="p-4 font-bold text-gray-600">Khách hàng</th><th className="p-4 font-bold text-gray-600">Chi tiết hàng bán & Bảo hành / Ghi chú</th><th className="p-4 font-bold text-gray-600">Tổng Tiền</th><th className="p-4 font-bold text-gray-600">Tiền Lãi</th><th className="p-4 font-bold text-gray-600">Trạng thái</th><th className="p-4 font-bold text-gray-600 text-right">Thao tác</th>
               </tr>
             </thead>
             <tbody>
@@ -1300,7 +1305,7 @@ function SalesHistoryView({ orders, imports = [], products, customers, storeConf
                 const statusClass = o.status === 'PAID' ? 'bg-green-100 text-green-700' : 'bg-orange-100 text-orange-700';
                 return (
                   <tr key={o.id} className="border-b hover:bg-blue-50/50 transition-colors">
-                    <td className="p-4" onClick={e=>e.stopPropagation()}><input aria-label={`Chọn đơn hàng ${o.invoiceCode || o.id}`} type="checkbox" checked={selectedOrderIds.includes(o.id)} onChange={() => setSelectedOrderIds(prev => prev.includes(o.id) ? prev.filter(id=>id!==o.id) : [...prev,o.id])} className="w-4 h-4"/></td><td className="p-4"><p className="font-bold text-blue-600">#{o.invoiceCode || o.id.slice(0,6).toUpperCase()}</p><p className="text-xs text-gray-400 mt-0.5">{formatDate(o.date)}</p></td>
+                    <td className="p-3" onClick={e=>e.stopPropagation()}><input type="checkbox" aria-label={`Chọn đơn ${o.invoiceCode || o.id}`} checked={selectedOrderIds.includes(o.id)} onChange={() => setSelectedOrderIds(prev => prev.includes(o.id) ? prev.filter(id => id !== o.id) : [...prev, o.id])} className="w-4 h-4"/></td><td className="p-4"><p className="font-bold text-blue-600">#{o.invoiceCode || o.id.slice(0,6).toUpperCase()}</p><p className="text-xs text-gray-400 mt-0.5">{formatDate(o.date)}</p></td>
                     <td className="p-4 font-bold text-gray-800"><button type="button" className="text-blue-600 underline" onClick={() => setHistoryTarget({ id: o.customerId, name: o.customerName || 'Khách lẻ' })}>{o.customerName || 'Khách lẻ'}</button></td>
                     <td className="p-4">
                       <div className="space-y-1.5">
@@ -1332,7 +1337,7 @@ function SalesHistoryView({ orders, imports = [], products, customers, storeConf
             </tbody>
           </table>
         </div>
-        <div className="border-t shrink-0">{selectedOrderIds.length > 0 && <div className="p-3 bg-blue-50 flex items-center justify-between gap-2"><span className="font-bold text-blue-700">Đã chọn {selectedOrderIds.length} đơn hàng</span><button onClick={handleBatchDeleteOrders} className="bg-blue-600 text-white px-3 py-2 rounded-lg font-bold flex items-center gap-1"><Trash2 size={15}/> Xóa mục đã chọn</button></div>}<PaginationControls currentPage={salesCurrentPage} totalPages={totalSalesPages} rowsPerPage={salesRowsPerPage} onPageChange={(p) => setSalesCurrentPage(p)} onRowsChange={(r) => { setSalesRowsPerPage(r); setSalesCurrentPage(1); }} totalItems={filteredOrders.length} /></div>
+        <div className="border-t shrink-0"><PaginationControls currentPage={salesCurrentPage} totalPages={totalSalesPages} rowsPerPage={salesRowsPerPage} onPageChange={(p) => setSalesCurrentPage(p)} onRowsChange={(r) => { setSalesRowsPerPage(r); setSalesCurrentPage(1); }} totalItems={filteredOrders.length} /></div>
       </div>
 
       <Modal isOpen={showCreateOrderModal} onClose={() => setShowCreateOrderModal(false)} title="Tạo Đơn Hàng Mới (Trực tiếp)" maxWidth="max-w-3xl">
@@ -2173,6 +2178,7 @@ function InventoryView({ products, orders, imports, warrantyRequests = [], custo
       {selectedIds.length > 0 && (
         <div className="bg-blue-50 border border-blue-200 p-2.5 rounded-xl mb-3 flex justify-between items-center"><span className="text-xs font-bold text-blue-700">Đã chọn {selectedIds.length} mục</span><button onClick={handleBatchDelete} className="bg-blue-600 hover:bg-blue-700 text-white px-3 py-1 rounded-lg text-xs font-bold flex items-center gap-1"><Trash2 size={14}/> Xóa đã chọn</button></div>
       )}
+      {selectedOrderIds.length > 0 && <div className="bg-blue-50 border border-blue-200 p-3 rounded-xl mb-3 flex items-center justify-between gap-3"><span className="font-bold text-blue-700 text-sm">Đã chọn {selectedOrderIds.length} đơn hàng</span><button onClick={handleBatchDeleteOrders} className="bg-blue-600 text-white px-3 py-2 rounded-lg font-bold flex items-center gap-2"><Trash2 size={16}/> Xóa đơn đã chọn</button></div>}
       <div className="flex-1 bg-white rounded-xl border shadow-sm overflow-hidden flex flex-col justify-between">
         <div className="overflow-auto flex-1">
           <table className="w-full text-left text-sm">
@@ -2360,10 +2366,10 @@ function WarrantyView({ products = [], customers = [], suppliers = [], warrantyR
   const [items, setItems] = useState([{ productId: '', name: '', quantity: 1, warranty: '', note: '' }]);
   const [filter, setFilter] = useState('PENDING');
   const [rowsPerPage, setRowsPerPage] = useState('10');
-  const [selectedWarrantyIds, setSelectedWarrantyIds] = useState([]);
   const [search, setSearch] = useState('');
   const [sortOrder, setSortOrder] = useState('desc');
   const [sortField, setSortField] = useState('sentAt');
+  const [selectedWarrantyIds, setSelectedWarrantyIds] = useState([]);
   const [paperSize, setPaperSize] = useState(storeConfig.warrantyPrintSize || 'A4');
   const locations = Array.isArray(storeConfig.warrantyLocations) ? storeConfig.warrantyLocations : [];
   const locationName = l => typeof l === 'string' ? l : (l?.name || '');
@@ -2545,6 +2551,13 @@ function WarrantyView({ products = [], customers = [], suppliers = [], warrantyR
       showToast('Không xóa được phiếu bảo hành', 'error');
     }
   };
+  const handleBatchDeleteWarranty = async () => {
+    const chosen = (warrantyRequests || []).filter(w => selectedWarrantyIds.includes(w.id));
+    if (!chosen.length) return;
+    if (!window.confirm(`Xóa ${chosen.length} phiếu bảo hành đã chọn? Thao tác này không thể hoàn tác.`)) return;
+    try { const batch = writeBatch(db); chosen.forEach(w => batch.delete(doc(db, 'stores', storeId, 'warrantyRequests', w.id))); await batch.commit(); setSelectedWarrantyIds([]); showToast('Đã xóa các phiếu bảo hành đã chọn'); }
+    catch (e) { showToast('Không xóa được các phiếu bảo hành đã chọn', 'error'); }
+  };
   const printRequest = (w, printMode = 'customer', printOptions = {}) => {
     const cfg = storeConfig[`warrantyPrint${paperSize}`] || storeConfig[paperSize] || {};
     const showDate = printOptions.showDate !== undefined ? printOptions.showDate : cfg.printShowDate !== false;
@@ -2578,12 +2591,6 @@ function WarrantyView({ products = [], customers = [], suppliers = [], warrantyR
     const cmp = sortField==='sentAt' ? new Date(av||0)-new Date(bv||0) : String(av).localeCompare(String(bv),'vi',{numeric:true,sensitivity:'base'});
     return sortOrder==='asc' ? cmp : -cmp;
   });
-  const handleBatchDeleteWarranty = async () => {
-    if (!selectedWarrantyIds.length) return;
-    if (!window.confirm(`Xác nhận xóa ${selectedWarrantyIds.length} phiếu bảo hành đã chọn?`)) return;
-    try { const batch=writeBatch(db); selectedWarrantyIds.forEach(id=>batch.delete(doc(db,'stores',storeId,'warrantyRequests',id))); await batch.commit(); setSelectedWarrantyIds([]); showToast('Đã xóa các phiếu bảo hành đã chọn.'); }
-    catch(err) { showToast('Không xóa được phiếu bảo hành: '+err.message,'error'); }
-  };
   // Gộp các phiếu nhận bảo hành của cùng một khách thành một dòng hiển thị;
   // không xóa hay sửa các phiếu gốc trong Firebase. Sản phẩm của các phiếu được gom để dùng khi gửi nơi nhận.
   const groupedFiltered = [...filtered.reduce((map, w) => {
@@ -2620,8 +2627,8 @@ function WarrantyView({ products = [], customers = [], suppliers = [], warrantyR
     <div className="flex flex-col lg:flex-row gap-3 mb-3"><input value={search} onChange={e=>setSearch(e.target.value)} placeholder="Tìm nhanh STT, tên khách hàng, số điện thoại, sản phẩm, nơi bảo hành..." className="flex-1 p-2.5 border rounded-xl bg-white"/><select value={filter} onChange={e=>setFilter(e.target.value)} className="p-2.5 border rounded-xl bg-white"><option value="PENDING">Chưa hoàn thành</option><option value="COMPLETED">Đã hoàn thành</option><option value="ALL">Tất cả phiếu</option></select><select value={sortField} onChange={e=>setSortField(e.target.value)} className="p-2.5 border rounded-xl bg-white"><option value="customerName">Sắp xếp tên khách hàng</option><option value="warrantyLocation">Sắp xếp nơi nhận bảo hành</option><option value="sentAt">Sắp xếp thời gian gửi</option></select><button onClick={()=>setSortOrder(v=>v==='asc'?'desc':'asc')} className="p-2.5 border rounded-xl bg-white font-bold"><ArrowUpDown size={15} className="inline mr-1"/>{sortOrder==='asc'?'Tăng dần':'Giảm dần'}</button><select value={rowsPerPage} onChange={e=>setRowsPerPage(e.target.value)} className="p-2.5 border rounded-xl bg-white"><option value="10">10 dòng</option><option value="20">20 dòng</option><option value="50">50 dòng</option><option value="all">Tất cả</option></select><div className="flex items-center gap-2"><span className="text-sm">Khổ giấy</span><select value={paperSize} onChange={e=>setPaperSize(e.target.value)} className="p-2.5 border rounded-xl bg-white"><option>A4</option><option>A5</option></select></div></div>
     <section className="flex-1 overflow-auto bg-white rounded-xl border shadow-sm mb-4">
       <div className="p-4 border-b"><h3 className="text-lg font-bold text-gray-800">Chi tiết bảo hành</h3><p className="text-sm text-gray-500">Tập trung phiếu nhận bảo hành của khách hàng và phiếu gửi đến nơi bảo hành trong cùng một danh sách.</p></div>
-      <div className="p-3 border-b flex items-center justify-between gap-2">{selectedWarrantyIds.length>0&&<><span className="font-bold text-blue-700">Đã chọn {selectedWarrantyIds.length} phiếu</span><button onClick={handleBatchDeleteWarranty} className="px-3 py-2 bg-blue-600 text-white rounded-lg font-bold"><Trash2 size={15} className="inline mr-1"/>Xóa mục đã chọn</button></>}<label className="flex items-center gap-2 text-sm font-semibold"><input type="checkbox" checked={visible.length>0&&visible.every(w=>(w.groupedRequestIds||[w.id]).every(id=>selectedWarrantyIds.includes(id)))} onChange={()=>setSelectedWarrantyIds(prev=>visible.length>0&&visible.every(w=>(w.groupedRequestIds||[w.id]).every(id=>prev.includes(id)))?prev.filter(id=>!visible.some(w=>(w.groupedRequestIds||[w.id]).includes(id))):[...new Set([...prev,...visible.flatMap(w=>w.groupedRequestIds||[w.id])])])} className="w-4 h-4"/>Chọn tất cả</label></div><div className="overflow-x-auto"><table className="w-full text-left text-sm min-w-[1200px]"><thead className="bg-gray-100 sticky top-0"><tr><th className="p-3">Chọn</th><th className="p-3">STT</th><th className="p-3">Tên khách hàng</th><th className="p-3">Sản phẩm bảo hành</th><th className="p-3">Nơi nhận bảo hành</th><th className="p-3">Thời gian nhận</th><th className="p-3">Thời gian gửi</th><th className="p-3">Số điện thoại khách hàng</th><th className="p-3">Trạng thái bảo hành</th><th className="p-3">Thao tác</th></tr></thead><tbody>
-        {visible.map((w, i) => { const type = w.recordType || (w.supplierName ? 'location' : 'customer'); const isLocation = type === 'location'; return <tr key={w.id} className="border-t hover:bg-gray-50 align-top"><td className="p-3"><input type="checkbox" checked={(w.groupedRequestIds||[w.id]).every(id=>selectedWarrantyIds.includes(id))} onChange={()=>setSelectedWarrantyIds(prev=>{const ids=w.groupedRequestIds||[w.id];return ids.every(id=>prev.includes(id))?prev.filter(id=>!ids.includes(id)):[...new Set([...prev,...ids])];})} className="w-4 h-4"/></td><td className="p-3">{i+1}</td><td className="p-3 font-bold">{w.customerName || '—'}</td><td className="p-3">{(w.items || []).map((it, j) => <div key={j}>{it.name || '—'}</div>)}</td><td className="p-3">{w.warrantyLocation || '—'}</td><td className="p-3 whitespace-nowrap">{formatDate(w.createdAt || w.updatedAt || w.saleDate || '')}</td><td className="p-3 whitespace-nowrap">{w.sentAt ? formatDate(w.sentAt) : '—'}</td><td className="p-3">{w.phone || '—'}</td><td className="p-3">{w.status === 'COMPLETED' ? <span className="px-2 py-1 rounded-lg text-xs font-bold bg-green-100 text-green-700">Hoàn thành</span> : <span className="px-2 py-1 rounded-lg text-xs font-bold bg-amber-100 text-amber-800">{isLocation ? 'Đang gửi bảo hành' : 'Đang nhận bảo hành'}</span>}</td><td className="p-3"><div className="flex flex-col gap-2"><button onClick={()=>toggleWarrantyStatus(w)} className="px-3 py-1.5 rounded-lg border font-bold whitespace-nowrap">{w.status === 'COMPLETED' ? 'Chuyển lại đang bảo hành' : 'Đánh dấu hoàn thành'}</button><button onClick={()=>editRequest(w)} className="px-3 py-1.5 rounded-lg border font-bold flex items-center gap-1"><Edit size={14}/> Sửa chi tiết</button><button onClick={()=>setPrintTarget(w)} className="px-3 py-1.5 rounded-lg border font-bold flex items-center gap-1"><Printer size={14}/> In lại phiếu</button><button onClick={()=>deleteRequest(w)} className="px-3 py-1.5 rounded-lg border border-blue-200 text-blue-600 font-bold flex items-center gap-1"><Trash2 size={14}/> Xóa phiếu</button></div></td></tr>; })}
+      <div className="overflow-x-auto">{selectedWarrantyIds.length > 0 && <div className="p-3 flex items-center justify-between bg-blue-50 border-b"><span className="font-bold text-blue-700">Đã chọn {selectedWarrantyIds.length} phiếu bảo hành</span><button onClick={handleBatchDeleteWarranty} className="px-3 py-2 rounded-lg bg-blue-600 text-white font-bold flex items-center gap-2"><Trash2 size={15}/> Xóa phiếu đã chọn</button></div>}<table className="w-full text-left text-sm min-w-[1200px]"><thead className="bg-gray-100 sticky top-0"><tr><th className="p-3"><input type="checkbox" aria-label="Chọn tất cả phiếu bảo hành đang hiển thị" checked={visible.length > 0 && visible.every(w => selectedWarrantyIds.includes(w.id))} onChange={() => setSelectedWarrantyIds(prev => visible.every(w => prev.includes(w.id)) ? prev.filter(id => !visible.some(w => w.id === id)) : [...new Set([...prev, ...visible.map(w => w.id)])])} className="w-4 h-4"/></th><th className="p-3">STT</th><th className="p-3">Tên khách hàng</th><th className="p-3">Sản phẩm bảo hành</th><th className="p-3">Nơi nhận bảo hành</th><th className="p-3">Thời gian nhận</th><th className="p-3">Thời gian gửi</th><th className="p-3">Số điện thoại khách hàng</th><th className="p-3">Trạng thái bảo hành</th><th className="p-3">Thao tác</th></tr></thead><tbody>
+        {visible.map((w, i) => { const type = w.recordType || (w.supplierName ? 'location' : 'customer'); const isLocation = type === 'location'; return <tr key={w.id} className="border-t hover:bg-gray-50 align-top"><td className="p-3" onClick={e=>e.stopPropagation()}><input type="checkbox" aria-label={`Chọn phiếu bảo hành ${w.warrantyCode || w.id}`} checked={selectedWarrantyIds.includes(w.id)} onChange={() => setSelectedWarrantyIds(prev => prev.includes(w.id) ? prev.filter(id => id !== w.id) : [...prev, w.id])} className="w-4 h-4"/></td><td className="p-3">{i+1}</td><td className="p-3 font-bold">{w.customerName || '—'}</td><td className="p-3">{(w.items || []).map((it, j) => <div key={j}>{it.name || '—'}</div>)}</td><td className="p-3">{w.warrantyLocation || '—'}</td><td className="p-3 whitespace-nowrap">{formatDate(w.createdAt || w.updatedAt || w.saleDate || '')}</td><td className="p-3 whitespace-nowrap">{w.sentAt ? formatDate(w.sentAt) : '—'}</td><td className="p-3">{w.phone || '—'}</td><td className="p-3">{w.status === 'COMPLETED' ? <span className="px-2 py-1 rounded-lg text-xs font-bold bg-green-100 text-green-700">Hoàn thành</span> : <span className="px-2 py-1 rounded-lg text-xs font-bold bg-amber-100 text-amber-800">{isLocation ? 'Đang gửi bảo hành' : 'Đang nhận bảo hành'}</span>}</td><td className="p-3"><div className="flex flex-col gap-2"><button onClick={()=>toggleWarrantyStatus(w)} className="px-3 py-1.5 rounded-lg border font-bold whitespace-nowrap">{w.status === 'COMPLETED' ? 'Chuyển lại đang bảo hành' : 'Đánh dấu hoàn thành'}</button><button onClick={()=>editRequest(w)} className="px-3 py-1.5 rounded-lg border font-bold flex items-center gap-1"><Edit size={14}/> Sửa chi tiết</button><button onClick={()=>setPrintTarget(w)} className="px-3 py-1.5 rounded-lg border font-bold flex items-center gap-1"><Printer size={14}/> In lại phiếu</button><button onClick={()=>deleteRequest(w)} className="px-3 py-1.5 rounded-lg border border-blue-200 text-blue-600 font-bold flex items-center gap-1"><Trash2 size={14}/> Xóa phiếu</button></div></td></tr>; })}
         {visible.length===0 && <tr><td colSpan={10} className="p-8 text-center text-gray-400">Chưa có lịch sử bảo hành.</td></tr>}
       </tbody></table></div>
     </section>
@@ -2630,6 +2637,7 @@ function WarrantyView({ products = [], customers = [], suppliers = [], warrantyR
   </div>;
 }
 function ReportsView({ orders = [], imports = [], expenses = [], products = [], suppliers = [], db, storeId, showToast }) {
+  const [selectedReportIds, setSelectedReportIds] = useState({ sales: [], imports: [], expenses: [] });
   const now = getVietnamDateParts(new Date());
   const todayKey = getVietnamDateKey(new Date());
   const [periodMode, setPeriodMode] = useState('day');
@@ -2637,7 +2645,6 @@ function ReportsView({ orders = [], imports = [], expenses = [], products = [], 
   const [selectedMonth, setSelectedMonth] = useState(`${now.year}-${String(now.month).padStart(2,'0')}`);
   const [selectedYear, setSelectedYear] = useState(String(now.year));
   const [rowsByReport, setRowsByReport] = useState({ sales: '10', imports: '10', expenses: '10' });
-  const [selectedReportIds, setSelectedReportIds] = useState({ sales: [], imports: [], expenses: [] });
   const dateMatches = (value) => {
     if (!value) return false;
     const key = getVietnamDateKey(new Date(value));
@@ -2645,9 +2652,9 @@ function ReportsView({ orders = [], imports = [], expenses = [], products = [], 
     if (periodMode === 'month') return key.slice(0,7) === selectedMonth;
     return key.slice(0,4) === selectedYear;
   };
-  const salesRows = orders.filter(o => dateMatches(o.date)).map(o => ({ date:o.date, name:o.customerName || o.customer || 'Khách lẻ', detail:(o.items||[]).map(i=>`${i.name||'Sản phẩm'} × ${i.quantity||1}`).join(', '), amount:Number(o.total ?? o.totalAmount ?? 0), id:o.id, source:o }));
-  const importRows = imports.filter(i => dateMatches(i.date)).map(i => ({ date:i.date, name:i.supplierName || i.supplier || 'Chưa có nhà cung cấp', detail:(i.items||[]).map(p=>`${p.name||'Sản phẩm'} × ${p.qty ?? p.quantity ?? 1}`).join(', '), amount:Number(i.total ?? i.totalAmount ?? i.totalCost ?? (i.items||[]).reduce((sum,p)=>sum+(Number(p.qty ?? p.quantity)||0)*(Number(p.importCost ?? p.costPrice ?? p.cost)||0),0)), id:i.id, source:i }));
-  const expenseRows = expenses.filter(e => dateMatches(e.date)).map(e => ({ date:e.date, name:e.note || e.description || 'Chi phí', detail:e.note || e.description || '', amount:Number(e.amount)||0, id:e.id, source:e }));
+  const salesRows = orders.filter(o => dateMatches(o.date)).map(o => ({ date:o.date, name:o.customerName || o.customer || 'Khách lẻ', detail:(o.items||[]).map(i=>`${i.name||'Sản phẩm'} × ${i.quantity||1}`).join(', '), amount:Number(o.total ?? o.totalAmount ?? 0), id:o.invoiceCode || o.code || o.id, sourceId:o.id }));
+  const importRows = imports.filter(i => dateMatches(i.date)).map(i => ({ date:i.date, name:i.supplierName || i.supplier || 'Chưa có nhà cung cấp', detail:(i.items||[]).map(p=>`${p.name||'Sản phẩm'} × ${p.quantity||1}`).join(', '), amount:Number(i.total ?? i.totalAmount ?? i.totalCost ?? (i.items||[]).reduce((sum,p)=>sum+(Number(p.quantity)||0)*(Number(p.importCost ?? p.costPrice ?? p.cost)||0),0)), id:i.code || i.id, sourceId:i.id }));
+  const expenseRows = expenses.filter(e => dateMatches(e.date)).map(e => ({ date:e.date, name:e.note || e.description || 'Chi phí', detail:e.note || e.description || '', amount:Number(e.amount)||0, id:e.id, sourceId:e.id }));
   const money = value => `${(Number(value)||0).toLocaleString('vi-VN')} đ`;
   const printReport = (title, rows, total) => {
     const safe = value => String(value ?? '').replace(/[&<>"']/g, c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
@@ -2655,34 +2662,27 @@ function ReportsView({ orders = [], imports = [], expenses = [], products = [], 
     win.document.write(`<!doctype html><html lang="vi"><head><meta charset="utf-8"><title>${safe(title)}</title><style>body{font-family:Arial,sans-serif;padding:20px;color:#111}h1{text-align:center;font-size:20px}table{width:100%;border-collapse:collapse;margin-top:16px}th,td{border:1px solid #555;padding:7px;text-align:left}th{background:#eee}.total{text-align:right;font-weight:bold;margin-top:14px}@media print{button{display:none}}</style></head><body><h1>${safe(title)}</h1><p>Thời gian: ${safe(periodMode==='day'?selectedDate:periodMode==='month'?selectedMonth:selectedYear)}</p><table><thead><tr><th>STT</th><th>Ngày</th><th>Khách hàng/Nội dung</th><th>Chi tiết</th><th>Số tiền</th></tr></thead><tbody>${rows.map((r,i)=>`<tr><td>${i+1}</td><td>${safe(r.date?formatDate(r.date):'—')}</td><td>${safe(r.name)}</td><td>${safe(r.detail)}</td><td>${safe(money(r.amount))}</td></tr>`).join('')}</tbody></table><p class="total">Tổng: ${safe(money(total))}</p><script>window.onload=()=>window.print()</script></body></html>`);
     win.document.close();
   };
-  const handleDeleteReportRows = async (key, rows) => {
-    const ids = selectedReportIds[key] || [];
-    const chosen = rows.filter(row => ids.includes(row.id) && row.id);
-    if (!chosen.length || !db || !storeId) return;
-    if (!window.confirm(`Xác nhận xóa ${chosen.length} dòng dữ liệu đã chọn trong ${key === 'sales' ? 'báo cáo bán hàng' : key === 'imports' ? 'báo cáo nhập hàng' : 'báo cáo chi phí'}?`)) return;
+  const deleteSelectedReportRows = async (key, rows) => {
+    const chosen = rows.filter(r => selectedReportIds[key].includes(r.sourceId));
+    if (!chosen.length) return;
+    const collectionName = key === 'sales' ? 'orders' : key === 'imports' ? 'imports' : 'expenses';
+    if (!window.confirm(`Xóa ${chosen.length} dòng đã chọn trong ${titleForReport(key)}?`)) return;
     try {
-      const batch = writeBatch(db);
-      if (key === 'sales') {
-        const stockChanges = new Map();
-        chosen.forEach(row => (row.source.items || []).forEach(item => { const pid = item.id || item.productId; if (pid) stockChanges.set(pid, (stockChanges.get(pid)||0) + Number(item.quantity ?? item.qty ?? 1)); }));
-        stockChanges.forEach((qty,pid) => { const product = products.find(p=>p.id===pid); if (product) batch.update(doc(db,'stores',storeId,'products',pid),{stock:Number(product.stock||0)+qty}); });
-        chosen.forEach(row => batch.delete(doc(db,'stores',storeId,'orders',row.id)));
-      } else if (key === 'imports') {
-        const stockChanges = new Map();
-        chosen.forEach(row => (row.source.items || []).forEach(item => { const pid=item.id||item.productId; if(pid) stockChanges.set(pid,(stockChanges.get(pid)||0)-Number(item.qty ?? item.quantity ?? 0)); }));
-        stockChanges.forEach((qty,pid) => { const product=products.find(p=>p.id===pid); if(product) batch.update(doc(db,'stores',storeId,'products',pid),{stock:Number(product.stock||0)+qty}); });
-        const debtChanges = new Map(); chosen.forEach(row => { const imp=row.source; const supplier=suppliers.find(s=>s.id===imp.supplierId); if(imp.status==='DEBT'&&supplier) debtChanges.set(supplier.id,(debtChanges.get(supplier.id)||0)-Number(imp.total||0)); batch.delete(doc(db,'stores',storeId,'imports',row.id)); }); debtChanges.forEach((delta,sid)=>{const supplier=suppliers.find(s=>s.id===sid);if(supplier)batch.update(doc(db,'stores',storeId,'suppliers',sid),{totalDebt:Math.max(0,Number(supplier.totalDebt||0)+delta)});});
-      } else chosen.forEach(row => batch.delete(doc(db,'stores',storeId,'expenses',row.id)));
-      await batch.commit(); setSelectedReportIds(prev=>({...prev,[key]:[]})); showToast?.(`Đã xóa ${chosen.length} dòng dữ liệu.`);
-    } catch(err) { showToast?.('Không xóa được dữ liệu đã chọn: '+err.message,'error'); }
+      const batch = writeBatch(db); const stockDelta = new Map(); const debtDelta = new Map();
+      if (key === 'sales') chosen.forEach(row => { const order = orders.find(o => o.id === row.sourceId); (order?.items || []).forEach(it => { const pid = it.id || it.productId; if (pid) stockDelta.set(pid, (stockDelta.get(pid) || 0) + Number(it.quantity ?? it.qty ?? 1)); }); });
+      if (key === 'imports') chosen.forEach(row => { const rec = imports.find(im => im.id === row.sourceId); (rec?.items || []).forEach(it => { const pid = it.id || it.productId; if (pid) stockDelta.set(pid, (stockDelta.get(pid) || 0) - Number(it.qty ?? it.quantity ?? 0)); }); if (rec?.status === 'DEBT' && rec.supplierId) debtDelta.set(rec.supplierId, (debtDelta.get(rec.supplierId) || 0) - Number(rec.total || 0)); });
+      stockDelta.forEach((delta, pid) => { const product = products.find(p => p.id === pid); if (product) batch.update(doc(db, 'stores', storeId, 'products', pid), { stock: Math.max(0, Number(product.stock || 0) + delta) }); });
+      debtDelta.forEach((delta, sid) => { const supplier = suppliers.find(x => x.id === sid); if (supplier) batch.update(doc(db, 'stores', storeId, 'suppliers', sid), { totalDebt: Math.max(0, Number(supplier.totalDebt || 0) + delta) }); });
+      chosen.forEach(r => batch.delete(doc(db, 'stores', storeId, collectionName, r.sourceId)));
+      await batch.commit(); setSelectedReportIds(prev => ({ ...prev, [key]: [] })); showToast(key === 'sales' || key === 'imports' ? 'Đã xóa dữ liệu đã chọn và điều chỉnh tồn kho/công nợ' : 'Đã xóa các dòng báo cáo đã chọn');
+    } catch (e) { showToast('Không xóa được dữ liệu báo cáo đã chọn', 'error'); }
   };
+  const titleForReport = key => key === 'sales' ? 'báo cáo bán hàng' : key === 'imports' ? 'báo cáo nhập hàng' : 'báo cáo chi phí';
   const renderReport = (key, title, rows) => {
     const limit = rowsByReport[key] === 'all' ? rows.length : Number(rowsByReport[key]) || 10;
     const shown = rows.slice(0, limit);
     const total = rows.reduce((sum, row)=>sum+row.amount,0);
-    const selected = selectedReportIds[key] || [];
-    const toggleAll = () => setSelectedReportIds(prev=>({...prev,[key]:shown.length>0 && shown.every(r=>prev[key]?.includes(r.id)) ? (prev[key]||[]).filter(id=>!shown.some(r=>r.id===id)) : [...new Set([...(prev[key]||[]),...shown.map(r=>r.id).filter(Boolean)])]}));
-    return <section key={key} className="bg-white rounded-2xl border shadow-sm p-4 space-y-3"><div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2"><div><h3 className="text-lg font-bold text-gray-800">{title}</h3><p className="text-sm text-gray-500">Số tiền: <strong className="text-blue-600">{money(total)}</strong> · {rows.length} dòng</p></div><div className="flex flex-wrap items-center gap-2"><label className="text-sm">Hiển thị <select className="border rounded-lg p-2" value={rowsByReport[key]} onChange={e=>setRowsByReport(prev=>({...prev,[key]:e.target.value}))}><option value="10">10</option><option value="20">20</option><option value="50">50</option><option value="all">Tất cả</option></select></label><button onClick={()=>printReport(title, rows, total)} className="px-3 py-2 rounded-lg bg-blue-600 text-white font-bold flex items-center gap-2"><Printer size={16}/> In báo cáo</button></div></div>{selected.length>0&&<div className="p-2 bg-blue-50 rounded-lg flex items-center justify-between"><span className="font-bold text-blue-700">Đã chọn {selected.length} dòng dữ liệu</span><button onClick={()=>handleDeleteReportRows(key,rows)} className="px-3 py-2 bg-blue-600 text-white rounded-lg font-bold"><Trash2 size={15} className="inline mr-1"/>Xóa mục đã chọn</button></div>}<div className="overflow-x-auto"><table className="w-full text-sm min-w-[600px]"><thead className="bg-blue-50"><tr><th className="p-2"><input type="checkbox" aria-label="Chọn tất cả dòng báo cáo đang hiển thị" checked={shown.length>0&&shown.every(r=>selected.includes(r.id))} onChange={toggleAll} className="w-4 h-4"/></th><th className="p-2 text-left">STT</th><th className="p-2 text-left">Ngày</th><th className="p-2 text-left">Khách hàng/Nội dung</th><th className="p-2 text-left">Chi tiết</th><th className="p-2 text-right">Số tiền</th></tr></thead><tbody>{shown.map((r,i)=><tr key={r.id||`${key}-${i}`} className="border-t"><td className="p-2"><input type="checkbox" checked={selected.includes(r.id)} onChange={()=>setSelectedReportIds(prev=>({...prev,[key]:(prev[key]||[]).includes(r.id)?prev[key].filter(id=>id!==r.id):[...(prev[key]||[]),r.id]}))} className="w-4 h-4"/></td><td className="p-2">{i+1}</td><td className="p-2 whitespace-nowrap">{r.date?formatDate(r.date):'—'}</td><td className="p-2">{r.name}</td><td className="p-2">{r.detail||'—'}</td><td className="p-2 text-right font-semibold">{money(r.amount)}</td></tr>)}{shown.length===0&&<tr><td colSpan="6" className="p-5 text-center text-gray-400">Không có dữ liệu trong khoảng thời gian đã chọn.</td></tr>}</tbody></table></div></section>;
+    return <section key={key} className="bg-white rounded-2xl border shadow-sm p-4 space-y-3"><div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2"><div><h3 className="text-lg font-bold text-gray-800">{title}</h3><p className="text-sm text-gray-500">Số tiền: <strong className="text-blue-600">{money(total)}</strong> · {rows.length} dòng</p></div><div className="flex flex-wrap items-center gap-2"><label className="text-sm">Hiển thị <select className="border rounded-lg p-2" value={rowsByReport[key]} onChange={e=>setRowsByReport(prev=>({...prev,[key]:e.target.value}))}><option value="10">10</option><option value="20">20</option><option value="50">50</option><option value="100">100</option><option value="200">200</option><option value="500">500</option><option value="all">Tất cả</option></select></label>{selectedReportIds[key].length > 0 && <button onClick={()=>deleteSelectedReportRows(key, rows)} className="px-3 py-2 rounded-lg bg-red-600 text-white font-bold flex items-center gap-2"><Trash2 size={16}/> Xóa đã chọn ({selectedReportIds[key].length})</button>}<button onClick={()=>printReport(title, rows, total)} className="px-3 py-2 rounded-lg bg-blue-600 text-white font-bold flex items-center gap-2"><Printer size={16}/> In báo cáo</button></div></div><div className="overflow-x-auto"><table className="w-full text-sm min-w-[600px]"><thead className="bg-blue-50"><tr><th className="p-2"><input type="checkbox" aria-label={`Chọn tất cả ${title}`} checked={shown.length > 0 && shown.every(r => selectedReportIds[key].includes(r.sourceId))} onChange={() => setSelectedReportIds(prev => ({ ...prev, [key]: shown.every(r => prev[key].includes(r.sourceId)) ? prev[key].filter(id => !shown.some(r => r.sourceId === id)) : [...new Set([...prev[key], ...shown.map(r => r.sourceId)])] }))} className="w-4 h-4"/></th><th className="p-2 text-left">STT</th><th className="p-2 text-left">Ngày</th><th className="p-2 text-left">Khách hàng/Nội dung</th><th className="p-2 text-left">Chi tiết</th><th className="p-2 text-right">Số tiền</th></tr></thead><tbody>{shown.map((r,i)=><tr key={r.sourceId||`${key}-${i}`} className="border-t"><td className="p-2"><input type="checkbox" aria-label={`Chọn dòng ${r.id}`} checked={selectedReportIds[key].includes(r.sourceId)} onChange={() => setSelectedReportIds(prev => ({ ...prev, [key]: prev[key].includes(r.sourceId) ? prev[key].filter(id => id !== r.sourceId) : [...prev[key], r.sourceId] }))} className="w-4 h-4"/></td><td className="p-2">{i+1}</td><td className="p-2 whitespace-nowrap">{r.date?formatDate(r.date):'—'}</td><td className="p-2">{r.name}</td><td className="p-2">{r.detail||'—'}</td><td className="p-2 text-right font-semibold">{money(r.amount)}</td></tr>)}{shown.length===0&&<tr><td colSpan="6" className="p-5 text-center text-gray-400">Không có dữ liệu trong khoảng thời gian đã chọn.</td></tr>}</tbody></table></div></section>;
   };
   return <div className="p-4 md:p-6 space-y-4 overflow-auto"><div><h2 className="text-2xl font-bold text-gray-800 flex items-center gap-2"><FileText className="text-blue-600"/> Báo cáo</h2><p className="text-sm text-gray-500">Báo cáo bán hàng, nhập hàng và chi phí theo khoảng thời gian.</p></div><section className="bg-white rounded-2xl border shadow-sm p-4"><div className="flex flex-wrap items-end gap-3"><label className="text-sm font-semibold">Xem theo<select value={periodMode} onChange={e=>setPeriodMode(e.target.value)} className="block mt-1 border rounded-lg p-2"><option value="day">Ngày</option><option value="month">Tháng</option><option value="year">Năm</option></select></label>{periodMode==='day'&&<label className="text-sm font-semibold">Ngày<input type="date" value={selectedDate} onChange={e=>setSelectedDate(e.target.value)} className="block mt-1 border rounded-lg p-2"/></label>}{periodMode==='month'&&<label className="text-sm font-semibold">Tháng<input type="month" value={selectedMonth} onChange={e=>setSelectedMonth(e.target.value)} className="block mt-1 border rounded-lg p-2"/></label>}{periodMode==='year'&&<label className="text-sm font-semibold">Năm<select value={selectedYear} onChange={e=>setSelectedYear(e.target.value)} className="block mt-1 border rounded-lg p-2">{Array.from({length:12},(_,i)=>now.year-i).map(y=><option key={y} value={String(y)}>{y}</option>)}</select></label>}</div></section>{renderReport('sales','Báo cáo bán hàng',salesRows)}{renderReport('imports','Báo cáo nhập hàng',importRows)}{renderReport('expenses','Báo cáo chi phí',expenseRows)}</div>;
 }
@@ -2690,6 +2690,7 @@ function ReportsView({ orders = [], imports = [], expenses = [], products = [], 
 function ExpenseView({ expenses, db, storeId, showToast }) {
   const [form, setForm] = useState({ id: '', amount: '', note: '' });
   const [selectedIds, setSelectedIds] = useState([]);
+  const [expenseRowsPerPage, setExpenseRowsPerPage] = useState('50');
   const [searchTerm, setSearchTerm] = useState('');
   const [detailExpense, setDetailExpense] = useState(null);
   const currentDate = new Date();
@@ -2726,6 +2727,7 @@ function ExpenseView({ expenses, db, storeId, showToast }) {
   }, [expenses, filterYear, searchTerm]);
 
   const totalExpense = useMemo(() => filteredExpenses.reduce((s, e) => s + (Number(e.amount) || 0), 0), [filteredExpenses]);
+  const visibleExpenses = expenseRowsPerPage === 'all' ? filteredExpenses : filteredExpenses.slice(0, Number(expenseRowsPerPage) || 50);
 
   return (
     <div className="flex-1 p-4 md:p-6 bg-gray-50 overflow-auto h-full flex flex-col">
@@ -2744,6 +2746,12 @@ function ExpenseView({ expenses, db, storeId, showToast }) {
         <input required placeholder="Nội dung chi (VD: Trả tiền điện) *" value={form.note} onChange={e=>setForm({...form,note:e.target.value})} className="p-2.5 border rounded-lg outline-none flex-1 md:flex-[2]"/>
         <button className="bg-orange-600 text-white px-8 rounded-lg font-bold py-2.5">{form.id ? 'Lưu chỉnh sửa' : 'Ghi Nhận'}</button>{form.id && <button type="button" onClick={()=>setForm({id:'',amount:'',note:''})} className="border px-4 rounded-lg font-bold">Hủy</button>}
       </form>
+      <div className="flex flex-wrap items-center justify-between gap-2 mb-3">
+        <label className="flex items-center gap-2 text-sm font-semibold text-gray-600">Hiển thị
+          <select value={expenseRowsPerPage} onChange={e=>setExpenseRowsPerPage(e.target.value)} className="border rounded-lg px-3 py-2 bg-white"><option value="10">10</option><option value="20">20</option><option value="50">50</option><option value="100">100</option><option value="200">200</option><option value="500">500</option><option value="all">Tất cả</option></select>
+        </label>
+        <span className="text-xs text-gray-500">Đang hiển thị {visibleExpenses.length}/{filteredExpenses.length} mục</span>
+      </div>
       {selectedIds.length > 0 && (
         <div className="bg-blue-50 border border-blue-200 p-2.5 rounded-xl mb-3 flex justify-between items-center"><span className="text-xs font-bold text-blue-700">Đã chọn {selectedIds.length} mục</span><button onClick={handleBatchDelete} className="bg-blue-600 hover:bg-blue-700 text-white px-3 py-1 rounded-lg text-xs font-bold flex items-center gap-1"><Trash2 size={14}/> Xóa đã chọn</button></div>
       )}
@@ -2751,7 +2759,7 @@ function ExpenseView({ expenses, db, storeId, showToast }) {
         <table className="w-full text-left text-sm">
           <thead className="bg-gray-100 sticky top-0 border-b"><tr><th className="p-4 w-10"><input type="checkbox" onChange={() => setSelectedIds(selectedIds.length === filteredExpenses.length ? [] : filteredExpenses.map(e=>e.id))} checked={filteredExpenses.length > 0 && selectedIds.length === filteredExpenses.length} className="w-4 h-4"/></th><th className="p-4 font-bold text-gray-600">Thời gian</th><th className="p-4 font-bold text-gray-600">Nội dung</th><th className="p-4 font-bold text-gray-600">Số tiền</th><th className="p-4 font-bold text-gray-600 text-right">Thao tác</th></tr></thead>
           <tbody>
-            {filteredExpenses.map(e => (
+            {visibleExpenses.map(e => (
               <tr key={e.id} className="border-b hover:bg-gray-50 cursor-pointer" onClick={() => setDetailExpense(e)}>
                 <td className="p-4" onClick={evt=>evt.stopPropagation()}><input type="checkbox" checked={selectedIds.includes(e.id)} onChange={() => setSelectedIds(prev => prev.includes(e.id) ? prev.filter(x=>x!==e.id) : [...prev, e.id])} className="w-4 h-4"/></td>
                 <td className="p-4 text-gray-500">{formatDate(e.date)}</td><td className="p-4 font-medium text-blue-600 underline">{e.note}</td><td className="p-4 font-bold text-orange-600">{formatCurrency(e.amount)}</td>
@@ -2791,7 +2799,6 @@ function ImportView({ products, imports = [], suppliers, db, storeId, user, user
   const [importRowsPerPage, setImportRowsPerPage] = useState('10');
   const [importCurrentPage, setImportCurrentPage] = useState(1);
   const [historyRowsPerPage, setHistoryRowsPerPage] = useState('10');
-  const [selectedImportIds, setSelectedImportIds] = useState([]);
   const [historyCurrentPage, setHistoryCurrentPage] = useState(1);
   const [showImportColumns, setShowImportColumns] = useState(false);
   const [importColumns, setImportColumns] = useState({ date: true, code: true, supplier: true, items: true, total: true, status: true, actions: true });
@@ -2800,6 +2807,7 @@ function ImportView({ products, imports = [], suppliers, db, storeId, user, user
   const [historySupplierFilter, setHistorySupplierFilter] = useState('ALL');
   const [historyFromDate, setHistoryFromDate] = useState('');
   const [historyToDate, setHistoryToDate] = useState('');
+  const [selectedImportIds, setSelectedImportIds] = useState([]);
   const handleHistorySort = (field) => setHistorySort(prev => ({ field, direction: prev.field === field && prev.direction === 'desc' ? 'asc' : 'desc' }));
   const [importTotalPeriod, setImportTotalPeriod] = useState('month');
   const [importTotalMonth, setImportTotalMonth] = useState(String(getVietnamDateParts(new Date()).month));
@@ -2894,12 +2902,6 @@ function ImportView({ products, imports = [], suppliers, db, storeId, user, user
     } catch (e) { showToast("Lỗi nhập hàng", "error"); }
   };
 
-  const handleBatchDeleteImports = async () => {
-    const chosen=(imports||[]).filter(im=>selectedImportIds.includes(im.id)); if(!chosen.length)return;
-    if(!window.confirm(`Xác nhận xóa ${chosen.length} phiếu nhập đã chọn? Tồn kho và công nợ nhà cung cấp sẽ được điều chỉnh.`))return;
-    try { const batch=writeBatch(db); const changes=new Map(); chosen.forEach(im=>(im.items||[]).forEach(it=>{const pid=it.id||it.productId;if(pid)changes.set(pid,(changes.get(pid)||0)-Number(it.qty??it.quantity??0));})); changes.forEach((qty,pid)=>{const prod=products.find(p=>p.id===pid);if(prod)batch.update(doc(db,'stores',storeId,'products',pid),{stock:Number(prod.stock||0)+qty});}); const debtChanges=new Map(); chosen.forEach(im=>{const sup=suppliers.find(x=>x.id===im.supplierId);if(im.status==='DEBT'&&sup)debtChanges.set(sup.id,(debtChanges.get(sup.id)||0)-Number(im.total||0));batch.delete(doc(db,'stores',storeId,'imports',im.id));}); debtChanges.forEach((delta,sid)=>{const sup=suppliers.find(x=>x.id===sid);if(sup)batch.update(doc(db,'stores',storeId,'suppliers',sid),{totalDebt:Math.max(0,Number(sup.totalDebt||0)+delta)});}); await batch.commit();setSelectedImportIds([]);showToast(`Đã xóa ${chosen.length} phiếu nhập.`); }
-    catch(err){showToast('Không xóa được phiếu nhập: '+err.message,'error');}
-  };
   const addProductToCart = (p) => setCart(c => c.find(i => i.id === p.id) ? c : [...c, { id: p.id, name: p.name, category: p.category || '', qty: 1, importCost: p.cost || 0, price: p.price || 0 }]);
 
   const sortedImports = [...(imports || [])].sort((a, b) => {
@@ -2916,6 +2918,18 @@ function ImportView({ products, imports = [], suppliers, db, storeId, user, user
   });
   const paginatedImports = historyRowsPerPage === 'all' ? filteredHistoryImports : filteredHistoryImports.slice((historyCurrentPage - 1) * (Number(historyRowsPerPage) || 10), historyCurrentPage * (Number(historyRowsPerPage) || 10));
   const totalHistoryPages = historyRowsPerPage === 'all' ? 1 : Math.ceil(filteredHistoryImports.length / (Number(historyRowsPerPage) || 10));
+  const handleBatchDeleteImports = async () => {
+    const chosen = filteredHistoryImports.filter(im => selectedImportIds.includes(im.id));
+    if (!chosen.length) return;
+    if (!window.confirm(`Xóa ${chosen.length} phiếu nhập đã chọn? Tồn kho và công nợ nhà cung cấp sẽ được điều chỉnh.`)) return;
+    try {
+      const batch = writeBatch(db); const stockDelta = new Map(); const debtDelta = new Map();
+      chosen.forEach(im => { (im.items || []).forEach(it => { const pid = it.id || it.productId; if (pid) stockDelta.set(pid, (stockDelta.get(pid) || 0) - Number(it.qty ?? it.quantity ?? 0)); }); if (im.status === 'DEBT' && im.supplierId) debtDelta.set(im.supplierId, (debtDelta.get(im.supplierId) || 0) - Number(im.total || 0)); batch.delete(doc(db, 'stores', storeId, 'imports', im.id)); });
+      stockDelta.forEach((delta, pid) => { const product = products.find(p => p.id === pid); if (product) batch.update(doc(db, 'stores', storeId, 'products', pid), { stock: Math.max(0, Number(product.stock || 0) + delta) }); });
+      debtDelta.forEach((delta, sid) => { const supplier = suppliers.find(x => x.id === sid); if (supplier) batch.update(doc(db, 'stores', storeId, 'suppliers', sid), { totalDebt: Math.max(0, Number(supplier.totalDebt || 0) + delta) }); });
+      await batch.commit(); setSelectedImportIds([]); showToast('Đã xóa các phiếu nhập đã chọn và điều chỉnh tồn kho/công nợ');
+    } catch (err) { showToast('Không thể xóa phiếu nhập: ' + (err.message || ''), 'error'); }
+  };
   const importPeriodRows = sortedImports.filter(im => {
     if (!im.date) return false;
     const d = getVietnamDateParts(new Date(im.date));
@@ -2935,7 +2949,7 @@ function ImportView({ products, imports = [], suppliers, db, storeId, user, user
         <div className="flex-1 overflow-auto p-4 md:p-6 space-y-4">
           <div className="flex flex-wrap items-center justify-between gap-3"><div><h2 className="text-xl font-bold text-gray-800">Lịch sử nhập hàng</h2><p className="text-sm text-gray-500 mt-1">Danh sách các phiếu nhập hàng đã ghi nhận, bao gồm phiếu nhập từ Excel.</p></div><div className="flex flex-wrap gap-2"><button onClick={() => setActiveImportTab('create')} className="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2.5 rounded-xl text-sm font-bold flex items-center gap-2"><Plus size={16}/> Tạo phiếu nhập</button></div></div>
           <div className="bg-white rounded-xl border shadow-sm p-4"><div className="flex flex-wrap items-center gap-2 mb-2"><span className="font-bold text-sm text-purple-700">Tổng tiền nhập theo</span><select value={importTotalPeriod} onChange={e=>setImportTotalPeriod(e.target.value)} className="border rounded p-1.5 text-sm"><option value="year">Năm</option></select><select value={importTotalYear} onChange={e=>setImportTotalYear(e.target.value)} className="border rounded p-1.5 text-sm">{Array.from({length:8},(_,i)=>getVietnamDateParts(new Date()).year-i).map(y=><option key={y} value={String(y)}>{y}</option>)}</select></div><div className="text-2xl font-extrabold text-purple-700">{formatCurrency(importPeriodTotal)}</div><div className="text-xs text-gray-500">{importPeriodRows.length} phiếu nhập trong khoảng đã chọn · mặc định tháng hiện tại</div></div>
-          <div className="bg-white rounded-xl border shadow-sm overflow-hidden"><div className="p-3 border-b bg-gray-50 grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-2"><div className="relative"><Search size={16} className="absolute left-3 top-3 text-gray-400"/><input value={historySearch} onChange={e=>{setHistorySearch(e.target.value);setHistoryCurrentPage(1);}} placeholder="Tìm mã phiếu, nhà cung cấp, chi tiết hàng hóa..." className="w-full pl-9 pr-3 py-2 border rounded-lg bg-white text-sm"/></div><select value={historySupplierFilter} onChange={e=>{setHistorySupplierFilter(e.target.value);setHistoryCurrentPage(1);}} className="p-2 border rounded-lg bg-white text-sm"><option value="ALL">Tất cả nhà cung cấp</option>{suppliers.map(s=><option key={s.id} value={s.id}>{s.name}</option>)}</select><label className="flex items-center gap-2 text-xs font-semibold">Từ ngày<input type="date" value={historyFromDate} onChange={e=>{setHistoryFromDate(e.target.value);setHistoryCurrentPage(1);}} className="min-w-0 flex-1 p-2 border rounded-lg bg-white"/></label><label className="flex items-center gap-2 text-xs font-semibold">Đến ngày<input type="date" value={historyToDate} onChange={e=>{setHistoryToDate(e.target.value);setHistoryCurrentPage(1);}} className="min-w-0 flex-1 p-2 border rounded-lg bg-white"/></label></div><div className="p-3 border-b flex items-center justify-between gap-2">{selectedImportIds.length>0&&<><span className="font-bold text-blue-700">Đã chọn {selectedImportIds.length} phiếu nhập</span><button onClick={handleBatchDeleteImports} className="px-3 py-2 bg-blue-600 text-white rounded-lg font-bold"><Trash2 size={15} className="inline mr-1"/>Xóa mục đã chọn</button></>}<label className="flex items-center gap-2 text-sm font-semibold"><input type="checkbox" checked={paginatedImports.length>0&&paginatedImports.every(im=>selectedImportIds.includes(im.id))} onChange={()=>setSelectedImportIds(prev=>paginatedImports.length>0&&paginatedImports.every(im=>prev.includes(im.id))?prev.filter(id=>!paginatedImports.some(im=>im.id===id)):[...new Set([...prev,...paginatedImports.map(im=>im.id)])])} className="w-4 h-4"/>Chọn tất cả</label></div><div className="overflow-auto"><table className="w-full text-left text-sm min-w-[850px]"><thead className="bg-gray-100 text-gray-600"><tr><th className="p-3">Chọn</th><th className="p-3 cursor-pointer hover:bg-gray-200 whitespace-nowrap" onClick={() => handleHistorySort('date')}>Ngày nhập {historySort.field==='date' ? (historySort.direction==='asc' ? '↑' : '↓') : '↕'}</th><th className="p-3 cursor-pointer hover:bg-gray-200" onClick={() => handleHistorySort('code')}>Mã phiếu {historySort.field==='code' ? (historySort.direction==='asc' ? '↑' : '↓') : '↕'}</th><th className="p-3 cursor-pointer hover:bg-gray-200" onClick={() => handleHistorySort('supplier')}>Nhà cung cấp {historySort.field==='supplier' ? (historySort.direction==='asc' ? '↑' : '↓') : '↕'}</th><th className="p-3 cursor-pointer hover:bg-gray-200" onClick={() => handleHistorySort('items')}>Chi tiết hàng hóa {historySort.field==='items' ? (historySort.direction==='asc' ? '↑' : '↓') : '↕'}</th><th className="p-3 text-right cursor-pointer hover:bg-gray-200" onClick={() => handleHistorySort('total')}>Tổng tiền {historySort.field==='total' ? (historySort.direction==='asc' ? '↑' : '↓') : '↕'}</th><th className="p-3 cursor-pointer hover:bg-gray-200" onClick={() => handleHistorySort('status')}>Trạng thái {historySort.field==='status' ? (historySort.direction==='asc' ? '↑' : '↓') : '↕'}</th>{importColumns.actions && <th className="p-3 text-right">Thao tác</th>}</tr></thead><tbody>{paginatedImports.map((im, idx) => <tr key={im.id || idx} className="border-t hover:bg-gray-50 align-top"><td className="p-3"><input type="checkbox" checked={selectedImportIds.includes(im.id)} onChange={()=>setSelectedImportIds(prev=>prev.includes(im.id)?prev.filter(id=>id!==im.id):[...prev,im.id])} className="w-4 h-4"/></td><td className="p-3 whitespace-nowrap">{im.date ? formatDate(im.date) : '—'}</td><td className="p-3 font-semibold">{im.invoiceCode || im.receiptCode || (im.id ? im.id.slice(0, 8) : '—')}</td><td className="p-3">{im.supplierName || 'Chưa rõ nhà cung cấp'}</td><td className="p-3">{(im.items || []).length ? <div className="space-y-1">{im.items.map((it, i) => <div key={i}>{it.name || 'Sản phẩm'} × {Number(it.qty ?? it.quantity ?? 0)}</div>)}</div> : 'Không có chi tiết hàng hóa'}</td><td className="p-3 text-right font-bold whitespace-nowrap">{formatCurrency(Number(im.total) || 0)}</td><td className="p-3"><span className={`px-2 py-1 rounded-lg text-xs font-bold ${im.status === 'DEBT' ? 'bg-orange-50 text-orange-700' : 'bg-green-50 text-green-700'}`}>{im.status === 'DEBT' ? 'Ghi nợ' : 'Đã thanh toán'}</span></td>{importColumns.actions && <td className="p-3"><div className="flex justify-end gap-1"><button onClick={() => setDetailImport(im)} className="text-gray-600 bg-gray-100 p-2 rounded-lg hover:bg-gray-200" title="Xem chi tiết phiếu nhập"><Eye size={15}/></button><button onClick={() => { setEditingImport(im); setSupplierId(im.supplierId || suppliers.find(x => x.name === im.supplierName)?.id || ''); setCart((im.items || []).map(it => ({...it, id: it.id || it.productId, qty: Number(it.qty ?? it.quantity ?? 1), importCost: Number(it.importCost ?? it.cost ?? 0)}))); setIsDebt(im.status === 'DEBT'); setActiveImportTab('create'); }} className="text-blue-600 bg-blue-50 p-2 rounded-lg hover:bg-blue-100" title="Sửa phiếu nhập"><Edit size={15}/></button><button onClick={async () => { if (!window.confirm('Xóa phiếu nhập này? Tồn kho và công nợ nhà cung cấp sẽ được điều chỉnh lại.')) return; try { const batch = writeBatch(db); (im.items || []).forEach(it => { const pid = it.id || it.productId; const p = products.find(prod => prod.id === pid); if (p) batch.update(doc(db, 'stores', storeId, 'products', pid), { stock: Number(p.stock || 0) - Number(it.qty ?? it.quantity ?? 0) }); }); const sup = suppliers.find(x => x.id === im.supplierId); if (im.status === 'DEBT' && sup) batch.update(doc(db, 'stores', storeId, 'suppliers', sup.id), { totalDebt: Math.max(0, Number(sup.totalDebt || 0) - Number(im.total || 0)) }); batch.delete(doc(db, 'stores', storeId, 'imports', im.id)); await batch.commit(); showToast('Đã xóa phiếu nhập'); } catch (err) { showToast('Không xóa được phiếu nhập: ' + err.message, 'error'); } }} className="text-blue-600 bg-blue-50 p-2 rounded-lg hover:bg-blue-100" title="Xóa phiếu nhập"><Trash2 size={15}/></button></div></td>}</tr>)}{paginatedImports.length === 0 && <tr><td colSpan={8} className="p-10 text-center text-gray-400">Chưa có lịch sử nhập hàng.</td></tr>}</tbody></table><PaginationControls currentPage={historyCurrentPage} totalPages={totalHistoryPages} rowsPerPage={historyRowsPerPage} onPageChange={setHistoryCurrentPage} onRowsChange={r=>{setHistoryRowsPerPage(r);setHistoryCurrentPage(1);}} totalItems={filteredHistoryImports.length}/></div></div>
+          <div className="bg-white rounded-xl border shadow-sm overflow-hidden"><div className="p-3 border-b bg-gray-50 grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-2"><div className="relative"><Search size={16} className="absolute left-3 top-3 text-gray-400"/><input value={historySearch} onChange={e=>{setHistorySearch(e.target.value);setHistoryCurrentPage(1);}} placeholder="Tìm mã phiếu, nhà cung cấp, chi tiết hàng hóa..." className="w-full pl-9 pr-3 py-2 border rounded-lg bg-white text-sm"/></div><select value={historySupplierFilter} onChange={e=>{setHistorySupplierFilter(e.target.value);setHistoryCurrentPage(1);}} className="p-2 border rounded-lg bg-white text-sm"><option value="ALL">Tất cả nhà cung cấp</option>{suppliers.map(s=><option key={s.id} value={s.id}>{s.name}</option>)}</select><label className="flex items-center gap-2 text-xs font-semibold">Từ ngày<input type="date" value={historyFromDate} onChange={e=>{setHistoryFromDate(e.target.value);setHistoryCurrentPage(1);}} className="min-w-0 flex-1 p-2 border rounded-lg bg-white"/></label><label className="flex items-center gap-2 text-xs font-semibold">Đến ngày<input type="date" value={historyToDate} onChange={e=>{setHistoryToDate(e.target.value);setHistoryCurrentPage(1);}} className="min-w-0 flex-1 p-2 border rounded-lg bg-white"/></label></div><div className="overflow-auto">{selectedImportIds.length > 0 && <div className="p-3 flex items-center justify-between bg-blue-50 border-b"><span className="font-bold text-blue-700">Đã chọn {selectedImportIds.length} phiếu nhập</span><button onClick={handleBatchDeleteImports} className="px-3 py-2 rounded-lg bg-blue-600 text-white font-bold flex items-center gap-2"><Trash2 size={15}/> Xóa phiếu đã chọn</button></div>}<table className="w-full text-left text-sm min-w-[850px]"><thead className="bg-gray-100 text-gray-600"><tr><th className="p-3"><input type="checkbox" aria-label="Chọn tất cả phiếu nhập đang hiển thị" checked={paginatedImports.length > 0 && paginatedImports.every(im => selectedImportIds.includes(im.id))} onChange={() => setSelectedImportIds(prev => paginatedImports.every(im => prev.includes(im.id)) ? prev.filter(id => !paginatedImports.some(im => im.id === id)) : [...new Set([...prev, ...paginatedImports.map(im => im.id)])])} className="w-4 h-4"/></th><th className="p-3 cursor-pointer hover:bg-gray-200 whitespace-nowrap" onClick={() => handleHistorySort('date')}>Ngày nhập {historySort.field==='date' ? (historySort.direction==='asc' ? '↑' : '↓') : '↕'}</th><th className="p-3 cursor-pointer hover:bg-gray-200" onClick={() => handleHistorySort('code')}>Mã phiếu {historySort.field==='code' ? (historySort.direction==='asc' ? '↑' : '↓') : '↕'}</th><th className="p-3 cursor-pointer hover:bg-gray-200" onClick={() => handleHistorySort('supplier')}>Nhà cung cấp {historySort.field==='supplier' ? (historySort.direction==='asc' ? '↑' : '↓') : '↕'}</th><th className="p-3 cursor-pointer hover:bg-gray-200" onClick={() => handleHistorySort('items')}>Chi tiết hàng hóa {historySort.field==='items' ? (historySort.direction==='asc' ? '↑' : '↓') : '↕'}</th><th className="p-3 text-right cursor-pointer hover:bg-gray-200" onClick={() => handleHistorySort('total')}>Tổng tiền {historySort.field==='total' ? (historySort.direction==='asc' ? '↑' : '↓') : '↕'}</th><th className="p-3 cursor-pointer hover:bg-gray-200" onClick={() => handleHistorySort('status')}>Trạng thái {historySort.field==='status' ? (historySort.direction==='asc' ? '↑' : '↓') : '↕'}</th>{importColumns.actions && <th className="p-3 text-right">Thao tác</th>}</tr></thead><tbody>{paginatedImports.map((im, idx) => <tr key={im.id || idx} className="border-t hover:bg-gray-50 align-top"><td className="p-3" onClick={e=>e.stopPropagation()}><input type="checkbox" aria-label={`Chọn phiếu nhập ${im.id}`} checked={selectedImportIds.includes(im.id)} onChange={() => setSelectedImportIds(prev => prev.includes(im.id) ? prev.filter(id => id !== im.id) : [...prev, im.id])} className="w-4 h-4"/></td><td className="p-3 whitespace-nowrap">{im.date ? formatDate(im.date) : '—'}</td><td className="p-3 font-semibold">{im.invoiceCode || im.receiptCode || (im.id ? im.id.slice(0, 8) : '—')}</td><td className="p-3">{im.supplierName || 'Chưa rõ nhà cung cấp'}</td><td className="p-3">{(im.items || []).length ? <div className="space-y-1">{im.items.map((it, i) => <div key={i}>{it.name || 'Sản phẩm'} × {Number(it.qty ?? it.quantity ?? 0)}</div>)}</div> : 'Không có chi tiết hàng hóa'}</td><td className="p-3 text-right font-bold whitespace-nowrap">{formatCurrency(Number(im.total) || 0)}</td><td className="p-3"><span className={`px-2 py-1 rounded-lg text-xs font-bold ${im.status === 'DEBT' ? 'bg-orange-50 text-orange-700' : 'bg-green-50 text-green-700'}`}>{im.status === 'DEBT' ? 'Ghi nợ' : 'Đã thanh toán'}</span></td>{importColumns.actions && <td className="p-3"><div className="flex justify-end gap-1"><button onClick={() => setDetailImport(im)} className="text-gray-600 bg-gray-100 p-2 rounded-lg hover:bg-gray-200" title="Xem chi tiết phiếu nhập"><Eye size={15}/></button><button onClick={() => { setEditingImport(im); setSupplierId(im.supplierId || suppliers.find(x => x.name === im.supplierName)?.id || ''); setCart((im.items || []).map(it => ({...it, id: it.id || it.productId, qty: Number(it.qty ?? it.quantity ?? 1), importCost: Number(it.importCost ?? it.cost ?? 0)}))); setIsDebt(im.status === 'DEBT'); setActiveImportTab('create'); }} className="text-blue-600 bg-blue-50 p-2 rounded-lg hover:bg-blue-100" title="Sửa phiếu nhập"><Edit size={15}/></button><button onClick={async () => { if (!window.confirm('Xóa phiếu nhập này? Tồn kho và công nợ nhà cung cấp sẽ được điều chỉnh lại.')) return; try { const batch = writeBatch(db); (im.items || []).forEach(it => { const pid = it.id || it.productId; const p = products.find(prod => prod.id === pid); if (p) batch.update(doc(db, 'stores', storeId, 'products', pid), { stock: Number(p.stock || 0) - Number(it.qty ?? it.quantity ?? 0) }); }); const sup = suppliers.find(x => x.id === im.supplierId); if (im.status === 'DEBT' && sup) batch.update(doc(db, 'stores', storeId, 'suppliers', sup.id), { totalDebt: Math.max(0, Number(sup.totalDebt || 0) - Number(im.total || 0)) }); batch.delete(doc(db, 'stores', storeId, 'imports', im.id)); await batch.commit(); showToast('Đã xóa phiếu nhập'); } catch (err) { showToast('Không xóa được phiếu nhập: ' + err.message, 'error'); } }} className="text-blue-600 bg-blue-50 p-2 rounded-lg hover:bg-blue-100" title="Xóa phiếu nhập"><Trash2 size={15}/></button></div></td>}</tr>)}{paginatedImports.length === 0 && <tr><td colSpan={7} className="p-10 text-center text-gray-400">Chưa có lịch sử nhập hàng.</td></tr>}</tbody></table><PaginationControls currentPage={historyCurrentPage} totalPages={totalHistoryPages} rowsPerPage={historyRowsPerPage} onPageChange={setHistoryCurrentPage} onRowsChange={r=>{setHistoryRowsPerPage(r);setHistoryCurrentPage(1);}} totalItems={filteredHistoryImports.length}/></div></div>
         </div>
       ) : (
       <Modal isOpen={activeImportTab === 'create'} onClose={() => setActiveImportTab('history')} title={editingImport ? 'Sửa phiếu nhập hàng' : 'Tạo phiếu nhập hàng'} maxWidth="max-w-6xl">
@@ -3160,7 +3174,10 @@ function SettingsView({ db, storeId, showToast, storeConfig }) {
             const supplierSnap = await getDocs(collection(db, 'stores', storeId, 'suppliers'));
             const productDocs = productSnap.docs.map(d => ({ id: d.id, ...d.data() }));
             const productByName = new Map(productDocs.map(p => [String(p.name || '').trim().toLowerCase(), p]));
+            const productByCode = new Map(productDocs.map(p => [String(p.kiotVietCode || p.code || p.productCode || '').trim().toLowerCase(), p]).filter(([code]) => code));
             const supplierByName = new Map(supplierSnap.docs.map(d => [String(d.data().name || '').trim().toLowerCase(), { id: d.id, ...d.data() }]));
+            const existingImportSnap = await getDocs(collection(db, 'stores', storeId, 'imports'));
+            const existingReceiptCodes = new Set(existingImportSnap.docs.map(d => String(d.data().receiptCode || d.data().invoiceCode || d.data().kiotVietReceiptCode || '').trim().toLowerCase()).filter(Boolean));
             const receipts = {};
             const parseExcelDate = (value) => {
               if (!value) return new Date().toISOString();
@@ -3173,11 +3190,13 @@ function SettingsView({ db, storeId, showToast, storeConfig }) {
               const qty = Number(row['Số lượng'] || row['SL nhập'] || row['Số lượng nhập']) || 0;
               if (!productName || qty <= 0) return;
               const supplierName = String(row['Tên nhà cung cấp'] || row['Nhà cung cấp'] || '').trim() || 'Nhà cung cấp Excel';
-              const receiptCode = String(row['Mã phiếu nhập'] || row['Mã nhập hàng'] || row['Mã chứng từ'] || '').trim();
+              const receiptCode = String(row['Mã nhập hàng'] || row['Mã phiếu nhập'] || row['Mã chứng từ'] || '').trim();
               const date = parseExcelDate(row['Thời gian'] || row['Ngày nhập'] || row['Ngày tạo']);
-              const groupKey = receiptCode || `${supplierName}|${date.slice(0, 10)}`;
+              if (!receiptCode) throw new Error('File lịch sử nhập hàng thiếu cột Mã nhập hàng/Mã phiếu nhập. Không thể đồng bộ an toàn vì nhập lại có thể tạo phiếu trùng.');
+              const groupKey = receiptCode.toLowerCase();
               if (!receipts[groupKey]) receipts[groupKey] = { receiptCode, supplierName, date, items: [], total: 0, source: 'KiotViet Excel' };
-              const product = productByName.get(productName.toLowerCase());
+              const productCode = String(row['Mã hàng'] || '').trim().toLowerCase();
+              const product = (productCode && productByCode.get(productCode)) || productByName.get(productName.toLowerCase());
               const unitCost = Number(row['Giá nhập'] || row['Đơn giá nhập'] || row['Giá vốn'] || row['Đơn giá']) || 0;
               const lineTotal = Number(row['Thành tiền'] || row['Tổng tiền hàng']) || qty * unitCost;
               receipts[groupKey].items.push({ id: product?.id || '', name: productName, category: product?.category || String(row['Nhóm hàng'] || ''), qty, importCost: unitCost, price: Number(product?.price) || Number(row['Giá bán']) || 0 });
@@ -3188,6 +3207,8 @@ function SettingsView({ db, storeId, showToast, storeConfig }) {
             let importBatch = writeBatch(db);
             let writes = 0;
             for (const receipt of receiptEntries) {
+              // Đồng bộ tăng dần: mã phiếu nhập đã có thì bỏ qua, không tạo trùng.
+              if (receipt.receiptCode && existingReceiptCodes.has(receipt.receiptCode.toLowerCase())) continue;
               let supplier = supplierByName.get(receipt.supplierName.toLowerCase());
               if (!supplier) {
                 const supplierRef = doc(collection(db, 'stores', storeId, 'suppliers'));
@@ -3197,21 +3218,13 @@ function SettingsView({ db, storeId, showToast, storeConfig }) {
               }
               const validItems = receipt.items.filter(item => item.id && productDocs.some(p => p.id === item.id));
               const total = receipt.total || receipt.items.reduce((sum, item) => sum + Number(item.qty || 0) * Number(item.importCost || 0), 0);
-              const importRef = doc(collection(db, 'stores', storeId, 'imports'));
-              importBatch.set(importRef, { invoiceCode: receipt.receiptCode || '', receiptCode: receipt.receiptCode || '', supplierId: supplier.id, supplierName: receipt.supplierName, createdByUid: '', createdByName: 'Excel KiotViet', items: receipt.items, total, status: 'PAID', date: receipt.date, source: 'KiotViet Excel' }); writes++;
-              for (const item of validItems) {
-                const product = productDocs.find(p => p.id === item.id);
-                const currentStock = Number(product.stock) || 0;
-                const oldCost = Number(product.cost) || 0;
-                let newCost = Number(item.importCost) || oldCost;
-                const method = storeConfig?.costCalcMethod || 'LATEST';
-                if (method === 'AVERAGE' && currentStock + item.qty > 0) newCost = Math.round(((currentStock * oldCost) + (item.qty * newCost)) / (currentStock + item.qty));
-                else if (method === 'HIGHEST') newCost = Math.max(oldCost, newCost);
-                else if (method === 'LOWEST') newCost = oldCost === 0 ? newCost : Math.min(oldCost, newCost);
-                importBatch.update(doc(db, 'stores', storeId, 'products', product.id), { stock: currentStock + item.qty, cost: newCost, lastSupplierId: supplier.id, lastSupplierName: receipt.supplierName });
-                product.stock = currentStock + item.qty; product.cost = newCost; writes++;
-                if (writes >= 400) { await importBatch.commit(); importBatch = writeBatch(db); writes = 0; }
-              }
+              const importRef = receipt.receiptCode
+                ? doc(db, 'stores', storeId, 'imports', 'kv_' + receipt.receiptCode.replace(/[^a-zA-Z0-9_-]/g, '_'))
+                : doc(collection(db, 'stores', storeId, 'imports'));
+              importBatch.set(importRef, { invoiceCode: receipt.receiptCode || '', receiptCode: receipt.receiptCode || '', supplierId: supplier.id, supplierName: receipt.supplierName, createdByUid: '', createdByName: 'Excel KiotViet', items: receipt.items, total, status: 'PAID', date: receipt.date, source: 'KiotViet Excel', kiotVietReceiptCode: receipt.receiptCode || '' }); writes++;
+              if (receipt.receiptCode) existingReceiptCodes.add(receipt.receiptCode.toLowerCase());
+              // Không cộng tồn ở đây: file DanhSachSanPham là ảnh chụp tồn kho hiện tại.
+              // Cộng lại lịch sử nhập hàng sẽ làm tồn kho tăng sai mỗi lần đồng bộ.
               if (writes >= 400) { await importBatch.commit(); importBatch = writeBatch(db); writes = 0; }
               success++;
             }
@@ -3222,31 +3235,34 @@ function SettingsView({ db, storeId, showToast, storeConfig }) {
             const ordersMap = {};
             
             data.forEach(row => {
-              const orderId = row['Mã hóa đơn'];
+              const orderId = row['Mã hóa đơn'] || row['Mã đơn hàng'] || row['Mã đặt hàng'] || row['Mã phiếu'] || row['Mã giao dịch'];
               if (!orderId) return;
 
               // Nếu mã hóa đơn chưa có trong map, khởi tạo
               if (!ordersMap[orderId]) {
                 // Xử lý ngày tháng từ Excel serial number
                 let orderDate = new Date().toISOString();
-                if (row['Thời gian']) {
-                  if (typeof row['Thời gian'] === 'number') {
-                     orderDate = new Date(Math.round((row['Thời gian'] - 25569) * 86400 * 1000)).toISOString();
-                  } else {
-                     orderDate = new Date(row['Thời gian']).toISOString();
-                  }
+                if (row['Thời gian'] !== undefined && row['Thời gian'] !== null && row['Thời gian'] !== '') {
+                  const parsedOrderDate = typeof row['Thời gian'] === 'number'
+                    ? new Date(Math.round((row['Thời gian'] - 25569) * 86400 * 1000))
+                    : new Date(row['Thời gian']);
+                  if (!Number.isNaN(parsedOrderDate.getTime())) orderDate = parsedOrderDate.toISOString();
                 }
+                const invoiceTotal = Number(row['Khách cần trả']) || Number(row['Tổng tiền hàng']) || Number(row['Tổng thanh toán']) || 0;
+                const paidAmount = Number(row['Khách đã trả']) || Number(row['Tiền mặt'] || 0) + Number(row['Chuyển khoản'] || 0);
+                const explicitStatus = String(row['Trạng thái'] || '').trim();
 
                 ordersMap[orderId] = {
                   id: orderId,
-                  invoiceCode: orderId,
+                  invoiceCode: String(orderId).trim(),
                   customerName: row['Tên khách hàng'] || 'Khách lẻ',
-                  customerId: row['Mã khách hàng'] || null, // Lưu thêm mã KH nếu cần map sau này
+                  customerId: row['Mã khách hàng'] || null,
                   sellerName: row['Người tạo'] || row['Người bán'] || 'Hệ thống',
                   date: orderDate,
-                  status: row['Trạng thái'] === 'Hoàn thành' ? 'PAID' : 'DEBT',
-                  total: Number(row['Khách cần trả']) || Number(row['Tổng tiền hàng']) || 0,
-                  totalCost: 0, // Sẽ cộng dồn ở phần items (nếu Kiotviet có xuất giá vốn trong file đơn hàng)
+                  status: explicitStatus ? (['Hoàn thành', 'Đã thanh toán', 'Paid', 'PAID'].includes(explicitStatus) ? 'PAID' : 'DEBT') : (invoiceTotal > 0 && paidAmount >= invoiceTotal ? 'PAID' : 'DEBT'),
+                  total: invoiceTotal,
+                  hasInvoiceTotal: Boolean(invoiceTotal),
+                  totalCost: 0,
                   note: row['Ghi chú'] || '',
                   items: []
                 };
@@ -3255,24 +3271,38 @@ function SettingsView({ db, storeId, showToast, storeConfig }) {
               // Thêm sản phẩm vào mảng items của hóa đơn đó
               if (row['Tên hàng']) {
                 const qty = Number(row['Số lượng']) || 1;
-                // Kiotviet xuất 'Giá bán' (đơn giá) và 'Thành tiền' (giá bán * sl)
-                const price = Number(row['Giá bán']) || Number(row['Đơn giá']) || 0; 
-                
+                const price = Number(row['Giá bán']) || Number(row['Đơn giá']) || 0;
+                const lineTotal = Number(row['Thành tiền']) || (qty * price);
                 ordersMap[orderId].items.push({
+                  productCode: String(row['Mã hàng'] || '').trim(),
                   name: String(row['Tên hàng']),
                   quantity: qty,
                   price: price,
-                  cost: 0, // Kiotviet mặc định không xuất giá vốn trong bảng chi tiết đơn hàng
+                  cost: 0,
                   warrantyValue: '',
                   warrantyUnit: 'tháng',
                   note: row['Ghi chú hàng hóa'] || row['Mã hàng'] || ''
                 });
+                if (!ordersMap[orderId].hasInvoiceTotal) ordersMap[orderId].total += lineTotal;
               }
             });
             
-            // Ghi dữ liệu đã gom nhóm vào Firestore
+            if (!Object.keys(ordersMap).length) {
+              throw new Error('File chi tiết hóa đơn không có cột mã hóa đơn/mã đơn hàng/mã đặt hàng. Hãy xuất file có mã hóa đơn để nhập và đồng bộ hằng ngày không bị trùng.');
+            }
+            // Đồng bộ tăng dần theo mã hóa đơn: mã đã có thì cập nhật, mã mới thì thêm.
+            const existingOrdersSnap = await getDocs(collection(db, 'stores', storeId, 'orders'));
+            const existingOrdersByCode = new Map();
+            existingOrdersSnap.docs.forEach(d => {
+              const code = String(d.data().invoiceCode || d.data().orderCode || '').trim().toLowerCase();
+              if (code && !existingOrdersByCode.has(code)) existingOrdersByCode.set(code, d.id);
+            });
             for (const key in ordersMap) {
-              batch.set(doc(collection(db, 'stores', storeId, 'orders')), ordersMap[key]);
+              const existingId = existingOrdersByCode.get(String(key).trim().toLowerCase());
+              const safeOrderId = 'kv_' + String(key).trim().replace(/[^a-zA-Z0-9_-]/g, '_');
+              const orderRef = existingId ? doc(db, 'stores', storeId, 'orders', existingId) : doc(db, 'stores', storeId, 'orders', safeOrderId);
+              const { hasInvoiceTotal, ...orderData } = ordersMap[key];
+              batch.set(orderRef, { ...orderData, orderCode: String(key), source: 'KiotViet Excel' }, { merge: true });
               count++; 
               success++;
               if (count >= 400) { 
@@ -3285,6 +3315,32 @@ function SettingsView({ db, storeId, showToast, storeConfig }) {
           } 
           // --- LOGIC NHẬP CÁC DANH MỤC KHÁC ---
           else {
+            // Với danh sách sản phẩm KiotViet, đồng bộ theo mã hàng (ưu tiên)
+            // hoặc tên hàng (dự phòng). Tồn kho trong file là tồn hiện tại,
+            // vì vậy cập nhật tồn theo giá trị file, tuyệt đối không cộng thêm.
+            let existingProductByCode = new Map();
+            let existingProductByName = new Map();
+            let existingCustomerByCode = new Map();
+            let existingSupplierByCode = new Map();
+            if (type === 'products' || type === 'customers' || type === 'suppliers') {
+              const collectionName = type;
+              const existingSnap = await getDocs(collection(db, 'stores', storeId, collectionName));
+              existingSnap.docs.forEach(d => {
+                const item = d.data();
+                if (type === 'products') {
+                  const code = String(item.kiotVietCode || item.code || item.productCode || '').trim().toLowerCase();
+                  const name = String(item.name || '').trim().toLowerCase();
+                  if (code && !existingProductByCode.has(code)) existingProductByCode.set(code, { id: d.id, ...item });
+                  if (name && !existingProductByName.has(name)) existingProductByName.set(name, { id: d.id, ...item });
+                } else if (type === 'customers') {
+                  const code = String(item.kiotVietCode || item.customerCode || item.code || '').trim().toLowerCase();
+                  if (code && !existingCustomerByCode.has(code)) existingCustomerByCode.set(code, { id: d.id, ...item });
+                } else if (type === 'suppliers') {
+                  const code = String(item.kiotVietCode || item.supplierCode || item.code || '').trim().toLowerCase();
+                  if (code && !existingSupplierByCode.has(code)) existingSupplierByCode.set(code, { id: d.id, ...item });
+                }
+              });
+            }
             for (let i = 0; i < data.length; i++) {
               let p = null; 
               const row = data[i]; 
@@ -3298,34 +3354,82 @@ function SettingsView({ db, storeId, showToast, storeConfig }) {
               }
               
               if (type === 'products' && row['Tên hàng']) {
-                p = { 
-                  name: String(row['Tên hàng']), 
-                  category: row['Nhóm hàng(3 Cấp)'] || row['Nhóm hàng'] || '', 
-                  price: Number(row['Giá bán']) || 0, 
-                  cost: Number(row['Giá vốn']) || 0, 
-                  stock: Number(row['Tồn kho']) || 0, 
-                  createdAt: nowIso 
+                const productName = String(row['Tên hàng']).trim();
+                const productCode = String(row['Mã hàng'] ?? '').trim();
+                const productBarcode = String(row['Mã vạch'] ?? '').trim();
+                const codeKey = productCode.toLowerCase();
+                const nameKey = productName.toLowerCase();
+                const matchedProduct = (codeKey && existingProductByCode.get(codeKey)) || existingProductByName.get(nameKey);
+                p = {
+                  name: productName,
+                  category: row['Nhóm hàng(3 Cấp)'] || row['Nhóm hàng'] || '',
+                  price: Number(row['Giá bán']) || 0,
+                  cost: Number(row['Giá vốn']) || 0,
+                  // KiotViet export này là ảnh chụp tồn kho hiện tại, không phải phiếu nhập.
+                  stock: row['Tồn kho'] === undefined || row['Tồn kho'] === null || row['Tồn kho'] === '' ? 0 : Number(row['Tồn kho']),
+                  kiotVietCode: productCode,
+                  barcode: productBarcode,
+                  ...(matchedProduct ? {} : { createdAt: nowIso })
                 };
+                const productRef = matchedProduct
+                  ? doc(db, 'stores', storeId, 'products', matchedProduct.id)
+                  : doc(collection(db, 'stores', storeId, 'products'));
+                if (matchedProduct) batch.update(productRef, p);
+                else batch.set(productRef, p);
+                if (codeKey) existingProductByCode.set(codeKey, { id: productRef.id, ...p });
+                if (nameKey) existingProductByName.set(nameKey, { id: productRef.id, ...p });
+                count++;
+                success++;
+                if (count >= 400 || i === data.length - 1) {
+                  if (count > 0) {
+                    await batch.commit();
+                    batch = writeBatch(db);
+                    count = 0;
+                  }
+                }
+                continue;
               }
               else if (type === 'customers' && row['Tên khách hàng']) { 
                 const rawPhone = row['Điện thoại'] ? String(row['Điện thoại']) : ''; 
+                const customerCode = String(row['Mã khách hàng'] || '').trim();
                 p = { 
                   name: String(row['Tên khách hàng']), 
                   phone: rawPhone.replace('.0', ''), 
                   address: row['Địa chỉ'] || row['Phường/Xã'] || '',
-                  totalDebt: Number(row['Nợ cần thu hiện tại']) || 0, 
-                  createdAt: nowIso 
+                  totalDebt: Number(row['Nợ cần thu hiện tại']) || 0,
+                  kiotVietCode: customerCode,
+                  customerCode,
+                  ...(nowIso ? { createdAt: nowIso } : {})
                 }; 
+                const matched = customerCode ? existingCustomerByCode.get(customerCode.toLowerCase()) : null;
+                const customerRef = matched ? doc(db, 'stores', storeId, 'customers', matched.id) : doc(collection(db, 'stores', storeId, 'customers'));
+                if (matched) batch.set(customerRef, { ...p, createdAt: matched.createdAt || nowIso }, { merge: true });
+                else batch.set(customerRef, p);
+                if (customerCode) existingCustomerByCode.set(customerCode.toLowerCase(), { id: customerRef.id, ...p });
+                count++; success++;
+                if (count >= 400 || i === data.length - 1) { if (count > 0) { await batch.commit(); batch = writeBatch(db); count = 0; } }
+                continue;
               } 
               else if (type === 'suppliers' && row['Tên nhà cung cấp']) { 
                 const rawPhone = row['Điện thoại'] ? String(row['Điện thoại']) : ''; 
+                const supplierCode = String(row['Mã nhà cung cấp'] || '').trim();
                 p = { 
                   name: String(row['Tên nhà cung cấp']), 
                   phone: rawPhone.replace('.0', ''), 
                   address: row['Địa chỉ'] || row['Phường/Xã'] || '',
-                  totalDebt: Number(row['Nợ cần trả hiện tại']) || 0, 
-                  createdAt: nowIso 
+                  totalDebt: Number(row['Nợ cần trả hiện tại']) || 0,
+                  kiotVietCode: supplierCode,
+                  supplierCode,
+                  ...(nowIso ? { createdAt: nowIso } : {})
                 }; 
+                const matched = supplierCode ? existingSupplierByCode.get(supplierCode.toLowerCase()) : null;
+                const supplierRef = matched ? doc(db, 'stores', storeId, 'suppliers', matched.id) : doc(collection(db, 'stores', storeId, 'suppliers'));
+                if (matched) batch.set(supplierRef, { ...p, createdAt: matched.createdAt || nowIso }, { merge: true });
+                else batch.set(supplierRef, p);
+                if (supplierCode) existingSupplierByCode.set(supplierCode.toLowerCase(), { id: supplierRef.id, ...p });
+                count++; success++;
+                if (count >= 400 || i === data.length - 1) { if (count > 0) { await batch.commit(); batch = writeBatch(db); count = 0; } }
+                continue;
               } 
               else if (type === 'expenses') {
                 // Hỗ trợ file chi phí thường và file Sổ Quỹ KiotViet.
@@ -3399,7 +3503,7 @@ function SettingsView({ db, storeId, showToast, storeConfig }) {
           e.target.value = '';
         } catch(err) { 
           console.error(err);
-          showToast("Lỗi định dạng dữ liệu Excel", "error"); 
+          showToast(err?.message || "Lỗi định dạng dữ liệu Excel", "error"); 
           setLoadingFile(false); 
         }
       };
@@ -3430,11 +3534,11 @@ function SettingsView({ db, storeId, showToast, storeConfig }) {
   };
 
   const menuItems = [
-    { id: 'customers', label: 'Khách hàng (Nợ phải thu)' }, 
-    { id: 'suppliers', label: 'Nhà cung cấp (Nợ phải trả)' }, 
-    { id: 'products', label: 'Sản phẩm' }, 
-    { id: 'orders', label: 'Hóa đơn (Bán hàng)' },
-    { id: 'imports', label: 'Nhập hàng (Excel KiotViet)' },
+    { id: 'customers', label: 'Khách hàng — DanhSachKhachHang_*.xlsx' },
+    { id: 'suppliers', label: 'Nhà cung cấp — DanhSachNhaCungCap_*.xlsx' },
+    { id: 'products', label: 'Sản phẩm/tồn kho — DanhSachSanPham_*.xlsx' },
+    { id: 'orders', label: 'Đơn hàng — DanhSachChiTietHoaDon_*.xlsx' },
+    { id: 'imports', label: 'Lịch sử nhập hàng — DanhSachChiTietNhapHang_*.xlsx' },
     { id: 'expenses', label: 'Lịch sử Chi phí' }
   ];
 
