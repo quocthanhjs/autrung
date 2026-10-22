@@ -2,7 +2,7 @@ import React, { useState, useEffect, useMemo } from 'react';
 import { LayoutDashboard, ShoppingCart, Package, Users, Truck, Plus, Edit, Trash2, Check, X, Image as ImageIcon, ShoppingBag, TrendingUp, AlertCircle, ArrowDownToLine, Phone, DollarSign, CheckCircle2, Printer, FileText, CreditCard, Lock, LogOut, ShieldAlert, User as UserIcon, Database, UserCog, KeyRound, MonitorSmartphone, Mail, Download, Upload, ArrowUpDown, Search, Eye, EyeOff, Bell, Award, BarChart3, Receipt, ChevronDown, ChevronUp, Image, Store, Sliders, HardDrive, ChevronLeft, ChevronRight } from 'lucide-react';
 import { initializeApp } from 'firebase/app';
 import { getAuth, signInWithEmailAndPassword, signOut, onAuthStateChanged, sendPasswordResetEmail, EmailAuthProvider, reauthenticateWithCredential } from 'firebase/auth';
-import { getFirestore, doc, setDoc, getDoc, getDocs, addDoc, updateDoc, deleteDoc, onSnapshot, collection, writeBatch, query, orderBy, where, increment } from 'firebase/firestore';
+import { getFirestore, doc, setDoc, getDoc, getDocs, addDoc, updateDoc, deleteDoc, onSnapshot, collection, writeBatch, query, orderBy, where } from 'firebase/firestore';
 
 const firebaseConfig = {
   apiKey: "AIzaSyClQogCLby6OYpVzRwJ9181rmg1Lho5FV8",
@@ -103,17 +103,20 @@ const ToggleSwitch = ({ checked, onChange, label }) => (
 
 const Modal = ({ isOpen, onClose, title, children, maxWidth = "max-w-md", hideHeaderInPrint = false }) => {
   if (!isOpen) return null;
-  let containerClass = "bg-white rounded-xl shadow-2xl w-full " + maxWidth + " overflow-hidden flex flex-col max-h-[90vh]";
+  // Render existing modal content as a dedicated full-page view rather than an overlay.
+  const containerClass = "bg-white w-full min-h-full overflow-hidden flex flex-col";
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm">
+    <div className="fixed inset-0 z-50 overflow-y-auto bg-white">
       <div className={containerClass}>
         {!hideHeaderInPrint && (
-          <div className="flex justify-between items-center p-4 border-b shrink-0 bg-gray-50/80">
-            <h3 className="text-lg font-bold text-gray-800">{title}</h3>
-            <button type="button" onClick={onClose} className="text-gray-400 hover:text-red-500 bg-white shadow-sm border p-1 rounded-lg transition-colors"><X size={20} /></button>
+          <div className="sticky top-0 z-10 flex items-center gap-2 p-3 border-b bg-white shadow-sm print:hidden">
+            <button type="button" onClick={() => { if (typeof window !== 'undefined' && window.history.length > 1) window.history.back(); else onClose(); }} className="inline-flex items-center gap-1 rounded-lg border px-3 py-2 text-sm font-semibold text-gray-700 hover:bg-gray-100"><ChevronLeft size={18}/> Lùi</button>
+            <button type="button" onClick={() => { if (typeof window !== 'undefined') window.history.forward(); }} className="inline-flex items-center gap-1 rounded-lg border px-3 py-2 text-sm font-semibold text-gray-700 hover:bg-gray-100"><ChevronRight size={18}/> Tiến</button>
+            <h3 className="ml-2 flex-1 text-lg font-bold text-gray-800">{title}</h3>
+            <button type="button" onClick={onClose} className="rounded-lg border bg-white p-2 text-gray-500 transition-colors hover:bg-gray-100 hover:text-red-500" aria-label="Đóng trang"><X size={20} /></button>
           </div>
         )}
-        <div className="p-4 overflow-y-auto bg-white">{children}</div>
+        <div className={'mx-auto w-full ' + maxWidth + ' p-4 bg-white'}>{children}</div>
       </div>
     </div>
   );
@@ -436,7 +439,7 @@ export default function App() {
     { id: 'sales_history', icon: Receipt, label: 'Đơn hàng', permId: 'ban_hang' },
     { id: 'imports', icon: ArrowDownToLine, label: 'Nhập hàng', permId: 'mua_nhap_hang' },
     { id: 'groups', icon: Package, label: 'Nhóm hàng', permId: 'hh_danh_sach' },
-    { id: 'products', icon: Package, label: 'Kho hàng', permId: 'hh_danh_sach' },
+    { id: 'products', icon: Package, label: 'Sản phẩm', permId: 'hh_danh_sach' },
     { id: 'warranty', icon: ShieldAlert, label: 'Bảo hành', permId: 'hh_danh_sach' },
     { id: 'customers', icon: Users, label: 'Khách hàng', permId: 'kh_danh_sach' },
     { id: 'suppliers', icon: Truck, label: 'Nhà cung cấp', permId: 'mua_ncc' },
@@ -917,25 +920,10 @@ function POSView({ products, orders = [], customers, db, storeId, user, storeCon
   const handleCheckout = async () => {
     if (cart.length === 0 || (isDebt && !customerId)) return;
     try {
-      // Bán tiền mặt không chọn khách: tạo/tái sử dụng hồ sơ "Khách lẻ"
-      // để giao dịch cũng xuất hiện trong thẻ Khách hàng.
-      let resolvedCustomerId = customerId || null;
-      let resolvedCustomer = customers.find(cust => cust.id === resolvedCustomerId) || null;
-      if (!resolvedCustomerId && !isDebt) {
-        resolvedCustomer = customers.find(cust => String(cust.name || '').trim().toLowerCase() === 'khách lẻ') || null;
-        if (!resolvedCustomer) {
-          const guestRef = await addDoc(collection(db, 'stores', storeId, 'customers'), {
-            name: 'Khách lẻ', phone: '', address: '', totalDebt: 0, createdAt: new Date().toISOString(), isWalkIn: true
-          });
-          resolvedCustomer = { id: guestRef.id, name: 'Khách lẻ', phone: '', address: '', totalDebt: 0, isWalkIn: true };
-        }
-        resolvedCustomerId = resolvedCustomer.id;
-        setCustomerId(resolvedCustomerId);
-      }
-      const c = resolvedCustomer;
+      const c = customers.find(cust => cust.id === customerId);
       const orderData = {
         invoiceCode: generateInvoiceCode(orders),
-        customerId: resolvedCustomerId, customerName: c ? c.name : 'Khách lẻ', sellerUid: user.uid, sellerName: userData?.name || user?.displayName || user?.email || 'Nhân viên', note: orderNote,
+        customerId: customerId || null, customerName: c ? c.name : 'Khách lẻ', sellerUid: user.uid, sellerName: userData?.name || user?.displayName || user?.email || 'Nhân viên', note: orderNote,
         items: cart.map(i => ({ id: i.id, name: i.name, price: i.price, cost: i.cost || 0, quantity: i.quantity, warrantyValue: i.warrantyValue || '', warrantyUnit: i.warrantyUnit || 'tháng', note: i.note || '' })),
         total: cartTotal, totalCost: cart.reduce((s, item) => s + ((item.cost || 0) * item.quantity), 0),
         status: isDebt ? 'DEBT' : 'PAID', date: new Date().toISOString()
@@ -943,15 +931,9 @@ function POSView({ products, orders = [], customers, db, storeId, user, storeCon
       const orderRef = await addDoc(collection(db, 'stores', storeId, 'orders'), orderData);
       
       let batch = writeBatch(db);
-      // Gom số lượng theo mã sản phẩm để trừ kho chính xác, kể cả khi một sản phẩm có nhiều dòng trong giỏ.
-      const soldQtyByProduct = cart.reduce((acc, item) => {
-        const productId = item.id;
-        const qty = Number(item.quantity) || 0;
-        if (productId && qty > 0) acc[productId] = (acc[productId] || 0) + qty;
-        return acc;
-      }, {});
-      Object.entries(soldQtyByProduct).forEach(([productId, qty]) => {
-        batch.update(doc(db, 'stores', storeId, 'products', productId), { stock: increment(-qty) });
+      cart.forEach(item => {
+        const p = products.find(prod => prod.id === item.id);
+        if (p) batch.update(doc(db, 'stores', storeId, 'products', p.id), { stock: p.stock - item.quantity });
       });
       if (isDebt && c) batch.update(doc(db, 'stores', storeId, 'customers', customerId), { totalDebt: (c.totalDebt || 0) + cartTotal });
       await batch.commit();
@@ -1195,14 +1177,9 @@ function SalesHistoryView({ orders, imports = [], products, customers, storeConf
       await addDoc(collection(db, 'stores', storeId, 'orders'), orderData);
       
       let batch = writeBatch(db);
-      const soldQtyByProduct = itemsToSave.reduce((acc, item) => {
-        const productId = item.id;
-        const qty = Number(item.quantity) || 0;
-        if (productId && qty > 0) acc[productId] = (acc[productId] || 0) + qty;
-        return acc;
-      }, {});
-      Object.entries(soldQtyByProduct).forEach(([productId, qty]) => {
-        batch.update(doc(db, 'stores', storeId, 'products', productId), { stock: increment(-qty) });
+      itemsToSave.forEach(item => {
+        const p = products.find(prod => prod.id === item.id);
+        if (p) batch.update(doc(db, 'stores', storeId, 'products', p.id), { stock: p.stock - item.quantity });
       });
       if (newOrderForm.status === 'DEBT' && c) batch.update(doc(db, 'stores', storeId, 'customers', newOrderForm.customerId), { totalDebt: (c.totalDebt || 0) + total });
       await batch.commit();
@@ -1420,11 +1397,6 @@ function SalesHistoryView({ orders, imports = [], products, customers, storeConf
                 {[...new Set([new Date().getFullYear(), ...(imports||[]).map(im=>im.date ? new Date(im.date).getFullYear() : null), ...(orders||[]).map(o=>o.date ? new Date(o.date).getFullYear() : null)].filter(y=>Number.isFinite(y)))].sort((a,b)=>b-a).map(y=><option key={y} value={String(y)}>{y}</option>)}
               </select></label>
             </div>
-            <div className="bg-blue-50 border border-blue-100 rounded-xl p-3 grid grid-cols-2 md:grid-cols-3 gap-3">
-              <div><p className="text-[10px] uppercase font-bold text-blue-700">Nhập gần nhất</p><p className="text-xs font-semibold">{latestImport ? formatDate(latestImport.date) : 'Chưa có dữ liệu'}</p></div>
-              <div><p className="text-[10px] uppercase font-bold text-blue-700">Nhà cung cấp</p><button type="button" onClick={() => { setProductTarget(null); navigateMainTab('suppliers', { id: latestImport?.supplierId || bought[0]?.supplierId || matchedProduct?.lastSupplierId, name: latestImport?.supplierName || matchedProduct?.lastSupplierName }); }} className="text-xs font-semibold text-blue-700 underline text-left">{latestImport?.supplierName || matchedProduct?.lastSupplierName || 'Chưa có dữ liệu'} · Mở thẻ NCC</button></div>
-              <div><p className="text-[10px] uppercase font-bold text-blue-700">Tồn kho hiện tại</p><p className="text-xs font-bold">{Number(matchedProduct?.stock) || 0} sản phẩm</p></div>
-            </div>
             <h4 className="font-bold">Khách hàng đã mua</h4>
             <div className="overflow-auto"><table className="w-full text-sm"><thead className="bg-gray-100"><tr><th className="p-2 text-left">Khách hàng</th><th className="p-2 text-left">Mã hóa đơn</th><th className="p-2 text-left">Thời gian</th><th className="p-2">Số lượng</th></tr></thead><tbody>
               {sold.slice(0, productTarget.showAllSales ? sold.length : 5).map(o=><tr key={o.id} className="border-b"><td className="p-2"><button type="button" className="text-blue-700 underline text-left" onClick={() => { setProductTarget(null); navigateMainTab('customers', { id: o.customerId, name: o.customerName }); }}>{o.customerName||'Khách lẻ'} · Mở khách hàng</button></td><td className="p-2">{o.invoiceCode||o.id}</td><td className="p-2">{formatDate(o.date)}</td><td className="p-2">{(o.items||[]).filter(it=>(productTarget.id&&(it.id===productTarget.id||it.productId===productTarget.id))||it.name===productTarget.name).reduce((n,it)=>n+Number(it.quantity??it.qty??0),0)}</td></tr>)}
@@ -1579,6 +1551,8 @@ function ContactManager({ type, data, orders, navigationTarget, storeConfig, db,
   const [selectedIds, setSelectedIds] = useState([]);
   const [searchTerm, setSearchTerm] = useState('');
   const [detailTarget, setDetailTarget] = useState(null);
+  const [detailRowsPerPage, setDetailRowsPerPage] = useState('5');
+  const [detailCurrentPage, setDetailCurrentPage] = useState(1);
   useEffect(() => {
     const closeOnBrowserBack = () => setDetailProduct(null);
     window.addEventListener('app:close-popups', closeOnBrowserBack);
@@ -1588,7 +1562,7 @@ function ContactManager({ type, data, orders, navigationTarget, storeConfig, db,
       if (detail.tab !== expectedTab || !detail.entity) return;
       const target = detail.entity;
       const match = (data || []).find(row => (target.id && row.id === target.id) || (target.name && String(row.name || '').trim().toLowerCase() === String(target.name).trim().toLowerCase()));
-      if (match) { setSearchTerm(''); setCurrentPage(1); setDetailTarget(match); }
+      if (match) { setSearchTerm(''); setCurrentPage(1); setDetailRowsPerPage('5'); setDetailCurrentPage(1); setDetailTarget(match); }
     };
     window.addEventListener('app:navigate-tab', onNavigate);
     return () => window.removeEventListener('app:navigate-tab', onNavigate);
@@ -1598,7 +1572,7 @@ function ContactManager({ type, data, orders, navigationTarget, storeConfig, db,
   const [filterYear, setFilterYear] = useState('ALL');
   const [rowsPerPage, setRowsPerPage] = useState('10');
   const [currentPage, setCurrentPage] = useState(1);
-  useEffect(() => { if (navigationTarget?.tab === type && (navigationTarget.id || navigationTarget.name)) { const match = (data || []).find(item => navigationTarget.id && item.id === navigationTarget.id) || (data || []).find(item => navigationTarget.name && (item.name || '').trim().toLocaleLowerCase('vi') === navigationTarget.name.trim().toLocaleLowerCase('vi')); if (match) { setDetailTarget(match); setSearchTerm(''); setCurrentPage(1); } } }, [navigationTarget?.nonce, navigationTarget?.tab, navigationTarget?.id, navigationTarget?.name, type, data]);
+  useEffect(() => { if (navigationTarget?.tab === type && (navigationTarget.id || navigationTarget.name)) { const match = (data || []).find(item => navigationTarget.id && item.id === navigationTarget.id) || (data || []).find(item => navigationTarget.name && (item.name || '').trim().toLocaleLowerCase('vi') === navigationTarget.name.trim().toLocaleLowerCase('vi')); if (match) { setDetailTarget(match); setDetailRowsPerPage('5'); setDetailCurrentPage(1); setSearchTerm(''); setCurrentPage(1); } } }, [navigationTarget?.nonce, navigationTarget?.tab, navigationTarget?.id, navigationTarget?.name, type, data]);
 
   const handleSave = async (e) => {
     e.preventDefault();
@@ -1696,6 +1670,8 @@ function ContactManager({ type, data, orders, navigationTarget, storeConfig, db,
     let totalDebtRemain = matched.filter(o => o.status === 'DEBT').reduce((s, o) => s + (Number(o.total) || 0), 0);
     return { list: matched, totalAmount, totalPaid, totalDebtRemain };
   }, [detailTarget, orders, filterYear, isCus]);
+  const detailPageList = detailRowsPerPage === 'all' ? detailData.list : detailData.list.slice((detailCurrentPage - 1) * Number(detailRowsPerPage), detailCurrentPage * Number(detailRowsPerPage));
+  const detailTotalPages = detailRowsPerPage === 'all' ? 1 : Math.max(1, Math.ceil(detailData.list.length / Number(detailRowsPerPage)));
 
   return (
     <div className="flex-1 flex flex-col p-4 md:p-6 bg-gray-50 overflow-hidden h-full">
@@ -1769,11 +1745,12 @@ function ContactManager({ type, data, orders, navigationTarget, storeConfig, db,
             </div>
             <div>
               <h4 className="font-bold text-sm text-gray-800 mb-2">Chi tiết sản phẩm đã {isCus ? "mua" : "cung cấp"}:</h4>
-              <div className="max-h-80 overflow-y-auto border rounded-xl">
-                <table className="w-full text-xs text-left">
-                  <thead className="bg-gray-100 sticky top-0 border-b"><tr><th className="p-2.5">Thời gian</th><th className="p-2.5">Mặt hàng & Ghi chú/BH</th><th className="p-2.5">Giá trị đơn</th><th className="p-2.5">Trạng thái nợ</th></tr></thead>
+              <div className="border rounded-xl overflow-hidden">
+                <div className="flex flex-wrap items-center justify-between gap-2 p-2 border-b bg-gray-50"><span className="text-xs text-gray-500">{detailData.list.length} giao dịch</span><label className="text-xs flex items-center gap-2">Hiển thị <select className="border rounded-lg p-1.5 bg-white" value={detailRowsPerPage} onChange={e=>{setDetailRowsPerPage(e.target.value);setDetailCurrentPage(1);}}><option value="5">5 dòng</option><option value="10">10 dòng</option><option value="20">20 dòng</option><option value="all">Tất cả</option></select></label></div>
+                <div className="max-h-80 overflow-auto"><table className="w-full text-xs text-left">
+                  <thead className="bg-gray-100 sticky top-0 border-b"><tr><th className="p-2.5">Thời gian</th><th className="p-2.5">Mặt hàng & Ghi chú/BH</th><th className="p-2.5">Giá nhập</th><th className="p-2.5">Giá bán</th><th className="p-2.5">Giá trị đơn</th><th className="p-2.5">Trạng thái nợ</th></tr></thead>
                   <tbody>
-                    {detailData.list.map(ord => {
+                    {detailPageList.map(ord => {
                       const statusClass = ord.status === 'PAID' ? 'bg-green-100 text-green-700' : 'bg-orange-100 text-orange-700';
                       return (
                         <tr key={ord.id} className="border-b hover:bg-gray-50">
@@ -1781,24 +1758,27 @@ function ContactManager({ type, data, orders, navigationTarget, storeConfig, db,
                           <td className="p-2.5">
                             <ul className="space-y-1.5">
                               {ord.items?.map((it, idx) => {
-                                const qty = it.quantity || it.qty || 1; const itemPrice = it.price || it.importCost || 0;
+                                const qty = it.quantity || it.qty || 1; const itemPrice = Number(it.price) || 0; const itemCost = Number(it.importCost ?? it.cost) || 0;
                                 return (
                                   <li key={idx} className="bg-gray-50 p-1.5 rounded border border-gray-100">
-                                    <div className="flex justify-between font-medium text-gray-800"><span><button type="button" onClick={() => navigateMainTab('products', it.id || it.productId || '', it.name || '')} className="text-blue-700 underline font-bold">{it.name}</button> x {qty}</span><span>{formatCurrency(itemPrice * qty)}</span></div>
+                                    <div className="font-medium text-gray-800"><span><button type="button" onClick={() => navigateMainTab('products', it.id || it.productId || '', it.name || '')} className="text-blue-700 underline font-bold">{it.name}</button> × {qty}</span></div>
                                     {(it.warrantyValue || it.note) && (<div className="text-[10px] text-gray-500 mt-0.5 flex gap-2">{it.warrantyValue && <span>🛡️ BH: {it.warrantyValue} {it.warrantyUnit}</span>}{it.note && <span>📝 {it.note}</span>}</div>)}
                                   </li>
                                 );
                               })}
                             </ul>
                           </td>
+                          <td className="p-2.5 align-top">{(ord.items || []).map((it, idx) => <div key={idx} className="mb-1 whitespace-nowrap">{formatCurrency(Number(it.importCost ?? it.cost) || 0)}</div>)}</td>
+                          <td className="p-2.5 align-top">{(ord.items || []).map((it, idx) => <div key={idx} className="mb-1 whitespace-nowrap">{formatCurrency(Number(it.price) || 0)}</div>)}</td>
                           <td className="p-2.5 font-bold text-gray-800 align-top">{formatCurrency(ord.total)}</td>
                           <td className="p-2.5 align-top"><span className={"px-2 py-0.5 rounded text-[10px] font-bold " + statusClass}>{ord.status === 'PAID' ? 'Đã trả' : 'Đang nợ'}</span></td>
                         </tr>
                       );
                     })}
-                    {detailData.list.length === 0 && (<tr><td colSpan="4" className="p-4 text-center text-gray-400">Không có phát sinh giao dịch</td></tr>)}
+                    {detailData.list.length === 0 && (<tr><td colSpan="6" className="p-4 text-center text-gray-400">Không có phát sinh giao dịch</td></tr>)}
                   </tbody>
-                </table>
+                </table></div>
+                <div className="flex flex-wrap items-center justify-between gap-2 p-2 border-t bg-gray-50"><span className="text-xs text-gray-500">Trang {detailRowsPerPage === 'all' ? 1 : detailCurrentPage} / {detailTotalPages}</span><div className="flex gap-2"><button type="button" onClick={()=>setDetailCurrentPage(p=>Math.max(1,p-1))} disabled={detailCurrentPage===1 || detailRowsPerPage==='all'} className="border rounded px-3 py-1 text-xs disabled:opacity-40">Lùi</button><button type="button" onClick={()=>setDetailCurrentPage(p=>Math.min(detailTotalPages,p+1))} disabled={detailCurrentPage>=detailTotalPages || detailRowsPerPage==='all'} className="border rounded px-3 py-1 text-xs disabled:opacity-40">Tiến</button></div></div>
               </div>
             </div>
           </div>
@@ -1882,8 +1862,10 @@ function InventoryView({ products, orders, imports, warrantyRequests = [], custo
       const match = (products || []).find(row => (target.id && row.id === target.id) || (target.name && String(row.name || '').trim().toLowerCase() === String(target.name).trim().toLowerCase()));
       if (match) { setSearchTerm(''); setInvCurrentPage(1); setDetailProduct(match); setProductImportYear(String(getVietnamDateParts(new Date()).year)); setShowAllDetailSales(true); }
     };
+    const onCloseProductPage = () => setDetailProduct(null);
     window.addEventListener('app:navigate-tab', onNavigate);
-    return () => { window.removeEventListener('app:navigate-tab', onNavigate); window.removeEventListener('app:close-popups', closeOnBrowserBack); };
+    window.addEventListener('app:close-popups', onCloseProductPage);
+    return () => { window.removeEventListener('app:navigate-tab', onNavigate); window.removeEventListener('app:close-popups', onCloseProductPage); };
   }, [products]);
   const [showAllDetailSales, setShowAllDetailSales] = useState(false);
   const openProductHistory = (product, showAll = false) => {
@@ -2046,7 +2028,7 @@ function InventoryView({ products, orders, imports, warrantyRequests = [], custo
   return (
     <div className="flex-1 flex flex-col p-4 md:p-6 bg-gray-50 overflow-hidden h-full">
       <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center mb-4 gap-3">
-        <div><h2 className="text-2xl font-bold text-gray-800">Kho Hàng</h2></div>
+        <div><h2 className="text-2xl font-bold text-gray-800">Sản phẩm</h2></div>
         <div className="flex items-center gap-3 w-full sm:w-auto">
           <div className="relative flex-1 sm:w-64"><Search size={16} className="absolute left-3 top-3 text-gray-400"/><input placeholder="Tìm kiếm trực tiếp sản phẩm..." value={searchTerm} onChange={e=>{ setSearchTerm(e.target.value); setInvCurrentPage(1); }} className="w-full pl-9 pr-3 py-2 border rounded-lg bg-white outline-none text-sm"/></div>
           <button onClick={() => {setForm({name:'', category:'', price:'', cost:'', stock:''}); setIsModalOpen(true);}} className="bg-blue-600 text-white px-4 py-2 rounded-lg font-bold flex items-center gap-2 shrink-0"><Plus size={18}/> Thêm mới</button>
@@ -2093,7 +2075,11 @@ function InventoryView({ products, orders, imports, warrantyRequests = [], custo
         </div>
         <div className="border-t shrink-0"><PaginationControls currentPage={invCurrentPage} totalPages={totalInvPages} rowsPerPage={invRowsPerPage} onPageChange={(p) => setInvCurrentPage(p)} onRowsChange={(r) => { setInvRowsPerPage(r); setInvCurrentPage(1); }} totalItems={filteredProducts.length} /></div>
       </div>
-      <Modal isOpen={!!detailProduct} onClose={() => setDetailProduct(null)} title={`Lịch sử: ${detailProduct?.name || ''}`} maxWidth="max-w-4xl">
+      {detailProduct && <div className="flex-1 overflow-y-auto bg-gray-50/50 p-4 md:p-6 space-y-4">
+        <div className="flex flex-wrap items-center justify-between gap-3 bg-white border rounded-xl p-3">
+          <div><h2 className="text-xl font-bold text-gray-800">Lịch sử: {detailProduct.name || ''}</h2><p className="text-sm text-gray-500">Chi tiết sản phẩm</p></div>
+          <div className="flex gap-2"><button type="button" onClick={() => window.history.back()} className="border rounded-lg px-3 py-2 text-sm font-semibold hover:bg-gray-100">← Lùi</button><button type="button" onClick={() => window.history.forward()} className="border rounded-lg px-3 py-2 text-sm font-semibold hover:bg-gray-100">Tiến →</button><button type="button" onClick={() => { setDetailProduct(null); }} className="bg-gray-700 text-white rounded-lg px-3 py-2 text-sm font-semibold">Danh sách sản phẩm</button></div>
+        </div>
         {detailProduct && <div className="px-1 pt-2"><button type="button" onClick={() => { setDetailProduct(null); navigateMainTab('products'); }} className="text-blue-700 underline text-sm font-semibold">Mở thẻ lưu sản phẩm</button></div>}
         {detailProduct && (
           <div className="space-y-4">
@@ -2108,14 +2094,6 @@ function InventoryView({ products, orders, imports, warrantyRequests = [], custo
                 </div>
               </div>
             </div>
-            {(() => {
-              const latestImport = (imports || []).flatMap(im => (im.items || []).filter(item => ((item.id || item.productId) && (item.id || item.productId) === detailProduct.id) || (!item.id && item.name === detailProduct.name)).map(item => ({ ...item, date: im.date, supplierName: im.supplierName || 'Chưa rõ nhà cung cấp', supplierId: im.supplierId || '' }))).sort((a, b) => new Date(b.date || 0) - new Date(a.date || 0))[0];
-              return <div className="bg-blue-50 p-3 rounded-xl border border-blue-100 grid grid-cols-1 sm:grid-cols-3 gap-3">
-                <div><p className="text-[10px] text-blue-700 font-bold uppercase">Nhập gần nhất</p><p className="text-xs font-semibold text-gray-800">{latestImport ? formatDate(latestImport.date) : 'Chưa có dữ liệu'}</p></div>
-                <div><p className="text-[10px] text-blue-700 font-bold uppercase">Nhà cung cấp</p><p className="text-xs font-semibold text-gray-800">{latestImport?.supplierName ? <button type="button" onClick={() => { setDetailProduct(null); navigateMainTab('suppliers', latestImport.supplierId || '', latestImport.supplierName); }} className="text-blue-700 underline text-left">{latestImport.supplierName} · Xem hồ sơ</button> : (detailProduct.lastSupplierName || 'Chưa có dữ liệu')}</p></div>
-                <div><p className="text-[10px] text-blue-700 font-bold uppercase">Giá nhập gần nhất</p><p className="text-xs font-bold text-blue-800">{latestImport ? formatCurrency(latestImport.importCost) : 'Chưa có dữ liệu'}</p></div>
-              </div>;
-            })()}
             <div className="bg-orange-50 p-3 rounded-xl border border-orange-100 space-y-3">
               {(() => {
                 const allProductImports = (imports || []).flatMap(im => (im.items || []).filter(item => {
@@ -2140,10 +2118,6 @@ function InventoryView({ products, orders, imports, warrantyRequests = [], custo
                         <option value="ALL">Tất cả các năm</option>
                       </select>
                     </label>
-                  </div>
-                  <div><p className="text-[11px] text-orange-800 font-bold uppercase mb-2">5 lần nhập hàng gần nhất</p>
-                    {recentImports.length === 0 ? <p className="text-xs text-orange-700">Chưa có dữ liệu nhập hàng.</p> :
-                    <div className="overflow-auto"><table className="w-full text-xs min-w-[560px]"><thead className="bg-orange-100 text-orange-900"><tr><th className="p-2 text-left">Thời gian nhập</th><th className="p-2 text-left">Nhà cung cấp</th><th className="p-2 text-right">Giá nhập</th><th className="p-2 text-right">Số lượng nhập</th></tr></thead><tbody>{recentImports.map((imp, idx) => <tr key={`${imp.date}-${imp.supplierId}-${idx}`} className="border-t border-orange-100 bg-white"><td className="p-2 whitespace-nowrap">{formatDate(imp.date)}</td><td className="p-2">{imp.supplierName}</td><td className="p-2 text-right font-semibold">{formatCurrency(imp.importCost)}</td><td className="p-2 text-right font-bold text-purple-700">{Number(imp.qty).toLocaleString('vi-VN')}</td></tr>)}</tbody></table></div>}
                   </div>
                 </>;
               })()}
@@ -2183,7 +2157,7 @@ function InventoryView({ products, orders, imports, warrantyRequests = [], custo
             </div>
           </div>
         )}
-      </Modal>
+      </div>}
       <Modal isOpen={isModalOpen} onClose={() => setIsModalOpen(false)} title={form.id ? "Sửa thông tin Hàng hóa" : "Thêm Hàng hóa mới"}>
         <form onSubmit={handleSave} className="space-y-4">
           <input required placeholder="Tên sản phẩm *" value={form.name||''} onChange={e=>setForm({...form,name:e.target.value})} className="w-full p-2.5 border rounded-lg outline-none"/>
@@ -2666,11 +2640,10 @@ function ImportView({ products, imports = [], suppliers, db, storeId, user, user
   const handleAddNewProductInImport = async (e) => {
     e.preventDefault();
     try {
-      const costVal = Number(newProdForm.cost) || 0; const priceVal = Number(newProdForm.price) || 0; const initStock = Math.max(1, Number(newProdForm.stock) || 0);
-      // Sản phẩm mới bắt đầu tồn 0; số lượng thực tế được cộng đúng một lần khi hoàn tất phiếu nhập.
-      const newProdData = { name: newProdForm.name, category: newProdForm.category || '', cost: costVal, price: priceVal, stock: 0, createdAt: new Date().toISOString() };
+      const costVal = Number(newProdForm.cost) || 0; const priceVal = Number(newProdForm.price) || 0; const initStock = Number(newProdForm.stock) || 0;
+      const newProdData = { name: newProdForm.name, category: newProdForm.category || '', cost: costVal, price: priceVal, stock: initStock, createdAt: new Date().toISOString() };
       const docRef = await addDoc(collection(db, 'stores', storeId, 'products'), newProdData);
-      setCart(c => [...c, { id: docRef.id, name: newProdData.name, category: newProdData.category, qty: initStock, importCost: costVal, price: priceVal, _newProductInImport: true }]);
+      setCart(c => [...c, { id: docRef.id, name: newProdData.name, category: newProdData.category, qty: initStock > 0 ? initStock : 1, importCost: costVal, price: priceVal }]);
       setShowAddProdModal(false); setShowGroupSuggestions(false); setShowAddGroupForm(false); setNewProdForm({ name: '', category: '', cost: '', price: '', stock: '' }); showToast("Đã thêm hàng mới và đưa vào phiếu nhập!");
     } catch (err) { showToast("Lỗi thêm sản phẩm mới", "error"); }
   };
@@ -2702,13 +2675,13 @@ function ImportView({ products, imports = [], suppliers, db, storeId, user, user
         batch.set(importRef, importPayload);
         cart.forEach(item => {
           const p = products.find(prod => prod.id === item.id);
-          if (p || item._newProductInImport) {
-            let newCost = Number(item.importCost || 0); const oldCost = Number(p?.cost || 0); const currentStock = Number(p?.stock || 0); const importQty = Number(item.qty || 1);
+          if (p) {
+            let newCost = Number(item.importCost || 0); const oldCost = Number(p.cost || 0); const currentStock = Number(p.stock || 0); const importQty = Number(item.qty || 1);
             const method = storeConfig?.costCalcMethod || 'LATEST';
             if (method === 'AVERAGE') { if (currentStock + importQty > 0) newCost = Math.round(((currentStock * oldCost) + (importQty * newCost)) / (currentStock + importQty)); }
             else if (method === 'HIGHEST') newCost = Math.max(oldCost, newCost);
             else if (method === 'LOWEST') newCost = oldCost === 0 ? newCost : Math.min(oldCost, newCost);
-            batch.update(doc(db, 'stores', storeId, 'products', item.id), { stock: currentStock + importQty, cost: newCost, lastSupplierId: supplierId, lastSupplierName: s?.name || supplierSearch || newSuppForm.name || '' });
+            batch.update(doc(db, 'stores', storeId, 'products', p.id), { stock: currentStock + importQty, cost: newCost, lastSupplierId: supplierId, lastSupplierName: s?.name || supplierSearch || newSuppForm.name || '' });
           }
         });
         if (isDebt && s) batch.update(doc(db, 'stores', storeId, 'suppliers', supplierId), { totalDebt: Number(s.totalDebt || 0) + total });
@@ -2754,22 +2727,10 @@ function ImportView({ products, imports = [], suppliers, db, storeId, user, user
       <Modal isOpen={activeImportTab === 'create'} onClose={() => setActiveImportTab('history')} title={editingImport ? 'Sửa phiếu nhập hàng' : 'Tạo phiếu nhập hàng'} maxWidth="max-w-6xl">
       <div className="flex flex-col lg:flex-row overflow-hidden min-h-0 max-h-[75vh]">
       <div className="flex-1 p-4 md:p-6 flex flex-col overflow-hidden">
-        <div className="mb-4 shrink-0 space-y-3">
-          <h2 className="text-xl font-bold text-gray-800">Chọn sản phẩm nhập</h2>
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-            <div className="relative min-w-0">
-              <label className="block text-xs font-bold text-gray-600 mb-1">Sản phẩm *</label>
-              <div className="relative"><Search size={16} className="absolute left-3 top-3 text-gray-400"/><input placeholder="Tìm hoặc chọn sản phẩm..." value={searchTerm} onFocus={()=>setShowProductSuggestions(true)} onChange={e=>{setSearchTerm(e.target.value);setImportCurrentPage(1);setShowProductSuggestions(true);}} className="w-full pl-9 pr-3 py-2.5 border rounded-lg bg-white outline-none text-sm"/></div>
-              <button type="button" onClick={()=>{setNewProdForm(v=>({...v,name:searchTerm || v.name || ''}));setShowAddProdModal(v=>!v);setShowProductSuggestions(false);}} className="mt-2 w-full text-left px-3 py-2.5 rounded-lg border border-blue-200 bg-blue-50 text-blue-700 font-semibold text-sm"><Plus size={14} className="inline mr-1"/>{showAddProdModal ? 'Đóng thêm sản phẩm mới' : 'Thêm sản phẩm mới'}</button>
-              {showProductSuggestions && <div className="absolute z-40 top-[4.4rem] left-0 right-0 max-h-56 overflow-auto bg-white border rounded-lg shadow-lg">{filteredProducts.slice(0,8).map(p=><button type="button" key={p.id} onClick={()=>{addProductToCart(p);setSearchTerm('');setShowProductSuggestions(false);}} className="block w-full text-left px-3 py-2.5 text-sm hover:bg-blue-50"><span className="font-semibold">{p.name}</span><span className="block text-xs text-gray-500">{p.category || 'Chưa phân nhóm'} · Tồn: {p.stock}</span></button>)}{filteredProducts.length===0 && <div className="px-3 py-2 text-sm text-gray-500">Không tìm thấy sản phẩm.</div>}<button type="button" onClick={()=>{setNewProdForm(v=>({...v,name:searchTerm || v.name || ''}));setShowAddProdModal(true);setShowProductSuggestions(false);}} className="w-full text-left px-3 py-2.5 text-sm text-blue-700 font-semibold border-t"><Plus size={14} className="inline mr-1"/>Thêm sản phẩm mới</button></div>}
-            </div>
-            <div className="relative min-w-0">
-              <label className="block text-xs font-bold text-gray-600 mb-1">Nhóm hàng *</label>
-              <div className="relative"><Search size={16} className="absolute left-3 top-3 text-gray-400"/><input placeholder="Tìm hoặc chọn nhóm hàng..." value={groupSearch} onFocus={()=>setShowGroupSuggestions(true)} onChange={e=>{setGroupSearch(e.target.value);setShowGroupSuggestions(true);}} className="w-full pl-9 pr-3 py-2.5 border rounded-lg bg-white outline-none text-sm"/></div>
-              <button type="button" onClick={()=>{setNewGroupName(groupSearch || '');setShowAddGroupForm(v=>!v);setShowGroupSuggestions(false);}} className="mt-2 w-full text-left px-3 py-2.5 rounded-lg border border-blue-200 bg-blue-50 text-blue-700 font-semibold text-sm"><Plus size={14} className="inline mr-1"/>{showAddGroupForm ? 'Đóng thêm nhóm hàng mới' : 'Thêm nhóm hàng mới'}</button>
-              {showGroupSuggestions && <div className="absolute z-40 top-[4.4rem] left-0 right-0 max-h-56 overflow-auto bg-white border rounded-lg shadow-lg">{visibleGroups.slice(0,8).map((g,i)=><button type="button" key={`${g}-${i}`} onClick={()=>{setGroupSearch(g);setNewProdForm(v=>({...v,category:g}));setShowGroupSuggestions(false);}} className="block w-full text-left px-3 py-2.5 text-sm hover:bg-blue-50">{g}</button>)}{visibleGroups.length===0 && <div className="px-3 py-2 text-sm text-gray-500">Không tìm thấy nhóm hàng.</div>}<button type="button" onClick={()=>{setNewGroupName(groupSearch);setShowAddGroupForm(true);setShowGroupSuggestions(false);}} className="w-full text-left px-3 py-2.5 text-sm text-blue-700 font-semibold border-t"><Plus size={14} className="inline mr-1"/>Thêm nhóm hàng mới</button></div>}
-              {showAddGroupForm && <div className="mt-2 flex gap-2"><input value={newGroupName} onChange={e=>setNewGroupName(e.target.value)} placeholder="Tên nhóm hàng mới" className="min-w-0 flex-1 p-2.5 border rounded-lg text-sm"/><button type="button" onClick={handleAddGroupQuick} className="px-3 rounded-lg bg-blue-600 text-white text-sm font-bold">Chọn nhóm</button></div>}
-            </div>
+        <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center mb-4 gap-3 shrink-0">
+          <div className="flex items-center gap-2"><h2 className="text-xl font-bold text-gray-800">Chọn sản phẩm nhập</h2><button type="button" onClick={() => { setShowAddProdModal(v => !v); setNewProdForm(v => ({ ...v, name: v.name || searchTerm })); }} className="bg-blue-600 hover:bg-blue-700 text-white px-3 py-1.5 rounded-lg text-xs font-bold flex items-center gap-1 shadow"><Plus size={14}/> {showAddProdModal ? 'Đóng thêm mới' : 'Sản phẩm mới'}</button></div>
+          <div className="relative w-full sm:w-64"><Search size={16} className="absolute left-3 top-3 text-gray-400"/><input placeholder="Tìm kiếm sản phẩm nhập..." value={searchTerm} onFocus={()=>setShowProductSuggestions(true)} onChange={e=>{setSearchTerm(e.target.value); setImportCurrentPage(1); setShowProductSuggestions(true);}} className="w-full pl-9 pr-3 py-2 border rounded-lg bg-white outline-none text-sm"/>
+            {showProductSuggestions && <div className="absolute z-30 top-full left-0 right-0 mt-1 max-h-56 overflow-auto bg-white border rounded-lg shadow-lg">{filteredProducts.slice(0,8).map(p=><button type="button" key={p.id} onClick={()=>{addProductToCart(p);setSearchTerm(p.name);setShowProductSuggestions(false);}} className="block w-full text-left px-3 py-2 text-sm hover:bg-blue-50"><span className="font-semibold">{p.name}</span><span className="block text-xs text-gray-500">{p.category || 'Chưa phân nhóm'} · Tồn: {p.stock}</span></button>)}<button type="button" onClick={()=>{setShowAddProdModal(true);setShowProductSuggestions(false);setNewProdForm(v=>({...v,name:searchTerm}));}} className="w-full text-left px-3 py-2 text-sm text-blue-700 font-semibold border-t"><Plus size={14} className="inline mr-1"/>Thêm sản phẩm mới</button></div>}
           </div>
         </div>
 
@@ -2777,11 +2738,10 @@ function ImportView({ products, imports = [], suppliers, db, storeId, user, user
           <div className="font-bold text-sm text-blue-700">Thêm sản phẩm mới ngay trong phiếu nhập</div>
           <div><label className="block text-xs font-bold text-gray-500 mb-1">Tên sản phẩm *</label><input required placeholder="Nhập tên sản phẩm..." value={newProdForm.name} onChange={e=>setNewProdForm({...newProdForm,name:e.target.value})} className="w-full p-2.5 border rounded-lg outline-none text-sm"/></div>
           <div className="relative"><label className="block text-xs font-bold text-gray-500 mb-1">Nhóm hàng</label><input placeholder="Tìm hoặc chọn nhóm hàng..." value={groupSearch || newProdForm.category} onFocus={()=>setShowGroupSuggestions(true)} onChange={e=>{setGroupSearch(e.target.value);setNewProdForm(v=>({...v,category:e.target.value}));setShowGroupSuggestions(true);}} className="w-full p-2.5 border rounded-lg outline-none text-sm"/>
-            <button type="button" onClick={()=>{setNewGroupName(groupSearch || newProdForm.category || '');setShowAddGroupForm(v=>!v);setShowGroupSuggestions(false);}} className="mt-2 w-full text-left px-3 py-2 rounded-lg border border-blue-200 bg-blue-50 text-blue-700 font-semibold text-sm"><Plus size={14} className="inline mr-1"/>{showAddGroupForm ? 'Đóng thêm nhóm hàng mới' : 'Thêm nhóm hàng mới'}</button>
-            {showGroupSuggestions && <div className="mt-1 border rounded-lg max-h-32 overflow-auto bg-white">{visibleGroups.slice(0,8).map((g,i)=><button type="button" key={`${g}-${i}`} onClick={()=>{setNewProdForm(v=>({...v,category:g}));setGroupSearch(g);setShowGroupSuggestions(false);}} className="block w-full text-left px-3 py-2 text-sm hover:bg-blue-50">{g}</button>)}{visibleGroups.length === 0 && <div className="px-3 py-2 text-xs text-gray-500">Chưa có nhóm hàng phù hợp.</div>}<button type="button" onClick={()=>{setNewGroupName(groupSearch || newProdForm.category);setShowAddGroupForm(true);setShowGroupSuggestions(false);}} className="w-full text-left px-3 py-2 text-sm text-blue-700 font-semibold border-t"><Plus size={14} className="inline mr-1"/>Thêm nhóm hàng mới</button></div>}
+            {showGroupSuggestions && <div className="mt-1 border rounded-lg max-h-32 overflow-auto bg-white">{visibleGroups.slice(0,8).map((g,i)=><button type="button" key={`${g}-${i}`} onClick={()=>{setNewProdForm(v=>({...v,category:g}));setGroupSearch(g);setShowGroupSuggestions(false);}} className="block w-full text-left px-3 py-2 text-sm hover:bg-blue-50">{g}</button>)}<button type="button" onClick={()=>{setNewGroupName(groupSearch || newProdForm.category);setShowAddGroupForm(v=>!v);}} className="w-full text-left px-3 py-2 text-sm text-blue-700 font-semibold border-t"><Plus size={14} className="inline mr-1"/>Thêm nhóm hàng mới</button></div>}
             {showAddGroupForm && <div className="mt-2 flex gap-2"><input value={newGroupName} onChange={e=>setNewGroupName(e.target.value)} placeholder="Tên nhóm hàng mới" className="min-w-0 flex-1 p-2 border rounded-lg text-sm"/><button type="button" onClick={handleAddGroupQuick} className="px-3 rounded-lg bg-blue-600 text-white text-sm font-bold">Chọn nhóm</button></div>}
           </div>
-          <div className="grid grid-cols-2 gap-3"><div><label className="block text-xs font-bold text-gray-500 mb-1">Giá vốn (đ) *</label><input required type="number" step="any" placeholder="0 (cho phép số âm)" value={newProdForm.cost} onChange={e=>setNewProdForm({...newProdForm,cost:e.target.value})} className="w-full p-2.5 border rounded-lg text-sm"/></div><div><label className="block text-xs font-bold text-gray-500 mb-1">Giá bán (đ) *</label><input required type="number" step="any" placeholder="0 (cho phép số âm)" value={newProdForm.price} onChange={e=>setNewProdForm({...newProdForm,price:e.target.value})} className="w-full p-2.5 border rounded-lg text-sm"/></div></div>
+          <div className="grid grid-cols-2 gap-3"><div><label className="block text-xs font-bold text-gray-500 mb-1">Giá vốn (đ) *</label><input required type="number" placeholder="0" value={newProdForm.cost} onChange={e=>setNewProdForm({...newProdForm,cost:e.target.value})} className="w-full p-2.5 border rounded-lg text-sm"/></div><div><label className="block text-xs font-bold text-gray-500 mb-1">Giá bán (đ) *</label><input required type="number" placeholder="0" value={newProdForm.price} onChange={e=>setNewProdForm({...newProdForm,price:e.target.value})} className="w-full p-2.5 border rounded-lg text-sm"/></div></div>
           <div><label className="block text-xs font-bold text-gray-500 mb-1">Số lượng tồn ban đầu *</label><input required type="number" placeholder="0" value={newProdForm.stock} onChange={e=>setNewProdForm({...newProdForm,stock:e.target.value})} className="w-full p-2.5 border rounded-lg text-sm"/></div>
           <button type="submit" className="w-full bg-blue-600 text-white font-bold p-2.5 rounded-lg text-sm">Lưu & đưa vào phiếu nhập</button>
         </form>}
@@ -2841,7 +2801,6 @@ function ImportView({ products, imports = [], suppliers, db, storeId, user, user
           <div className="relative">
             <label className="block text-xs font-bold text-gray-500 mb-1">Nhà cung cấp *</label>
             <input required value={supplierSearch || ((suppliers || []).find(s=>s.id===supplierId)?.name || '')} onFocus={()=>setShowSupplierSuggestions(true)} onChange={e=>{setSupplierSearch(e.target.value);setSupplierId('');setShowSupplierSuggestions(true);}} placeholder="Tìm hoặc chọn nhà cung cấp..." className="w-full p-2.5 border rounded-lg outline-none text-sm bg-white font-medium"/>
-            <button type="button" onClick={()=>{setNewSuppForm(v=>({...v,name:supplierSearch || v.name || ''}));setShowAddSuppModal(v=>!v);setShowSupplierSuggestions(false);}} className="mt-2 w-full text-left px-3 py-2 rounded-lg border border-blue-200 bg-blue-50 text-blue-700 font-semibold text-sm"><Plus size={14} className="inline mr-1"/>Thêm nhà cung cấp mới</button>
             {showSupplierSuggestions && <div className="absolute z-30 top-full left-0 right-0 mt-1 max-h-48 overflow-auto bg-white border rounded-lg shadow-lg">{visibleSuppliers.slice(0,8).map(s=><button type="button" key={s.id} onClick={()=>{setSupplierId(s.id);setSupplierSearch(s.name);setShowSupplierSuggestions(false);}} className="block w-full text-left px-3 py-2 text-sm hover:bg-blue-50">{s.name}</button>)}<button type="button" onClick={()=>{setNewSuppForm(v=>({...v,name:supplierSearch}));setShowAddSuppModal(v=>!v);setShowSupplierSuggestions(false);}} className="w-full text-left px-3 py-2 text-sm text-blue-700 font-semibold border-t"><Plus size={14} className="inline mr-1"/>Thêm nhà cung cấp mới</button></div>}
           </div>
           {showAddSuppModal && <form onSubmit={handleAddSupplierQuick} className="border border-blue-200 bg-white rounded-xl p-3 space-y-2">
@@ -3259,7 +3218,7 @@ function SettingsView({ db, storeId, showToast, storeConfig }) {
   const menuItems = [
     { id: 'customers', label: 'Khách hàng (Nợ phải thu)' }, 
     { id: 'suppliers', label: 'Nhà cung cấp (Nợ phải trả)' }, 
-    { id: 'products', label: 'Hàng hóa & Kho' }, 
+    { id: 'products', label: 'Sản phẩm' }, 
     { id: 'orders', label: 'Hóa đơn (Bán hàng)' },
     { id: 'imports', label: 'Nhập hàng (Excel KiotViet)' },
     { id: 'expenses', label: 'Lịch sử Chi phí' }
