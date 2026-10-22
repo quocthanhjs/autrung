@@ -12,7 +12,6 @@ const firebaseConfig = {
   storageBucket: "smartpos-5f5cf.firebasestorage.app",
   messagingSenderId: "458225351603",
   appId: "1:458225351603:web:f67d06427def5a33dca9c6",
-  measurementId: "G-0YW45XF8QL"
 };
 
 const app = initializeApp(firebaseConfig);
