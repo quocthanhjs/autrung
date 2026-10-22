@@ -165,11 +165,11 @@ const ReceiptTemplate = ({ order, storeConfig, isA4A5, baseFontSize }) => {
             <div className="flex flex-col flex-1">
               {cfg.printShowStoreName && (
                 <h2 className="font-bold uppercase" style={{fontSize: fsStoreName, transform: `translateX(${Number(cfg.storeNameXOffset || 0)}px)`}}>
-                  {storeConfig.name || 'SmartPOS Pro'}
+                  {cfg.printStoreName ?? storeConfig.name ?? 'QUẢN LÝ BÁN HÀNG'}
                 </h2>
               )}
-              {cfg.printShowStoreAddress && <p className="mt-0.5" style={{fontSize: fsStoreAddress, transform: `translateX(${Number(cfg.storeAddressXOffset || 0)}px)`}}>ĐC: {storeConfig.address}</p>}
-              {cfg.printShowStorePhone && <p style={{fontSize: fsStorePhone, transform: `translateX(${Number(cfg.storePhoneXOffset || 0)}px)`}}>SĐT: {storeConfig.phone}</p>}
+              {cfg.printShowStoreAddress && <p className="mt-0.5" style={{fontSize: fsStoreAddress, transform: `translateX(${Number(cfg.storeAddressXOffset || 0)}px)`}}> {cfg.printAddressLabel ?? 'Địa chỉ'}: {cfg.printStoreAddress ?? storeConfig.address}</p>}
+              {cfg.printShowStorePhone && <p style={{fontSize: fsStorePhone, transform: `translateX(${Number(cfg.storePhoneXOffset || 0)}px)`}}> {cfg.printPhoneLabel ?? 'SĐT'}: {cfg.printStorePhone ?? storeConfig.phone}</p>}
             </div>
           </div>
         ) : (
@@ -181,11 +181,11 @@ const ReceiptTemplate = ({ order, storeConfig, isA4A5, baseFontSize }) => {
             )}
             {cfg.printShowStoreName && (
               <h2 className="font-bold uppercase" style={{fontSize: fsStoreName, transform: `translateX(${Number(cfg.storeNameXOffset || 0)}px)`}}>
-                {storeConfig.name || 'SmartPOS Pro'}
+                {cfg.printStoreName ?? storeConfig.name ?? 'QUẢN LÝ BÁN HÀNG'}
               </h2>
             )}
-            {cfg.printShowStoreAddress && <p className="mt-0.5" style={{fontSize: fsStoreAddress, transform: `translateX(${Number(cfg.storeAddressXOffset || 0)}px)`}}>ĐC: {storeConfig.address}</p>}
-            {cfg.printShowStorePhone && <p style={{fontSize: fsStorePhone, transform: `translateX(${Number(cfg.storePhoneXOffset || 0)}px)`}}>SĐT: {storeConfig.phone}</p>}
+            {cfg.printShowStoreAddress && <p className="mt-0.5" style={{fontSize: fsStoreAddress, transform: `translateX(${Number(cfg.storeAddressXOffset || 0)}px)`}}> {cfg.printAddressLabel ?? 'Địa chỉ'}: {cfg.printStoreAddress ?? storeConfig.address}</p>}
+            {cfg.printShowStorePhone && <p style={{fontSize: fsStorePhone, transform: `translateX(${Number(cfg.storePhoneXOffset || 0)}px)`}}> {cfg.printPhoneLabel ?? 'SĐT'}: {cfg.printStorePhone ?? storeConfig.phone}</p>}
           </div>
         )}
 
@@ -194,29 +194,29 @@ const ReceiptTemplate = ({ order, storeConfig, isA4A5, baseFontSize }) => {
             {cfg.printInvoiceTitle || 'HÓA ĐƠN BÁN HÀNG'}
           </h1>
           <div className="flex justify-center items-center gap-3 mt-1 text-gray-800" style={{fontSize: fsMeta}}>
-            {cfg.printShowDate && <span>Ngày tạo: {order?.date ? formatDate(order.date) : '20/10/2026 14:30'}</span>}
-            {cfg.printShowInvoiceId && <span>Mã HĐ: {order?.invoiceCode || order?.id?.slice(0,6).toUpperCase() || 'HD12345'}</span>}
+            {cfg.printShowDate && <span>{cfg.printDateLabel ?? 'Ngày tạo'}: {order?.date ? formatDate(order.date) : '20/10/2026 14:30'}</span>}
+            {cfg.printShowInvoiceId && <span>{cfg.printInvoiceIdLabel ?? 'Mã HĐ'}: {order?.invoiceCode || order?.id?.slice(0,6).toUpperCase() || 'HD12345'}</span>}
           </div>
         </div>
       </div>
 
       <div className="mb-3 space-y-1" style={{fontSize: `${baseFontSize}px`}}>
-        {cfg.printShowCustomer && <p><strong>Khách hàng:</strong> {order?.customerName || 'Anh Nguyễn Văn A'}</p>}
-        {cfg.printShowCustomerPhone && <p><strong>SĐT:</strong> {order?.phone || '0987.654.321'}</p>}
-        {cfg.printShowCashier && <p><strong>Thu ngân:</strong> Bán hàng</p>}
-        {cfg.printShowStatus && <p><strong>Trạng thái:</strong> {order?.status === 'PAID' ? 'Đã thanh toán' : (order?.status === 'DEBT' ? 'Ghi nợ' : 'Đã thanh toán')}</p>}
+        {cfg.printShowCustomer && <p><strong>{cfg.printCustomerLabel ?? 'Khách hàng'}:</strong> {order?.customerName || 'Anh Nguyễn Văn A'}</p>}
+        {cfg.printShowCustomerPhone && <p><strong>{cfg.printCustomerPhoneLabel ?? 'SĐT'}:</strong> {order?.phone || '0987.654.321'}</p>}
+        {cfg.printShowCashier && <p><strong>{cfg.printCashierLabel ?? 'Thu ngân'}:</strong> Bán hàng</p>}
+        {cfg.printShowStatus && <p><strong>{cfg.printStatusLabel ?? 'Trạng thái'}:</strong> {order?.status === 'PAID' ? 'Đã thanh toán' : (order?.status === 'DEBT' ? 'Ghi nợ' : 'Đã thanh toán')}</p>}
       </div>
 
       <table className="w-full mb-3 border-collapse">
         <thead>
           <tr className="border-b border-gray-400 bg-gray-100/50">
             {isA4A5 && <th style={{...thStyle, width: wStt}} className="border border-gray-300">STT</th>}
-            <th style={{...thStyle, width: wProd}} className={`border border-gray-300`}>Tên hàng</th>
-            <th style={{...thStyle, width: wQty}} className={`border border-gray-300`}>SL</th>
-            <th style={{...thStyle, width: wPrice}} className={`border border-gray-300`}>Đơn giá</th>
-            {showBH && <th style={{...thStyle, width: wWarranty}} className="border border-gray-300">Bảo hành</th>}
-            {showGC && <th style={{...thStyle, width: wNote}} className="border border-gray-300">Ghi chú</th>}
-            <th style={{...thStyle, width: wTotal}} className={`border border-gray-300`}>Thành tiền</th>
+            <th style={{...thStyle, width: wProd}} className={`border border-gray-300`}>{cfg.printProductLabel ?? 'Tên hàng'}</th>
+            <th style={{...thStyle, width: wQty}} className={`border border-gray-300`}>{cfg.printQtyLabel ?? 'SL'}</th>
+            <th style={{...thStyle, width: wPrice}} className={`border border-gray-300`}>{cfg.printPriceLabel ?? 'Đơn giá'}</th>
+            {showBH && <th style={{...thStyle, width: wWarranty}} className="border border-gray-300">{cfg.printWarrantyLabel ?? 'Bảo hành'}</th>}
+            {showGC && <th style={{...thStyle, width: wNote}} className="border border-gray-300">{cfg.printNoteLabel ?? 'Ghi chú'}</th>}
+            <th style={{...thStyle, width: wTotal}} className={`border border-gray-300`}>{cfg.printTotalLabel ?? 'Thành tiền'}</th>
           </tr>
         </thead>
         <tbody>
@@ -227,8 +227,8 @@ const ReceiptTemplate = ({ order, storeConfig, isA4A5, baseFontSize }) => {
                 <strong>{i.name}</strong>
                 {!isA4A5 && (
                   <div className="text-[0.85em] text-gray-700 mt-1 space-y-0.5">
-                    {cfg.printShowWarranty !== false && i.warrantyValue && <div>- BH: {i.warrantyValue} {i.warrantyUnit}</div>}
-                    {cfg.printShowNote !== false && i.note && <div>- GC: {i.note}</div>}
+                    {cfg.printShowWarranty !== false && i.warrantyValue && <div>- {cfg.printWarrantyLabel ?? 'BH'}: {i.warrantyValue} {i.warrantyUnit}</div>}
+                    {cfg.printShowNote !== false && i.note && <div>- {cfg.printNoteLabel ?? 'GC'}: {i.note}</div>}
                   </div>
                 )}
               </td>
@@ -242,7 +242,7 @@ const ReceiptTemplate = ({ order, storeConfig, isA4A5, baseFontSize }) => {
         </tbody>
         <tfoot>
           <tr className="border-t-2 border-gray-800 font-bold bg-gray-50">
-            <td colSpan={isA4A5 ? a4a5ColSpan : 3} className={`py-3 px-1 text-right uppercase ${isA4A5 ? 'border border-gray-300' : ''}`}>Tổng tiền hàng:</td>
+            <td colSpan={isA4A5 ? a4a5ColSpan : 3} className={`py-3 px-1 text-right uppercase ${isA4A5 ? 'border border-gray-300' : ''}`}>{cfg.printSubtotalLabel ?? 'Tổng tiền hàng'}:</td>
             <td className={`py-3 px-1 text-right ${isA4A5 ? 'border border-gray-300' : ''}`} style={{fontSize: `${baseFontSize + 2}px`}}>{formatCurrency(order?.total || 8500000)}</td>
           </tr>
         </tfoot>
@@ -438,14 +438,12 @@ export default function App() {
     { id: 'reports', icon: FileText, label: 'Báo cáo', permId: 'tong_quan_xem' },
     { id: 'sales_history', icon: Receipt, label: 'Đơn hàng', permId: 'ban_hang' },
     { id: 'imports', icon: ArrowDownToLine, label: 'Nhập hàng', permId: 'mua_nhap_hang' },
-    { id: 'groups', icon: Package, label: 'Nhóm hàng', permId: 'hh_danh_sach' },
     { id: 'products', icon: Package, label: 'Sản phẩm', permId: 'hh_danh_sach' },
     { id: 'warranty', icon: ShieldAlert, label: 'Bảo hành', permId: 'hh_danh_sach' },
     { id: 'customers', icon: Users, label: 'Khách hàng', permId: 'kh_danh_sach' },
     { id: 'suppliers', icon: Truck, label: 'Nhà cung cấp', permId: 'mua_ncc' },
     { id: 'expenses', icon: CreditCard, label: 'Chi phí', permId: 'quy_so_quy' },
-    { id: 'settings', icon: Database, label: 'Cài đặt & Dữ liệu', permId: 'ADMIN_ONLY' },
-    { id: 'staff', icon: UserCog, label: 'Quản trị Nhân viên', permId: 'ADMIN_ONLY' },
+    { id: 'settings', icon: Database, label: 'Cài đặt', permId: 'ADMIN_ONLY' },
   ];
 
   const visibleTabs = allTabs.filter(t => {
@@ -469,17 +467,16 @@ export default function App() {
       </header>
       <nav className="bg-white text-gray-700 px-2 md:px-4 flex items-stretch gap-0.5 overflow-x-auto scrollbar-hide shadow-sm shrink-0">
         {visibleTabs.map(tab => {
-          const activeClass = activeTab === tab.id ? 'bg-red-700 text-white shadow-sm' : 'bg-red-600 text-white hover:bg-red-700';
-          return <button key={tab.id} onClick={() => setActiveTab(tab.id)} className={'flex items-center justify-center gap-2 px-3 md:px-4 py-3 min-h-[46px] rounded-lg whitespace-nowrap font-semibold text-xs md:text-sm transition-colors ' + activeClass}><tab.icon size={17}/><span>{tab.label}</span></button>;
+          const activeClass = activeTab === tab.id ? 'bg-blue-800 text-white shadow-lg ring-2 ring-blue-300 -translate-y-0.5' : 'bg-blue-600 text-white hover:bg-blue-700 shadow-md';
+          return <button key={tab.id} onClick={() => setActiveTab(tab.id)} className={'flex items-center justify-center gap-2 px-3 md:px-4 py-3 min-h-[46px] rounded-xl whitespace-nowrap font-semibold text-xs md:text-sm transition-all duration-150 border border-white/40 ' + activeClass}><tab.icon size={17}/><span>{tab.label}</span></button>;
         })}
         <div className="flex-1 min-w-2" />
-        <button onClick={() => setActiveTab('pos')} className="my-1.5 mr-1 flex items-center gap-2 px-4 py-2 rounded-lg bg-green-600 text-white hover:bg-green-700 font-bold whitespace-nowrap shadow-sm"><ShoppingCart size={17}/> Bán hàng</button>
+        <button onClick={() => setActiveTab('pos')} className="my-1.5 mr-1 flex items-center gap-2 px-4 py-2 rounded-xl bg-yellow-400 text-yellow-950 hover:bg-yellow-300 font-extrabold whitespace-nowrap shadow-lg border border-yellow-200 ring-1 ring-yellow-500/40"><ShoppingCart size={17}/> Bán hàng</button>
       </nav>
       <main className="flex-1 min-w-0 overflow-auto flex flex-col min-h-[calc(100vh-104px)] relative">
         {toast && <div className={"fixed top-4 right-4 z-50 px-6 py-3.5 rounded-xl shadow-xl flex items-center gap-2 text-white animate-in slide-in-from-top-2 " + (toast.type === 'success' ? 'bg-emerald-600' : 'bg-blue-600')}><div className="bg-white/20 p-1 rounded-full">{toast.type === 'success' ? <Check size={16} /> : <AlertCircle size={16} />}</div><span className="font-bold text-sm tracking-wide">{toast.msg}</span></div>}
         {activeTab === 'reports' && <ReportsView orders={orders} imports={imports} expenses={expenses} />}
         {activeTab === 'dashboard' && <DashboardView orders={orders} imports={imports} expenses={expenses} customers={customers} suppliers={suppliers} products={products} warrantyRequests={warrantyRequests} showToast={showToast} userData={userData} />}
-        {activeTab === 'groups' && <GroupManagementView products={products} db={db} storeId={storeId} showToast={showToast} />}
         {activeTab === 'pos' && <POSView products={products} orders={orders} customers={customers} db={db} storeId={storeId} user={user} storeConfig={storeConfig} showToast={showToast} userData={userData} />}
         {activeTab === 'sales_history' && <SalesHistoryView orders={orders} imports={imports} products={products} customers={customers} storeConfig={storeConfig} db={db} storeId={storeId} user={user} userData={userData} showToast={showToast} />}
         {activeTab === 'imports' && <ImportView products={products} imports={imports} suppliers={suppliers} db={db} storeId={storeId} user={user} userData={userData} showToast={showToast} storeConfig={storeConfig} setActiveTab={setActiveTab} />}
@@ -489,7 +486,6 @@ export default function App() {
         {activeTab === 'suppliers' && <ContactManager type="suppliers" data={suppliers} orders={imports} navigationTarget={navigationTarget} storeConfig={storeConfig} db={db} storeId={storeId} showToast={showToast} />}
         {activeTab === 'expenses' && <ExpenseView expenses={expenses} db={db} storeId={storeId} showToast={showToast} />}
         {activeTab === 'settings' && <SettingsView db={db} storeId={storeId} showToast={showToast} storeConfig={storeConfig} />}
-        {activeTab === 'staff' && <StaffManagerView db={db} showToast={showToast} />}
       </main>
     </div>
   );
@@ -1913,13 +1909,13 @@ function GroupManagementView({ products, db, storeId, showToast }) {
   };
   return <div className="flex-1 overflow-y-auto p-4 md:p-6 bg-gray-50/50 space-y-5">
     <div><h2 className="text-2xl font-bold text-gray-800">Quản lý nhóm hàng</h2><p className="text-sm text-gray-500 mt-1">Tạo nhóm và chọn sản phẩm để đưa vào nhóm.</p></div>
-    <section className="bg-white rounded-2xl border shadow-sm p-5 space-y-4">
+    <section className="bg-white rounded-2xl border border-blue-100 shadow-md p-5 space-y-4">
       <h3 className="font-bold text-gray-800">{editingGroup ? `Chỉnh sửa nhóm hàng: ${editingGroup.name}` : 'Tạo nhóm hàng mới'}</h3>
       <div className="flex flex-col sm:flex-row gap-2"><input value={newGroupName} onChange={e=>setNewGroupName(e.target.value)} placeholder="Tên nhóm hàng mới" className="flex-1 border rounded-lg p-2.5"/><button type="button" onClick={saveGroup} className="bg-blue-600 hover:bg-blue-700 text-white px-5 py-2.5 rounded-lg font-bold">{editingGroup ? 'Lưu chỉnh sửa' : 'Tạo nhóm'}</button>{editingGroup && <button type="button" onClick={()=>{setEditingGroup(null);setNewGroupName('');setGroupProductIds([]);}} className="border px-4 py-2.5 rounded-lg font-bold">Hủy</button>}</div>
       <p className="text-sm text-gray-500">Chọn sản phẩm bên dưới trước khi bấm “Tạo nhóm”. Sản phẩm đã chọn sẽ được cập nhật nhóm tương ứng.</p>
       <div className="max-h-80 overflow-y-auto border rounded-xl divide-y">{products.map(p=><label key={p.id} className="flex items-center gap-3 p-3 hover:bg-gray-50"><input type="checkbox" checked={groupProductIds.includes(p.id)} onChange={e=>setGroupProductIds(v=>e.target.checked?[...v,p.id]:v.filter(id=>id!==p.id))} className="w-4 h-4"/><span className="flex-1 font-medium">{p.name}</span><span className="text-xs text-gray-500">{p.category||'Chưa phân nhóm'}</span></label>)}{products.length===0&&<p className="p-5 text-center text-gray-400">Chưa có sản phẩm trong kho.</p>}</div>
     </section>
-    <section className="bg-white rounded-2xl border shadow-sm p-5"><div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mb-3"><h3 className="font-bold text-gray-800">Nhóm hàng hiện có ({visibleGroups.length})</h3><div className="relative w-full sm:w-72"><Search size={16} className="absolute left-3 top-3 text-gray-400"/><input value={groupSearch} onChange={e=>setGroupSearch(e.target.value)} placeholder="Tìm nhóm hàng..." className="w-full pl-9 pr-3 py-2 border rounded-lg text-sm"/></div></div>{visibleGroups.length ? <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">{visibleGroups.map(g=><div key={g.id} className="p-4 border rounded-xl"><p className="font-bold text-gray-800">{g.name}</p><p className="text-sm text-gray-500 mt-1">{products.filter(p=>String(p.category||'').trim().toLocaleLowerCase()===String(g.name||'').trim().toLocaleLowerCase()).length} sản phẩm</p><div className="flex gap-2 mt-3"><button type="button" onClick={()=>{setEditingGroup(g.derivedFromProducts ? null : g);setNewGroupName(g.name);setGroupProductIds(products.filter(p=>String(p.category||'').trim().toLocaleLowerCase()===String(g.name||'').trim().toLocaleLowerCase()).map(p=>p.id));}} className="text-blue-600 bg-blue-50 px-3 py-1.5 rounded-lg text-xs font-bold flex items-center gap-1"><Edit size={14}/> Sửa</button><button type="button" onClick={()=>deleteGroup(g)} className="text-blue-600 bg-blue-50 px-3 py-1.5 rounded-lg text-xs font-bold flex items-center gap-1"><Trash2 size={14}/> Xóa</button></div></div>)}</div> : <p className="text-sm text-gray-500">Chưa có nhóm hàng.</p>}</section>
+    <section className="bg-white rounded-2xl border border-blue-100 shadow-md p-5"><div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mb-3"><h3 className="font-bold text-gray-800">Nhóm hàng hiện có ({visibleGroups.length})</h3><div className="relative w-full sm:w-72"><Search size={16} className="absolute left-3 top-3 text-gray-400"/><input value={groupSearch} onChange={e=>setGroupSearch(e.target.value)} placeholder="Tìm nhóm hàng..." className="w-full pl-9 pr-3 py-2 border rounded-lg text-sm"/></div></div>{visibleGroups.length ? <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">{visibleGroups.map(g=><div key={g.id} className="p-4 border rounded-xl"><p className="font-bold text-gray-800">{g.name}</p><p className="text-sm text-gray-500 mt-1">{products.filter(p=>String(p.category||'').trim().toLocaleLowerCase()===String(g.name||'').trim().toLocaleLowerCase()).length} sản phẩm</p><div className="flex gap-2 mt-3"><button type="button" onClick={()=>{setEditingGroup(g.derivedFromProducts ? null : g);setNewGroupName(g.name);setGroupProductIds(products.filter(p=>String(p.category||'').trim().toLocaleLowerCase()===String(g.name||'').trim().toLocaleLowerCase()).map(p=>p.id));}} className="text-blue-600 bg-blue-50 px-3 py-1.5 rounded-lg text-xs font-bold flex items-center gap-1"><Edit size={14}/> Sửa</button><button type="button" onClick={()=>deleteGroup(g)} className="text-blue-600 bg-blue-50 px-3 py-1.5 rounded-lg text-xs font-bold flex items-center gap-1"><Trash2 size={14}/> Xóa</button></div></div>)}</div> : <p className="text-sm text-gray-500">Chưa có nhóm hàng.</p>}</section>
   </div>;
 }
 
@@ -2120,6 +2116,10 @@ function InventoryView({ products, orders, imports, warrantyRequests = [], custo
           <button onClick={() => {setForm({name:'', category:'', price:'', cost:'', stock:''}); setIsModalOpen(true);}} className="bg-blue-600 text-white px-4 py-2 rounded-lg font-bold flex items-center gap-2 shrink-0"><Plus size={18}/> Thêm mới</button>
         </div>
       </div>
+      <details open className="mb-4 rounded-2xl border border-blue-200 bg-white shadow-md overflow-hidden">
+        <summary className="cursor-pointer list-none px-4 py-3 bg-blue-50 text-blue-800 font-extrabold flex items-center justify-between"><span className="flex items-center gap-2"><Package size={18}/> Nhóm hàng</span><span className="text-xs font-semibold">Quản lý nhóm và sản phẩm trong nhóm ▾</span></summary>
+        <div className="p-2 sm:p-3"><GroupManagementView products={products} db={db} storeId={storeId} showToast={showToast} /></div>
+      </details>
       <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-4 mb-4">
         <div className="bg-white p-4 rounded-2xl border shadow-sm"><p className="text-xs text-gray-500 font-bold uppercase">Tổng Số Sản Phẩm</p><p className="text-xl font-bold text-gray-800">{bannerStats.count}</p></div>
         <div className="bg-white p-4 rounded-2xl border shadow-sm"><p className="text-xs text-blue-600 font-bold uppercase">Tổng Tồn Kho</p><p className="text-xl font-bold text-blue-600">{bannerStats.totalStock}</p></div>
@@ -2509,6 +2509,9 @@ function WarrantyView({ products = [], customers = [], suppliers = [], warrantyR
     const showCompany = cfg.printShowStoreName !== false;
     const showCompanyAddress = cfg.printShowStoreAddress !== false;
     const showCompanyPhone = cfg.printShowStorePhone !== false;
+    const printStoreName = cfg.printStoreName ?? storeConfig.name;
+    const printStoreAddress = cfg.printStoreAddress ?? storeConfig.address;
+    const printStorePhone = cfg.printStorePhone ?? storeConfig.phone;
     const dateValue = printMode === 'customer' ? (w.saleDate || '') : (w.purchaseDate || '');
     const width = paperSize === 'A5' ? '148mm' : '210mm';
     const safe = v => String(v ?? '').replace(/[&<>"']/g, c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
@@ -2519,7 +2522,7 @@ function WarrantyView({ products = [], customers = [], suppliers = [], warrantyR
     const rows = (w.items||[]).map((it,i)=>`<tr><td>${i+1}</td><td>${safe(it.name)}</td><td>${showDate?safe(((printMode==='customer' ? (it.saleDate || dateValue) : (it.purchaseDate || dateValue))) ? formatDate(printMode==='customer' ? (it.saleDate || dateValue) : (it.purchaseDate || dateValue)) : '—'):'—'}</td><td>${showDuration?safe(it.warranty||'—'):'—'}</td><td>${showNotes?safe(it.note||''):''}</td></tr>`).join('');
     const win = window.open('','_blank'); if(!win) return;
     win.document.write(`<!doctype html><html><head><meta charset="utf-8"><title>PHIẾU BẢO HÀNH</title><style>@page{size:${paperSize};margin:12mm}*{box-sizing:border-box}body{font-family:Arial,sans-serif;font-size:${Number(cfg.printFontSize)||12}px;color:#111;width:100%;max-width:${width};margin:0 auto}.company{display:flex;align-items:center;gap:16px;border-bottom:1px dashed #777;padding-bottom:12px}.logo{max-width:100px;max-height:75px;object-fit:contain}.company-info{flex:1}.company-info h3{margin:0 0 5px;font-size:calc(1.25em + ${(Number(cfg.fsStoreNameOffset)||0)}px);transform:translateX(${Number(cfg.storeNameXOffset||0)}px)}.company-info .company-address{transform:translateX(${Number(cfg.storeAddressXOffset||0)}px)}.company-info .company-phone{transform:translateX(${Number(cfg.storePhoneXOffset||0)}px)}.company-info p{margin:3px 0}h2{text-align:center;margin:18px 0 20px;font-size:1.5em}.meta p{margin:7px 0}table{width:100%;border-collapse:collapse;margin-top:18px;table-layout:fixed}th,td{border:1px solid #555;padding:${Number(cfg.printTablePaddingX ?? 7)}px;text-align:left;overflow-wrap:anywhere;font-size:${(Number(cfg.printFontSize)||12)*(Number(cfg.printDetailFontScale||100)/100)}px}th{text-align:center;background:#f2f2f2}th:first-child,td:first-child{width:8%;text-align:center}th:nth-child(3),td:nth-child(3){width:22%}th:nth-child(4),td:nth-child(4){width:18%}.sign{display:flex;justify-content:space-between;margin-top:55px;text-align:center}.sign div{width:40%}@media print{body{max-width:none}}</style></head><body>
-    ${(showLogo || showCompany || (showCompanyAddress && storeConfig.address) || (showCompanyPhone && storeConfig.phone)) ? `<header class="company">${showLogo?`<img class="logo" src="${safe(storeConfig.logo)}" alt="Logo">`:''}<div class="company-info">${showCompany?`<h3>${safe(storeConfig.name || 'QUẢN LÝ BÁN HÀNG')}</h3>`:''}${showCompanyAddress&&storeConfig.address?`<p class="company-address">Địa chỉ: ${safe(storeConfig.address)}</p>`:''}${showCompanyPhone&&storeConfig.phone?`<p class="company-phone">Điện thoại: ${safe(storeConfig.phone)}</p>`:''}</div></header>`:''}
+    ${(showLogo || showCompany || (showCompanyAddress && printStoreAddress) || (showCompanyPhone && printStorePhone)) ? `<header class="company">${showLogo?`<img class="logo" src="${safe(storeConfig.logo)}" alt="Logo">`:''}<div class="company-info">${showCompany?`<h3>${safe(printStoreName || 'QUẢN LÝ BÁN HÀNG')}</h3>`:''}${showCompanyAddress&&printStoreAddress?`<p class="company-address">${safe(cfg.printAddressLabel || 'Địa chỉ')}: ${safe(printStoreAddress)}</p>`:''}${showCompanyPhone&&printStorePhone?`<p class="company-phone">${safe(cfg.printPhoneLabel || 'Số điện thoại')}: ${safe(printStorePhone)}</p>`:''}</div></header>`:''}
     <h2>${safe(cfg.printInvoiceTitle || (printMode==='customer'?'PHIẾU NHẬN BẢO HÀNH / SỬA CHỮA':'PHIẾU GỞI BẢO HÀNH / SỬA CHỮA'))}</h2><div class="meta"><p><b>Mã phiếu:</b> ${safe(w.warrantyCode || ('BH'+String(w.id||'').slice(-8).toUpperCase()))}</p><p><b>Thời gian gửi:</b> ${safe(w.sentAt?formatDate(w.sentAt):'—')}</p><p><b>${printMode==='customer'?'Khách hàng':'Nơi nhận'}:</b> ${safe(personName)}</p>${personAddress?`<p><b>Địa chỉ:</b> ${safe(personAddress)}</p>`:''}${personPhone?`<p><b>Số điện thoại:</b> ${safe(personPhone)}</p>`:''}${visibleNote?`<p><b>Ghi chú:</b> ${safe(visibleNote)}</p>`:''}</div>
     <table><thead><tr><th>STT</th><th>Sản phẩm</th><th>${printMode==='customer'?'Thời gian đã bán':'Thời gian nhập'}</th><th>Thời gian bảo hành</th><th>${showNotes?'Ghi chú':''}</th></tr></thead><tbody>${rows}</tbody></table><div class="sign"><div>${printMode==='customer'?'Khách hàng':'Người gửi'}<br><br><br>(Ký, ghi rõ họ tên)</div><div>${printMode==='customer'?'Người tiếp nhận':'Nơi nhận bảo hành'}<br><br><br>(Ký, ghi rõ họ tên)</div></div>${cfg.printFooter?`<p style="text-align:center;margin-top:20px">${safe(cfg.printFooter)}</p>`:''}<script>window.onload=()=>window.print()</script></body></html>`);
     win.document.close();
@@ -3425,8 +3428,11 @@ function SettingsView({ db, storeId, showToast, storeConfig }) {
       const warrantyFontSize = Number(warrantyCfg.printFontSize) || 12;
       const showLogo = warrantyCfg.printShowLogo !== false && !!form.logo;
       const showStoreName = warrantyCfg.printShowStoreName !== false;
-      const showAddress = warrantyCfg.printShowStoreAddress !== false && !!form.address;
-      const showPhone = warrantyCfg.printShowStorePhone !== false && !!form.phone;
+      const warrantyStoreAddress = warrantyCfg.printStoreAddress ?? form.address;
+      const warrantyStorePhone = warrantyCfg.printStorePhone ?? form.phone;
+      const warrantyStoreName = warrantyCfg.printStoreName ?? form.name;
+      const showAddress = warrantyCfg.printShowStoreAddress !== false && !!warrantyStoreAddress;
+      const showPhone = warrantyCfg.printShowStorePhone !== false && !!warrantyStorePhone;
       const showDate = warrantyCfg.printShowDate !== false;
       const showDuration = warrantyCfg.printShowWarrantyDuration !== false;
       const showNote = warrantyCfg.printShowNote !== false;
@@ -3438,9 +3444,9 @@ function SettingsView({ db, storeId, showToast, storeConfig }) {
           {(showLogo || showStoreName || showAddress || showPhone) && <div style={{display:'flex',alignItems:'center',gap:'16px',borderBottom:'1px dashed #777',paddingBottom:'12px'}}>
             {showLogo && <img src={form.logo} alt="Logo" style={{maxWidth:'75px',maxHeight:'55px',objectFit:'contain'}}/>}
             <div style={{flex:1,minWidth:0}}>
-              {showStoreName && <div style={{fontWeight:700,fontSize:`${warrantyFontSize + 3}px`,transform:`translateX(${offsetName}px)`,overflowWrap:'anywhere'}}>{form.name || 'QUẢN LÝ BÁN HÀNG'}</div>}
-              {showAddress && <div style={{marginTop:'3px',transform:`translateX(${offsetAddress}px)`,overflowWrap:'anywhere'}}>Địa chỉ: {form.address}</div>}
-              {showPhone && <div style={{marginTop:'3px',transform:`translateX(${offsetPhone}px)`}}>Điện thoại: {form.phone}</div>}
+              {showStoreName && <div style={{fontWeight:700,fontSize:`${warrantyFontSize + 3}px`,transform:`translateX(${offsetName}px)`,overflowWrap:'anywhere'}}>{warrantyStoreName || 'QUẢN LÝ BÁN HÀNG'}</div>}
+              {showAddress && <div style={{marginTop:'3px',transform:`translateX(${offsetAddress}px)`,overflowWrap:'anywhere'}}>Địa chỉ: {warrantyStoreAddress}</div>}
+              {showPhone && <div style={{marginTop:'3px',transform:`translateX(${offsetPhone}px)`}}>Điện thoại: {warrantyStorePhone}</div>}
             </div>
           </div>}
           <h2 style={{textAlign:'center',fontSize:`${warrantyFontSize + 5}px`,margin:'18px 0',fontWeight:700}}>{warrantyCfg.printInvoiceTitle || 'PHIẾU GỞI BẢO HÀNH'}</h2>
@@ -3466,6 +3472,7 @@ function SettingsView({ db, storeId, showToast, storeConfig }) {
           <button onClick={() => setActiveSubTab('general')} className={`flex-1 md:w-32 py-2 text-sm font-bold rounded-lg flex justify-center items-center gap-2 transition-all ${activeSubTab==='general' ? 'bg-white text-blue-600 shadow-sm' : 'text-gray-500 hover:text-gray-700'}`}><Store size={16}/> Thông tin</button>
           <button onClick={() => setActiveSubTab('print')} className={`flex-1 md:w-36 py-2 text-sm font-bold rounded-lg flex justify-center items-center gap-2 transition-all ${activeSubTab==='print' ? 'bg-white text-blue-600 shadow-sm' : 'text-gray-500 hover:text-gray-700'}`}><Printer size={16}/> Mẫu in</button>
           <button onClick={() => setActiveSubTab('data')} className={`flex-1 md:w-32 py-2 text-sm font-bold rounded-lg flex justify-center items-center gap-2 transition-all ${activeSubTab==='data' ? 'bg-white text-blue-600 shadow-sm' : 'text-gray-500 hover:text-gray-700'}`}><Database size={16}/> Dữ liệu</button>
+          <button onClick={() => setActiveSubTab('staff')} className={`flex-1 md:w-40 py-2 text-sm font-bold rounded-lg flex justify-center items-center gap-2 transition-all ${activeSubTab==='staff' ? 'bg-white text-blue-600 shadow-sm' : 'text-gray-500 hover:text-gray-700'}`}><UserCog size={16}/> Quản trị nhân viên</button>
         </div>
       </div>
       <div className="flex-1 overflow-y-auto p-4 md:p-6">
@@ -3503,7 +3510,7 @@ function SettingsView({ db, storeId, showToast, storeConfig }) {
               </div>
               <div className="flex-1 overflow-y-auto p-5 space-y-6">
                 <div className="flex gap-2"><button type="button" onClick={()=>setEditingWarrantyPrint(false)} className={`flex-1 py-2 rounded-lg text-sm font-bold border ${!editingWarrantyPrint?'bg-blue-600 text-white':'bg-white'}`}>Mẫu in hóa đơn</button><button type="button" onClick={()=>setEditingWarrantyPrint(true)} className={`flex-1 py-2 rounded-lg text-sm font-bold border ${editingWarrantyPrint?'bg-purple-600 text-white':'bg-white'}`}>Mẫu in bảo hành</button></div>
-                {editingWarrantyPrint ? <div className="space-y-4 bg-purple-50 border border-purple-100 rounded-xl p-4"><h4 className="font-black text-purple-800">PHIẾU GỞI BẢO HÀNH</h4><p className="text-xs text-gray-600">Thiết lập khổ giấy và cỡ chữ riêng cho phiếu bảo hành. Phiếu không in cột số tiền hoặc thành tiền.</p><div className="flex gap-2">{['A4','A5'].map(size=><button key={size} onClick={()=>setForm(prev=>({...prev, warrantyPrintSize:size}))} className={`flex-1 py-2 rounded-lg border font-bold ${(form.warrantyPrintSize||'A4')===size?'bg-purple-600 text-white':'bg-white'}`}>Giấy {size}</button>)}</div><label className="block text-sm font-bold">Cỡ chữ ({form.warrantyPrintSize||'A4'})</label><input type="range" min="8" max="24" value={(form[`warrantyPrint${form.warrantyPrintSize||'A4'}`]||{}).printFontSize||12} onChange={e=>{const size=form.warrantyPrintSize||'A4';setForm(prev=>({...prev,[`warrantyPrint${size}`]:{...(prev[`warrantyPrint${size}`]||{}),printFontSize:Number(e.target.value)}}));}} className="w-full accent-purple-600"/><div className="space-y-3 rounded-lg border bg-white p-3"><p className="text-sm font-bold">Căn chỉnh trái/phải thông tin cửa hàng (A4/A5)</p>{[['storeNameXOffset','Tên cửa hàng'],['storeAddressXOffset','Địa chỉ'],['storePhoneXOffset','Số điện thoại']].map(([field,label])=><label key={field} className="block text-sm">{label} ({(form[`warrantyPrint${form.warrantyPrintSize||'A4'}`]||{})[field]||0}px)<input type="range" min="-150" max="150" step="1" value={(form[`warrantyPrint${form.warrantyPrintSize||'A4'}`]||{})[field]||0} onChange={e=>{const size=form.warrantyPrintSize||'A4';setForm(prev=>({...prev,[`warrantyPrint${size}`]:{...(prev[`warrantyPrint${size}`]||{}),[field]:Number(e.target.value)}}));}} className="w-full accent-blue-600"/></label>)}</div><div className="space-y-2 mt-3 rounded-lg border bg-white p-3"><p className="text-sm font-bold">Hiển thị trên phiếu bảo hành</p>{[['printShowLogo','In logo'],['printShowStoreName','In tên cửa hàng'],['printShowStoreAddress','In địa chỉ cửa hàng'],['printShowStorePhone','In số điện thoại cửa hàng'],['printShowDate','In thời gian bán/nhập'],['printShowWarrantyDuration','In thời hạn bảo hành'],['printShowNote','In ghi chú sản phẩm']].map(([field,label])=><label key={field} className="flex items-center gap-2 text-sm"><input type="checkbox" checked={(form[`warrantyPrint${form.warrantyPrintSize||'A4'}`]||{})[field] !== false} onChange={e=>{const size=form.warrantyPrintSize||'A4';setForm(prev=>({...prev,[`warrantyPrint${size}`]:{...(prev[`warrantyPrint${size}`]||{}),[field]:e.target.checked}}));}}/>{label}</label>)}<label className="block text-sm font-semibold">Tiêu đề phiếu<input value={(form[`warrantyPrint${form.warrantyPrintSize||'A4'}`]||{}).printInvoiceTitle || 'PHIẾU GỞI BẢO HÀNH'} onChange={e=>{const size=form.warrantyPrintSize||'A4';setForm(prev=>({...prev,[`warrantyPrint${size}`]:{...(prev[`warrantyPrint${size}`]||{}),printInvoiceTitle:e.target.value}}));}} className="mt-1 w-full p-2 border rounded-lg"/></label><label className="block text-sm font-semibold">Lời cuối phiếu<textarea value={(form[`warrantyPrint${form.warrantyPrintSize||'A4'}`]||{}).printFooter || ''} onChange={e=>{const size=form.warrantyPrintSize||'A4';setForm(prev=>({...prev,[`warrantyPrint${size}`]:{...(prev[`warrantyPrint${size}`]||{}),printFooter:e.target.value}}));}} className="mt-1 w-full p-2 border rounded-lg" rows={2}/></label></div><p className="text-xs text-gray-500">Các tùy chọn được lưu theo khổ giấy cùng nút “Lưu mẫu”.</p></div> : <> <div className="space-y-4">
+                {editingWarrantyPrint ? <div className="space-y-4 bg-purple-50 border border-purple-100 rounded-xl p-4"><h4 className="font-black text-purple-800">PHIẾU GỞI BẢO HÀNH</h4><p className="text-xs text-gray-600">Thiết lập khổ giấy và cỡ chữ riêng cho phiếu bảo hành. Phiếu không in cột số tiền hoặc thành tiền.</p><div className="flex gap-2">{['A4','A5'].map(size=><button key={size} onClick={()=>setForm(prev=>({...prev, warrantyPrintSize:size}))} className={`flex-1 py-2 rounded-lg border font-bold ${(form.warrantyPrintSize||'A4')===size?'bg-purple-600 text-white':'bg-white'}`}>Giấy {size}</button>)}</div><label className="block text-sm font-bold">Cỡ chữ ({form.warrantyPrintSize||'A4'})</label><input type="range" min="8" max="24" value={(form[`warrantyPrint${form.warrantyPrintSize||'A4'}`]||{}).printFontSize||12} onChange={e=>{const size=form.warrantyPrintSize||'A4';setForm(prev=>({...prev,[`warrantyPrint${size}`]:{...(prev[`warrantyPrint${size}`]||{}),printFontSize:Number(e.target.value)}}));}} className="w-full accent-purple-600"/><div className="space-y-3 rounded-lg border bg-white p-3"><p className="text-sm font-bold">Căn chỉnh trái/phải thông tin cửa hàng (A4/A5)</p>{[['storeNameXOffset','Tên cửa hàng'],['storeAddressXOffset','Địa chỉ'],['storePhoneXOffset','Số điện thoại']].map(([field,label])=><label key={field} className="block text-sm">{label} ({(form[`warrantyPrint${form.warrantyPrintSize||'A4'}`]||{})[field]||0}px)<input type="range" min="-150" max="150" step="1" value={(form[`warrantyPrint${form.warrantyPrintSize||'A4'}`]||{})[field]||0} onChange={e=>{const size=form.warrantyPrintSize||'A4';setForm(prev=>({...prev,[`warrantyPrint${size}`]:{...(prev[`warrantyPrint${size}`]||{}),[field]:Number(e.target.value)}}));}} className="w-full accent-blue-600"/></label>)}</div><div className="space-y-2 mt-3 rounded-lg border bg-white p-3"><p className="text-sm font-bold">Hiển thị trên phiếu bảo hành</p>{[['printShowLogo','In logo'],['printShowStoreName','In tên cửa hàng'],['printShowStoreAddress','In địa chỉ cửa hàng'],['printShowStorePhone','In số điện thoại cửa hàng'],['printShowDate','In thời gian bán/nhập'],['printShowWarrantyDuration','In thời hạn bảo hành'],['printShowNote','In ghi chú sản phẩm']].map(([field,label])=><label key={field} className="flex items-center gap-2 text-sm"><input type="checkbox" checked={(form[`warrantyPrint${form.warrantyPrintSize||'A4'}`]||{})[field] !== false} onChange={e=>{const size=form.warrantyPrintSize||'A4';setForm(prev=>({...prev,[`warrantyPrint${size}`]:{...(prev[`warrantyPrint${size}`]||{}),[field]:e.target.checked}}));}}/>{label}</label>)}<label className="block text-sm font-semibold">Tiêu đề phiếu<input value={(form[`warrantyPrint${form.warrantyPrintSize||'A4'}`]||{}).printInvoiceTitle || 'PHIẾU GỞI BẢO HÀNH'} onChange={e=>{const size=form.warrantyPrintSize||'A4';setForm(prev=>({...prev,[`warrantyPrint${size}`]:{...(prev[`warrantyPrint${size}`]||{}),printInvoiceTitle:e.target.value}}));}} className="mt-1 w-full p-2 border rounded-lg"/></label><label className="block text-sm font-semibold">Tên cửa hàng trên phiếu<input value={(form[`warrantyPrint${form.warrantyPrintSize||'A4'}`]||{}).printStoreName ?? form.name ?? ''} onChange={e=>{const size=form.warrantyPrintSize||'A4';setForm(prev=>({...prev,[`warrantyPrint${size}`]:{...(prev[`warrantyPrint${size}`]||{}),printStoreName:e.target.value}}));}} className="mt-1 w-full p-2 border rounded-lg"/></label><label className="block text-sm font-semibold">Địa chỉ trên phiếu<input value={(form[`warrantyPrint${form.warrantyPrintSize||'A4'}`]||{}).printStoreAddress ?? form.address ?? ''} onChange={e=>{const size=form.warrantyPrintSize||'A4';setForm(prev=>({...prev,[`warrantyPrint${size}`]:{...(prev[`warrantyPrint${size}`]||{}),printStoreAddress:e.target.value}}));}} className="mt-1 w-full p-2 border rounded-lg"/></label><label className="block text-sm font-semibold">Số điện thoại trên phiếu<input value={(form[`warrantyPrint${form.warrantyPrintSize||'A4'}`]||{}).printStorePhone ?? form.phone ?? ''} onChange={e=>{const size=form.warrantyPrintSize||'A4';setForm(prev=>({...prev,[`warrantyPrint${size}`]:{...(prev[`warrantyPrint${size}`]||{}),printStorePhone:e.target.value}}));}} className="mt-1 w-full p-2 border rounded-lg"/></label><label className="block text-sm font-semibold">Lời cuối phiếu<textarea value={(form[`warrantyPrint${form.warrantyPrintSize||'A4'}`]||{}).printFooter || ''} onChange={e=>{const size=form.warrantyPrintSize||'A4';setForm(prev=>({...prev,[`warrantyPrint${size}`]:{...(prev[`warrantyPrint${size}`]||{}),printFooter:e.target.value}}));}} className="mt-1 w-full p-2 border rounded-lg" rows={2}/></label></div><p className="text-xs text-gray-500">Các tùy chọn được lưu theo khổ giấy cùng nút “Lưu mẫu”.</p></div> : <> <div className="space-y-4">
                   <h4 className="text-xs font-black text-gray-400 uppercase tracking-wider mb-2">Chọn Khổ Giấy Đang Chỉnh Sửa Độc Lập</h4>
                   <div className="flex gap-2">
                     {['K80', 'A4', 'A5'].map(size => (
@@ -3562,6 +3569,7 @@ function SettingsView({ db, storeId, showToast, storeConfig }) {
                     <ToggleSwitch label="In Số điện thoại" checked={activeCfg.printShowStorePhone ?? true} onChange={(val) => updateActiveSizeConfig('printShowStorePhone', val)} />
                   </div>
                   <div><label className="block text-sm font-bold text-gray-700 mb-1">Tiêu đề hóa đơn</label><input value={activeCfg.printInvoiceTitle || ''} onChange={e=>updateActiveSizeConfig('printInvoiceTitle', e.target.value)} className="w-full p-2.5 border border-gray-300 rounded-xl outline-none focus:ring-2 focus:ring-blue-500 font-bold uppercase text-gray-800"/></div>
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 rounded-xl border bg-blue-50/50 p-3"><label className="block text-sm font-semibold">Tên cửa hàng trên hóa đơn<input value={activeCfg.printStoreName ?? form.name ?? ''} onChange={e=>updateActiveSizeConfig('printStoreName',e.target.value)} className="mt-1 w-full p-2 border rounded-lg bg-white"/></label><label className="block text-sm font-semibold">Địa chỉ trên hóa đơn<input value={activeCfg.printStoreAddress ?? form.address ?? ''} onChange={e=>updateActiveSizeConfig('printStoreAddress',e.target.value)} className="mt-1 w-full p-2 border rounded-lg bg-white"/></label><label className="block text-sm font-semibold">Số điện thoại trên hóa đơn<input value={activeCfg.printStorePhone ?? form.phone ?? ''} onChange={e=>updateActiveSizeConfig('printStorePhone',e.target.value)} className="mt-1 w-full p-2 border rounded-lg bg-white"/></label><label className="block text-sm font-semibold">Nhãn địa chỉ<input value={activeCfg.printAddressLabel ?? 'Địa chỉ'} onChange={e=>updateActiveSizeConfig('printAddressLabel',e.target.value)} className="mt-1 w-full p-2 border rounded-lg bg-white"/></label><label className="block text-sm font-semibold">Nhãn số điện thoại cửa hàng<input value={activeCfg.printPhoneLabel ?? 'SĐT'} onChange={e=>updateActiveSizeConfig('printPhoneLabel',e.target.value)} className="mt-1 w-full p-2 border rounded-lg bg-white"/></label>{[['printDateLabel','Nhãn ngày tạo','Ngày tạo'],['printInvoiceIdLabel','Nhãn mã hóa đơn','Mã HĐ'],['printCustomerLabel','Nhãn khách hàng','Khách hàng'],['printCustomerPhoneLabel','Nhãn SĐT khách hàng','SĐT'],['printCashierLabel','Nhãn thu ngân','Thu ngân'],['printStatusLabel','Nhãn trạng thái','Trạng thái'],['printProductLabel','Nhãn sản phẩm','Tên hàng'],['printQtyLabel','Nhãn số lượng','SL'],['printPriceLabel','Nhãn đơn giá','Đơn giá'],['printWarrantyLabel','Nhãn bảo hành','Bảo hành'],['printNoteLabel','Nhãn ghi chú','Ghi chú'],['printTotalLabel','Nhãn thành tiền','Thành tiền'],['printSubtotalLabel','Nhãn tổng tiền hàng','Tổng tiền hàng']].map(([key,label,defaultValue])=><label key={key} className="block text-sm font-semibold">{label}<input value={activeCfg[key] ?? defaultValue} onChange={e=>updateActiveSizeConfig(key,e.target.value)} className="mt-1 w-full p-2 border rounded-lg bg-white"/></label>)}</div>
                 </div>
                 <hr className="border-gray-100" />
                 <div className="space-y-4">
@@ -3592,6 +3600,7 @@ function SettingsView({ db, storeId, showToast, storeConfig }) {
             </div>
           </div>
         )}
+        {activeSubTab === 'staff' && <StaffManagerView db={db} showToast={showToast} />}
         {activeSubTab === 'data' && (
           <div className="max-w-3xl mx-auto space-y-6">
             <div className="bg-blue-50 p-6 rounded-2xl border border-blue-200 shadow-sm relative overflow-hidden">
