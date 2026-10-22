@@ -1197,7 +1197,6 @@ function SalesHistoryView({ orders, imports = [], products, customers, storeConf
 
   return (
     <div className="flex-1 flex flex-col p-4 md:p-6 bg-gray-50 overflow-hidden h-full">
-      {!detailTarget && <>
       <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center mb-4 gap-3">
         <div>
           <h2 className="text-2xl font-bold text-gray-800 flex items-center gap-2"><Receipt className="text-blue-600"/> Quản lý Bán Hàng</h2>
@@ -1676,6 +1675,7 @@ function ContactManager({ type, data, orders, navigationTarget, storeConfig, db,
 
   return (
     <div className="flex-1 flex flex-col p-4 md:p-6 bg-gray-50 overflow-hidden h-full">
+      {!detailTarget && <>
       <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center mb-4 gap-3">
         <h2 className="text-2xl font-bold text-gray-800">Quản lý {title}</h2>
         <div className="flex items-center gap-3 w-full sm:w-auto">
