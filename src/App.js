@@ -3014,6 +3014,7 @@ function SettingsView({ db, storeId, showToast, storeConfig }) {
   const [deletePassword, setDeletePassword] = useState('');
   const [deletePasswordConfirm, setDeletePasswordConfirm] = useState('');
   const [deletingData, setDeletingData] = useState(false);
+  const [deleteProgress, setDeleteProgress] = useState('');
 
   useEffect(() => {
     if (storeConfig) {
@@ -3404,10 +3405,12 @@ function SettingsView({ db, storeId, showToast, storeConfig }) {
       return;
     }
     setDeletingData(true);
+    setDeleteProgress('Đang xác thực mật khẩu tài khoản...');
     try {
       // Re-authenticate with Firebase Auth; matching two text fields alone is not sufficient.
       const credential = EmailAuthProvider.credential(currentUser.email, deletePassword);
       await reauthenticateWithCredential(currentUser, credential);
+      setDeleteProgress('Đã xác thực. Đang chuẩn bị xóa dữ liệu...');
 
       // Chỉ xóa dữ liệu nghiệp vụ trong cửa hàng; giữ nguyên tài khoản, cấu hình cửa hàng,
       // mẫu in và tài liệu cấu hình ở document stores/main_store.
@@ -3416,12 +3419,21 @@ function SettingsView({ db, storeId, showToast, storeConfig }) {
         ? ['products', 'product_groups', 'orders', 'imports', 'customers', 'suppliers', 'expenses', 'warrantyRequests']
         : [deleteTarget];
 
-      for (const collectionName of collectionsToDelete) {
+      if (!storeId) throw new Error('MISSING_STORE_ID');
+      for (let collectionIndex = 0; collectionIndex < collectionsToDelete.length; collectionIndex++) {
+        const collectionName = collectionsToDelete[collectionIndex];
+        setDeleteProgress(`Đang đọc dữ liệu ${collectionName} (${collectionIndex + 1}/${collectionsToDelete.length})...`);
         const snapshot = await getDocs(collection(db, 'stores', storeId, collectionName));
         const docs = snapshot.docs;
+        if (docs.length === 0) {
+          setDeleteProgress(`Đã kiểm tra ${collectionName}: không có dữ liệu (${collectionIndex + 1}/${collectionsToDelete.length}).`);
+          continue;
+        }
         for (let i = 0; i < docs.length; i += 400) {
+          const batchDocs = docs.slice(i, i + 400);
+          setDeleteProgress(`Đang xóa ${collectionName}: ${Math.min(i + batchDocs.length, docs.length)}/${docs.length} bản ghi (${collectionIndex + 1}/${collectionsToDelete.length} nhóm)...`);
           const batch = writeBatch(db);
-          docs.slice(i, i + 400).forEach((item) => batch.delete(item.ref));
+          batchDocs.forEach((item) => batch.delete(item.ref));
           await batch.commit();
         }
       }
@@ -3430,15 +3442,21 @@ function SettingsView({ db, storeId, showToast, storeConfig }) {
       setDeleteTarget(null);
       setDeletePassword('');
       setDeletePasswordConfirm('');
+      setDeleteProgress('');
     } catch (err) {
       console.error('Delete data failed:', err);
       if (err?.code === 'auth/invalid-credential' || err?.code === 'auth/wrong-password' || err?.code === 'auth/invalid-login-credentials') {
         showToast('Mật khẩu tài khoản Firebase không đúng.', 'error');
       } else if (err?.code === 'auth/requires-recent-login') {
         showToast('Phiên đăng nhập đã cũ. Vui lòng đăng xuất, đăng nhập lại rồi thử lại.', 'error');
+      } else if (err?.code === 'permission-denied' || err?.code === 'firestore/permission-denied') {
+        showToast('Firebase từ chối quyền xóa dữ liệu (permission-denied). Cần kiểm tra Firestore Security Rules.', 'error');
+      } else if (err?.message === 'MISSING_STORE_ID') {
+        showToast('Không xác định được cửa hàng cần xóa (storeId trống). Dữ liệu chưa được xóa.', 'error');
       } else {
-        showToast('Không thể xóa dữ liệu. Vui lòng kiểm tra quyền Firebase và thử lại.', 'error');
+        showToast(`Không thể xóa dữ liệu${err?.code ? ` (${err.code})` : ''}. Kiểm tra kết nối mạng và quyền Firebase.`, 'error');
       }
+      setDeleteProgress('');
     } finally {
       setDeletingData(false);
     }
@@ -3682,6 +3700,7 @@ function SettingsView({ db, storeId, showToast, storeConfig }) {
                     <input type="password" autoComplete="current-password" value={deletePasswordConfirm} onChange={e => setDeletePasswordConfirm(e.target.value)} required className="w-full border border-gray-300 rounded-xl p-3 outline-none focus:ring-2 focus:ring-blue-500" placeholder="Nhập lại mật khẩu" />
                   </div>
                   <p className="text-xs text-gray-500">Mật khẩu sẽ được xác thực với Firebase Authentication trước khi xóa. Mật khẩu không được lưu vào cơ sở dữ liệu.</p>
+                  {deletingData && <div className="rounded-lg border border-blue-200 bg-blue-50 p-3 text-sm text-blue-800"><span className="font-bold">Tiến trình:</span> {deleteProgress || 'Đang xử lý...'}</div>}
                   <div className="flex gap-3 pt-1">
                     <button type="button" disabled={deletingData} onClick={() => setDeleteTarget(null)} className="flex-1 border border-gray-300 text-gray-700 font-bold py-3 rounded-xl hover:bg-gray-50 disabled:opacity-50">Hủy</button>
                     <button type="submit" disabled={deletingData} className="flex-1 bg-blue-600 hover:bg-blue-700 text-white font-bold py-3 rounded-xl disabled:opacity-50">{deletingData ? 'Đang xóa...' : 'Xác nhận xóa'}</button>
