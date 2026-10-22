@@ -470,11 +470,11 @@ export default function App() {
       </header>
       <nav className="bg-[#0875f5] text-white px-2 md:px-4 flex items-stretch gap-0.5 overflow-x-auto scrollbar-hide shadow-sm shrink-0">
         {visibleTabs.map(tab => {
-          const activeClass = activeTab === tab.id ? 'bg-white text-[#0875f5] shadow-sm' : 'text-white hover:bg-white/15';
+          const activeClass = activeTab === tab.id ? (['dashboard', 'reports', 'pos', 'sales_history'].includes(tab.id) ? 'bg-red-600 text-white shadow-sm' : 'bg-white text-[#0875f5] shadow-sm') : 'text-white hover:bg-white/15';
           return <button key={tab.id} onClick={() => setActiveTab(tab.id)} className={'flex items-center justify-center gap-2 px-3 md:px-4 py-3 min-h-[46px] rounded-t-lg whitespace-nowrap font-semibold text-xs md:text-sm transition-colors ' + activeClass}><tab.icon size={17}/><span>{tab.label}</span></button>;
         })}
         <div className="flex-1 min-w-2" />
-        <button onClick={() => setActiveTab('pos')} className="my-1.5 mr-1 flex items-center gap-2 px-4 py-2 rounded-lg bg-white text-[#0875f5] hover:bg-red-50 font-bold whitespace-nowrap shadow-sm"><ShoppingCart size={17}/> Bán hàng</button>
+        <button onClick={() => setActiveTab('pos')} className="my-1.5 mr-1 flex items-center gap-2 px-4 py-2 rounded-lg bg-red-600 text-white hover:bg-red-700 font-bold whitespace-nowrap shadow-sm"><ShoppingCart size={17}/> Bán hàng</button>
       </nav>
       <main className="flex-1 min-w-0 overflow-auto flex flex-col min-h-[calc(100vh-104px)] relative">
         {toast && <div className={"fixed top-4 right-4 z-50 px-6 py-3.5 rounded-xl shadow-xl flex items-center gap-2 text-white animate-in slide-in-from-top-2 " + (toast.type === 'success' ? 'bg-emerald-600' : 'bg-red-600')}><div className="bg-white/20 p-1 rounded-full">{toast.type === 'success' ? <Check size={16} /> : <AlertCircle size={16} />}</div><span className="font-bold text-sm tracking-wide">{toast.msg}</span></div>}
@@ -1074,6 +1074,8 @@ function SalesHistoryView({ orders, imports = [], products, customers, storeConf
   const [newCusForm, setNewCusForm] = useState({ name: '', phone: '', address: '' });
   const [historyTarget, setHistoryTarget] = useState(null);
   const [productTarget, setProductTarget] = useState(null);
+  const [orderCustomerSearch, setOrderCustomerSearch] = useState('');
+  const [orderProductSearch, setOrderProductSearch] = useState({});
 
   useEffect(() => { setLocalPrintSize(storeConfig.printPaperSize || 'K80'); }, [storeConfig.printPaperSize]);
   useEffect(() => {
@@ -1192,6 +1194,16 @@ function SalesHistoryView({ orders, imports = [], products, customers, storeConf
   };
 
   const handleAddNewItemToForm = () => setNewOrderForm(prev => ({ ...prev, items: [...prev.items, { id: '', name: '', price: 0, cost: 0, quantity: 1, warrantyValue: '', warrantyUnit: 'tháng', note: '' }] }));
+  const getProductSupplierNames = (product) => {
+    const names = new Set();
+    (imports || []).forEach(imp => (imp.items || []).forEach(item => {
+      const sameProduct = (item.productId && item.productId === product.id) || (item.id && item.id === product.id) || ((item.name || '').trim().toLocaleLowerCase('vi') === (product.name || '').trim().toLocaleLowerCase('vi'));
+      if (sameProduct && (imp.supplierName || imp.supplier)) names.add(imp.supplierName || imp.supplier);
+    }));
+    if (product.supplierName || product.supplier) names.add(product.supplierName || product.supplier);
+    return Array.from(names);
+  };
+  const normalizeOrderSearch = (value) => String(value || '').trim().toLocaleLowerCase('vi');
 
   const isA4A5 = localPrintSize === 'A4' || localPrintSize === 'A5';
   const paperWidthClass = localPrintSize === 'K80' ? 'max-w-[300px]' : (localPrintSize === 'A4' ? 'max-w-[210mm]' : 'max-w-[148mm]');
@@ -1206,7 +1218,7 @@ function SalesHistoryView({ orders, imports = [], products, customers, storeConf
           <p className="text-sm text-gray-500 mt-0.5">Theo dõi lịch sử giao dịch và in lại hóa đơn (Theo cấu hình mẫu in)</p>
         </div>
         <div className="flex items-center gap-2 w-full sm:w-auto">
-          <button onClick={() => { setNewOrderForm({ customerId: '', status: 'PAID', note: '', items: [] }); setShowCreateOrderModal(true); }} className="bg-red-600 text-white px-4 py-2.5 rounded-lg font-bold flex gap-2 shrink-0 items-center shadow-sm whitespace-nowrap"> <Plus size={16}/> <span>Tạo đơn</span> </button>
+          <button onClick={() => { setNewOrderForm({ customerId: '', status: 'PAID', note: '', items: [] }); setOrderCustomerSearch(''); setOrderProductSearch({}); setShowCreateOrderModal(true); }} className="bg-red-600 text-white px-4 py-2.5 rounded-lg font-bold flex gap-2 shrink-0 items-center shadow-sm whitespace-nowrap"> <Plus size={16}/> <span>Tạo đơn</span> </button>
           <div className="relative flex-1 sm:w-72">
             <Search size={16} className="absolute left-3 top-3.5 text-gray-400"/>
             <input placeholder="Tìm mã HĐ hoặc tên khách..." value={searchTerm} onChange={e=>{ setSearchTerm(e.target.value); setSalesCurrentPage(1); }} className="w-full pl-9 pr-3 py-2.5 border rounded-xl bg-white outline-none shadow-sm focus:ring-2 focus:ring-red-500 transition-all"/>
@@ -1287,8 +1299,13 @@ function SalesHistoryView({ orders, imports = [], products, customers, storeConf
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             <div>
               <label className="block text-sm font-bold text-gray-700 mb-1">Khách hàng</label>
-              <div className="flex flex-row items-center gap-2 w-full">
-                <select value={newOrderForm.customerId} onChange={e=>setNewOrderForm({...newOrderForm, customerId: e.target.value})} className="flex-1 min-w-0 p-3 border rounded-xl outline-none text-sm font-bold bg-gray-50 focus:bg-white transition-all"><option value="">-- Khách lẻ (Tiền mặt) --</option>{customers.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}</select>
+              <div className="flex flex-row items-start gap-2 w-full">
+                <div className="relative flex-1 min-w-0">
+                  <Search size={16} className="absolute left-3 top-3.5 text-gray-400" />
+                  <input value={orderCustomerSearch} onChange={e=>setOrderCustomerSearch(e.target.value)} placeholder={newOrderForm.customerId ? (customers.find(c=>c.id===newOrderForm.customerId)?.name || 'Tìm khách hàng...') : 'Tìm khách hàng... (để trống là khách lẻ)'} className="w-full pl-9 pr-3 p-3 border rounded-xl outline-none text-sm font-bold bg-gray-50 focus:bg-white transition-all" />
+                  {orderCustomerSearch.trim() && <div className="absolute z-30 top-full mt-1 left-0 right-0 max-h-52 overflow-auto rounded-xl border bg-white shadow-xl">{customers.filter(c=>normalizeOrderSearch(c.name).includes(normalizeOrderSearch(orderCustomerSearch)) || normalizeOrderSearch(c.phone).includes(normalizeOrderSearch(orderCustomerSearch))).slice(0,50).map(c=><button type="button" key={c.id} onClick={()=>{setNewOrderForm(prev=>({...prev,customerId:c.id}));setOrderCustomerSearch('');}} className="w-full text-left px-3 py-2.5 hover:bg-red-50 border-b last:border-b-0"><span className="block font-bold text-sm">{c.name}</span><span className="block text-xs text-gray-500">{c.phone || 'Không có số điện thoại'}</span></button>)}{!customers.some(c=>normalizeOrderSearch(c.name).includes(normalizeOrderSearch(orderCustomerSearch)) || normalizeOrderSearch(c.phone).includes(normalizeOrderSearch(orderCustomerSearch))) && <div className="p-3 text-sm text-gray-500">Không tìm thấy khách hàng phù hợp.</div>}</div>}
+                  <div className="mt-1 text-xs text-gray-500">Đang chọn: {newOrderForm.customerId ? (customers.find(c=>c.id===newOrderForm.customerId)?.name || 'Khách hàng') : 'Khách lẻ (Tiền mặt)'}</div>
+                </div>
                 <button type="button" onClick={() => setShowAddCusModal(true)} className="bg-red-50 hover:bg-red-100 text-red-600 border border-red-200 px-3.5 py-3 rounded-xl font-bold text-xs flex items-center justify-center gap-1 shrink-0 whitespace-nowrap transition-colors shadow-sm"><Plus size={16}/> Thêm KH</button>
               </div>
             </div>
@@ -1310,9 +1327,15 @@ function SalesHistoryView({ orders, imports = [], products, customers, storeConf
               {newOrderForm.items.map((it, idx) => (
                 <div key={idx} className="flex flex-col gap-2 p-3 border rounded-xl bg-white shadow-sm relative pr-10">
                   <button type="button" onClick={() => setNewOrderForm(prev => ({...prev, items: prev.items.filter((_, i) => i !== idx)}))} className="absolute top-3 right-3 text-red-400 hover:text-red-600"><X size={18}/></button>
-                  <div>
-                    <label className="text-[10px] text-gray-500 font-bold uppercase">Chọn sản phẩm</label>
-                    <select required value={it.id} onChange={e => { const p = products.find(x => x.id === e.target.value); const newItems = [...newOrderForm.items]; newItems[idx] = { ...newItems[idx], id: p.id, name: p.name, price: p.price, cost: p.cost }; setNewOrderForm({...newOrderForm, items: newItems}); }} className="w-full p-2 border rounded-lg text-sm font-bold bg-gray-50"><option value="">-- Chọn sản phẩm có sẵn --</option>{products.map(p => <option key={p.id} value={p.id}>{p.name} - {formatCurrency(p.price)}</option>)}</select>
+                  <div className="relative">
+                    <label className="text-[10px] text-gray-500 font-bold uppercase">Tìm sản phẩm / nhà cung cấp</label>
+                    <Search size={15} className="absolute left-3 top-[34px] text-gray-400" />
+                    <input required={!it.id} value={orderProductSearch[idx] ?? (it.name || '')} onChange={e=>setOrderProductSearch(prev=>({...prev,[idx]:e.target.value}))} placeholder="Gõ tên sản phẩm hoặc nhà cung cấp..." className="w-full pl-9 pr-3 p-2 border rounded-lg text-sm font-bold bg-gray-50" />
+                    {(orderProductSearch[idx] || '').trim() && <div className="absolute z-30 top-full mt-1 left-0 right-0 max-h-56 overflow-auto rounded-xl border bg-white shadow-xl">{products.filter(p=>{
+                      const q=normalizeOrderSearch(orderProductSearch[idx]);
+                      return normalizeOrderSearch(p.name).includes(q) || getProductSupplierNames(p).some(n=>normalizeOrderSearch(n).includes(q));
+                    }).slice(0,60).map(p=><button type="button" key={p.id} onClick={()=>{const newItems=[...newOrderForm.items];newItems[idx]={...newItems[idx],id:p.id,name:p.name,price:p.price,cost:p.cost};setNewOrderForm({...newOrderForm,items:newItems});setOrderProductSearch(prev=>{const next={...prev};delete next[idx];return next;});}} className="w-full text-left px-3 py-2.5 hover:bg-red-50 border-b last:border-b-0"><span className="block text-sm font-bold">{p.name}</span><span className="block text-xs text-gray-600">Giá bán: {formatCurrency(p.price)}{getProductSupplierNames(p).length ? ` · Nhà cung cấp: ${getProductSupplierNames(p).join(', ')}` : ''}</span></button>)}{!products.some(p=>{const q=normalizeOrderSearch(orderProductSearch[idx]);return normalizeOrderSearch(p.name).includes(q)||getProductSupplierNames(p).some(n=>normalizeOrderSearch(n).includes(q));}) && <div className="p-3 text-sm text-gray-500">Không tìm thấy sản phẩm hoặc nhà cung cấp phù hợp.</div>}</div>}
+                    {it.id && <div className="mt-1 text-xs text-gray-500">Đã chọn: {it.name} {getProductSupplierNames(products.find(p=>p.id===it.id)||{}).length ? `· Nhà cung cấp: ${getProductSupplierNames(products.find(p=>p.id===it.id)||{}).join(', ')}` : ''}</div>}
                   </div>
                   <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
                     <div><label className="text-[10px] text-gray-500 font-bold uppercase">Số lượng</label><input type="number" min="1" required value={it.quantity} onChange={e => { const newItems = [...newOrderForm.items]; newItems[idx].quantity = e.target.value; setNewOrderForm({...newOrderForm, items: newItems}); }} className="w-full p-2 border rounded-lg text-sm font-bold text-center bg-gray-50" /></div>
