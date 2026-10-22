@@ -1460,32 +1460,6 @@ function StaffManagerView({ db, showToast }) {
     return () => { unsubStaff(); unsubLogs(); };
   }, []);
 
-  const handleDebtPaymentSave = async (e) => {
-    e.preventDefault();
-    if (!detailTarget?.id || savingDebtPayment) return;
-    const currentDebt = Math.max(0, Number(detailTarget.totalDebt) || 0);
-    const oldAmount = editingDebtPayment ? Math.max(0, Number(editingDebtPayment.amount) || 0) : 0;
-    const debtBeforeEdit = currentDebt + oldAmount;
-    const amount = debtPaymentMode === 'all' ? debtBeforeEdit : Number(debtPaymentAmount);
-    if (!Number.isFinite(amount) || amount <= 0 || amount > debtBeforeEdit) { showToast('Số tiền trừ công nợ không hợp lệ', 'error'); return; }
-    setSavingDebtPayment(true);
-    try {
-      const contactRef = doc(db, 'stores', storeId, type, detailTarget.id);
-      const paymentPayload = { amount, method: debtPaymentMethod, mode: debtPaymentMode, date: editingDebtPayment?.date || new Date().toISOString(), updatedAt: new Date().toISOString(), contactId: detailTarget.id, contactName: detailTarget.name, contactType: type };
-      if (editingDebtPayment?.id) {
-        await updateDoc(doc(db, 'stores', storeId, type, detailTarget.id, 'debtPayments', editingDebtPayment.id), paymentPayload);
-      } else {
-        await addDoc(collection(db, 'stores', storeId, type, detailTarget.id, 'debtPayments'), { ...paymentPayload, createdAt: new Date().toISOString() });
-      }
-      const remainingDebt = Math.max(0, debtBeforeEdit - amount);
-      await updateDoc(contactRef, { totalDebt: remainingDebt });
-      setDetailTarget(prev => prev ? { ...prev, totalDebt: remainingDebt } : prev);
-      setDebtPaymentAmount(''); setDebtPaymentMode('partial'); setDebtPaymentMethod('cash'); setEditingDebtPayment(null);
-      showToast(editingDebtPayment ? 'Đã cập nhật giao dịch công nợ' : 'Đã ghi nhận trừ công nợ');
-    } catch (err) {
-      showToast('Không thể lưu giao dịch công nợ', 'error');
-    } finally { setSavingDebtPayment(false); }
-  };
 
   const handleSave = async (e) => {
     e.preventDefault();
@@ -1636,6 +1610,34 @@ function ContactManager({ type, data, orders, navigationTarget, storeConfig, db,
   const [rowsPerPage, setRowsPerPage] = useState('10');
   const [currentPage, setCurrentPage] = useState(1);
   useEffect(() => { if (navigationTarget?.tab === type && (navigationTarget.id || navigationTarget.name)) { const match = (data || []).find(item => navigationTarget.id && item.id === navigationTarget.id) || (data || []).find(item => navigationTarget.name && (item.name || '').trim().toLocaleLowerCase('vi') === navigationTarget.name.trim().toLocaleLowerCase('vi')); if (match) { setDetailTarget(match); setDetailRowsPerPage('5'); setDetailCurrentPage(1); setSearchTerm(''); setCurrentPage(1); } } }, [navigationTarget?.nonce, navigationTarget?.tab, navigationTarget?.id, navigationTarget?.name, type, data]);
+
+  const handleDebtPaymentSave = async (e) => {
+    e.preventDefault();
+    if (!detailTarget?.id || savingDebtPayment) return;
+    const currentDebt = Math.max(0, Number(detailTarget.totalDebt) || 0);
+    const oldAmount = editingDebtPayment ? Math.max(0, Number(editingDebtPayment.amount) || 0) : 0;
+    const debtBeforeEdit = currentDebt + oldAmount;
+    const amount = debtPaymentMode === 'all' ? debtBeforeEdit : Number(debtPaymentAmount);
+    if (!Number.isFinite(amount) || amount <= 0 || amount > debtBeforeEdit) { showToast('Số tiền trừ công nợ không hợp lệ', 'error'); return; }
+    setSavingDebtPayment(true);
+    try {
+      const contactRef = doc(db, 'stores', storeId, type, detailTarget.id);
+      const paymentPayload = { amount, method: debtPaymentMethod, mode: debtPaymentMode, date: editingDebtPayment?.date || new Date().toISOString(), updatedAt: new Date().toISOString(), contactId: detailTarget.id, contactName: detailTarget.name, contactType: type };
+      if (editingDebtPayment?.id) {
+        await updateDoc(doc(db, 'stores', storeId, type, detailTarget.id, 'debtPayments', editingDebtPayment.id), paymentPayload);
+      } else {
+        await addDoc(collection(db, 'stores', storeId, type, detailTarget.id, 'debtPayments'), { ...paymentPayload, createdAt: new Date().toISOString() });
+      }
+      const remainingDebt = Math.max(0, debtBeforeEdit - amount);
+      await updateDoc(contactRef, { totalDebt: remainingDebt });
+      setDetailTarget(prev => prev ? { ...prev, totalDebt: remainingDebt } : prev);
+      setDebtPaymentAmount(''); setDebtPaymentMode('partial'); setDebtPaymentMethod('cash'); setEditingDebtPayment(null);
+      showToast(editingDebtPayment ? 'Đã cập nhật giao dịch công nợ' : 'Đã ghi nhận trừ công nợ');
+    } catch (err) {
+      showToast('Không thể lưu giao dịch công nợ', 'error');
+    } finally { setSavingDebtPayment(false); }
+  };
+
 
   const handleSave = async (e) => {
     e.preventDefault();
@@ -3585,7 +3587,7 @@ function SettingsView({ db, storeId, showToast, storeConfig }) {
               </div>
             </div>
             <div className="w-full lg:w-7/12 xl:w-2/3 bg-gray-200 rounded-2xl flex items-start justify-center p-6 overflow-y-auto relative border border-gray-300 shadow-inner">
-              <div className="absolute top-4 right-4 bg-white/90 backdrop-blur px-3 py-1.5 rounded-lg text-xs font-bold text-gray-600 shadow flex items-center gap-1.5"><Eye size={14} className="text-blue-500"/> Xem trước trực tiếp ({editPaperSize})</div>
+              <div className="absolute top-4 right-4 bg-white/90 backdrop-blur px-3 py-1.5 rounded-lg text-xs font-bold text-gray-600 shadow flex items-center gap-1.5"><Eye size={14} className="text-blue-500"/> Xem trước trực tiếp ({editingWarrantyPrint ? (form.warrantyPrintSize || 'A4') : editPaperSize})</div>
               <LivePreviewReceipt />
             </div>
           </div>
