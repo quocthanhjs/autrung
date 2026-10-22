@@ -1197,6 +1197,7 @@ function SalesHistoryView({ orders, imports = [], products, customers, storeConf
 
   return (
     <div className="flex-1 flex flex-col p-4 md:p-6 bg-gray-50 overflow-hidden h-full">
+      {!detailTarget && <>
       <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center mb-4 gap-3">
         <div>
           <h2 className="text-2xl font-bold text-gray-800 flex items-center gap-2"><Receipt className="text-blue-600"/> Quản lý Bán Hàng</h2>
@@ -1554,7 +1555,7 @@ function ContactManager({ type, data, orders, navigationTarget, storeConfig, db,
   const [detailRowsPerPage, setDetailRowsPerPage] = useState('5');
   const [detailCurrentPage, setDetailCurrentPage] = useState(1);
   useEffect(() => {
-    const closeOnBrowserBack = () => setDetailProduct(null);
+    const closeOnBrowserBack = () => setDetailTarget(null);
     window.addEventListener('app:close-popups', closeOnBrowserBack);
     const onNavigate = (event) => {
       const detail = event?.detail || {};
@@ -1724,6 +1725,7 @@ function ContactManager({ type, data, orders, navigationTarget, storeConfig, db,
         </div>
         <div className="border-t shrink-0"><PaginationControls currentPage={currentPage} totalPages={totalPages} rowsPerPage={rowsPerPage} onPageChange={(p) => setCurrentPage(p)} onRowsChange={(r) => { setRowsPerPage(r); setCurrentPage(1); }} totalItems={sortedData.length} /></div>
       </div>
+      </>}
       {detailTarget && <div className="flex-1 overflow-y-auto bg-gray-50/50 border rounded-xl p-4 md:p-6 space-y-4">
         <div className="flex flex-wrap items-center justify-between gap-3 bg-white border rounded-xl p-3"><h2 className="text-xl font-bold text-gray-800">Chi tiết: {detailTarget.name}</h2><div className="flex gap-2"><button type="button" onClick={() => { if (window.history.state?.appPopupNavigation?.tab === type) window.history.back(); else setDetailTarget(null); }} className="border rounded-lg px-3 py-2 text-sm font-semibold">← Lùi</button><button type="button" onClick={() => window.history.forward()} className="border rounded-lg px-3 py-2 text-sm font-semibold">Tiến →</button><button type="button" onClick={() => { setDetailTarget(null); window.history.replaceState({ ...(window.history.state || {}), appPopupNavigation: { tab: type, entity: null } }, ''); }} className="bg-gray-700 text-white rounded-lg px-3 py-2 text-sm font-semibold">Danh sách {isCus ? 'khách hàng' : 'nhà cung cấp'}</button></div></div>
           <div className="space-y-4">
