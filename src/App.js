@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo } from 'react';
+‪import React, { useState, useEffect, useMemo } from 'react';
 import { LayoutDashboard, ShoppingCart, Package, Users, Truck, Plus, Edit, Trash2, Check, X, Image as ImageIcon, ShoppingBag, TrendingUp, AlertCircle, ArrowDownToLine, Phone, DollarSign, CheckCircle2, Printer, FileText, CreditCard, Lock, LogOut, ShieldAlert, User as UserIcon, Database, UserCog, KeyRound, MonitorSmartphone, Mail, Download, Upload, ArrowUpDown, Search, Eye, EyeOff, Bell, Award, BarChart3, Receipt, ChevronDown, ChevronUp, Image, Store, Sliders, HardDrive, ChevronLeft, ChevronRight } from 'lucide-react';
 import { initializeApp } from 'firebase/app';
 import { getAuth, signInWithEmailAndPassword, signOut, onAuthStateChanged, sendPasswordResetEmail, EmailAuthProvider, reauthenticateWithCredential } from 'firebase/auth';
@@ -3130,14 +3130,24 @@ function SettingsView({ db, storeId, showToast, storeConfig }) {
           let batch = writeBatch(db); 
           let count = 0; 
           let success = 0;
+          let duplicateSkipSummary = '';
 
           // --- LOGIC NHẬP LỊCH SỬ NHẬP HÀNG TỪ EXCEL KIOTVIET ---
           if (type === 'imports') {
             const productSnap = await getDocs(collection(db, 'stores', storeId, 'products'));
             const supplierSnap = await getDocs(collection(db, 'stores', storeId, 'suppliers'));
+            const existingImportSnap = await getDocs(collection(db, 'stores', storeId, 'imports'));
             const productDocs = productSnap.docs.map(d => ({ id: d.id, ...d.data() }));
-            const productByName = new Map(productDocs.map(p => [String(p.name || '').trim().toLowerCase(), p]));
-            const supplierByName = new Map(supplierSnap.docs.map(d => [String(d.data().name || '').trim().toLowerCase(), { id: d.id, ...d.data() }]));
+            const normalizeImportIdentity = value => String(value || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/đ/g, 'd').replace(/Đ/g, 'D').trim().toLocaleLowerCase('vi');
+            const productByName = new Map(productDocs.map(p => [normalizeImportIdentity(p.name), p]));
+            const supplierByName = new Map(supplierSnap.docs.map(d => [normalizeImportIdentity(d.data().name), { id: d.id, ...d.data() }]));
+            const existingReceiptCodes = new Set(existingImportSnap.docs.map(d => normalizeImportIdentity(d.data().receiptCode || d.data().invoiceCode)).filter(Boolean));
+            const existingReceiptSignatures = new Set(existingImportSnap.docs.map(d => {
+              const item = d.data();
+              const dateValue = item.date ? new Date(item.date) : null;
+              const day = dateValue && !Number.isNaN(dateValue.getTime()) ? dateValue.toISOString().slice(0, 10) : '';
+              return `${normalizeImportIdentity(item.supplierName)}|${day}|${Number(item.total || 0)}`;
+            }));
             const receipts = {};
             const parseExcelDate = (value) => {
               if (!value) return new Date().toISOString();
@@ -3154,7 +3164,7 @@ function SettingsView({ db, storeId, showToast, storeConfig }) {
               const date = parseExcelDate(row['Thời gian'] || row['Ngày nhập'] || row['Ngày tạo']);
               const groupKey = receiptCode || `${supplierName}|${date.slice(0, 10)}`;
               if (!receipts[groupKey]) receipts[groupKey] = { receiptCode, supplierName, date, items: [], total: 0, source: 'KiotViet Excel' };
-              const product = productByName.get(productName.toLowerCase());
+              const product = productByName.get(normalizeImportIdentity(productName));
               const unitCost = Number(row['Giá nhập'] || row['Đơn giá nhập'] || row['Giá vốn'] || row['Đơn giá']) || 0;
               const lineTotal = Number(row['Thành tiền'] || row['Tổng tiền hàng']) || qty * unitCost;
               receipts[groupKey].items.push({ id: product?.id || '', name: productName, category: product?.category || String(row['Nhóm hàng'] || ''), qty, importCost: unitCost, price: Number(product?.price) || Number(row['Giá bán']) || 0 });
@@ -3164,12 +3174,26 @@ function SettingsView({ db, storeId, showToast, storeConfig }) {
             if (!receiptEntries.length) throw new Error('Không tìm thấy dòng nhập hàng hợp lệ. Cần có cột Tên hàng và Số lượng.');
             let importBatch = writeBatch(db);
             let writes = 0;
+            let skippedDuplicates = 0;
+            const seenReceiptCodes = new Set(existingReceiptCodes);
+            const seenReceiptSignatures = new Set(existingReceiptSignatures);
             for (const receipt of receiptEntries) {
-              let supplier = supplierByName.get(receipt.supplierName.toLowerCase());
+              const normalizedReceiptCode = normalizeImportIdentity(receipt.receiptCode);
+              const receiptDate = receipt.date ? new Date(receipt.date) : null;
+              const receiptDay = receiptDate && !Number.isNaN(receiptDate.getTime()) ? receiptDate.toISOString().slice(0, 10) : '';
+              const receiptTotal = receipt.total || receipt.items.reduce((sum, item) => sum + Number(item.qty || 0) * Number(item.importCost || 0), 0);
+              const receiptSignature = `${normalizeImportIdentity(receipt.supplierName)}|${receiptDay}|${Number(receiptTotal || 0)}`;
+              if ((normalizedReceiptCode && seenReceiptCodes.has(normalizedReceiptCode)) || (!normalizedReceiptCode && seenReceiptSignatures.has(receiptSignature))) {
+                skippedDuplicates++;
+                continue;
+              }
+              if (normalizedReceiptCode) seenReceiptCodes.add(normalizedReceiptCode);
+              seenReceiptSignatures.add(receiptSignature);
+              let supplier = supplierByName.get(normalizeImportIdentity(receipt.supplierName));
               if (!supplier) {
                 const supplierRef = doc(collection(db, 'stores', storeId, 'suppliers'));
                 supplier = { id: supplierRef.id, name: receipt.supplierName, phone: '', address: '', totalDebt: 0, createdAt: new Date().toISOString() };
-                supplierByName.set(receipt.supplierName.toLowerCase(), supplier);
+                supplierByName.set(normalizeImportIdentity(receipt.supplierName), supplier);
                 importBatch.set(supplierRef, supplier); writes++;
               }
               const validItems = receipt.items.filter(item => item.id && productDocs.some(p => p.id === item.id));
@@ -3193,14 +3217,23 @@ function SettingsView({ db, storeId, showToast, storeConfig }) {
               success++;
             }
             if (writes > 0) await importBatch.commit();
+            if (skippedDuplicates > 0) duplicateSkipSummary = ` Đã bỏ qua ${skippedDuplicates} phiếu nhập trùng.`;
           }
           // --- LOGIC GOM NHÓM ĐƠN HÀNG KIOTVIET ---
           else if (type === 'orders') {
             const ordersMap = {};
+            const existingOrdersSnap = await getDocs(collection(db, 'stores', storeId, 'orders'));
+            const normalizeOrderCode = value => String(value || '').trim().toLocaleLowerCase('vi');
+            const existingOrderCodes = new Set(existingOrdersSnap.docs.map(d => normalizeOrderCode(d.data().invoiceCode || d.data().id || d.id)).filter(Boolean));
+            let skippedDuplicateOrders = 0;
             
             data.forEach(row => {
-              const orderId = row['Mã hóa đơn'];
+              const orderId = String(row['Mã hóa đơn'] || '').trim();
               if (!orderId) return;
+              if (existingOrderCodes.has(normalizeOrderCode(orderId))) {
+                skippedDuplicateOrders++;
+                return;
+              }
 
               // Nếu mã hóa đơn chưa có trong map, khởi tạo
               if (!ordersMap[orderId]) {
@@ -3259,9 +3292,19 @@ function SettingsView({ db, storeId, showToast, storeConfig }) {
               }
             }
             if (count > 0) await batch.commit();
+            if (skippedDuplicateOrders > 0) duplicateSkipSummary = ` Đã bỏ qua ${skippedDuplicateOrders} đơn hàng trùng mã.`;
           } 
           // --- LOGIC NHẬP CÁC DANH MỤC KHÁC ---
           else {
+            const identityCollections = ['products', 'customers', 'suppliers'];
+            const existingIdentityDocs = {};
+            if (identityCollections.includes(type)) {
+              const identitySnap = await getDocs(collection(db, 'stores', storeId, type));
+              existingIdentityDocs[type] = identitySnap.docs.map(d => ({ id: d.id, ...d.data() }));
+            }
+            const normalizeIdentityText = value => String(value || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/đ/g, 'd').replace(/Đ/g, 'D').trim().toLocaleLowerCase('vi');
+            const normalizeIdentityPhone = value => String(value || '').replace(/\.0$/, '').replace(/[^0-9]/g, '');
+            let skippedIdentityDuplicates = 0;
             for (let i = 0; i < data.length; i++) {
               let p = null; 
               const row = data[i]; 
@@ -3276,7 +3319,8 @@ function SettingsView({ db, storeId, showToast, storeConfig }) {
               
               if (type === 'products' && row['Tên hàng']) {
                 p = { 
-                  name: String(row['Tên hàng']), 
+                  name: String(row['Tên hàng']).trim(),
+                  code: String(row['Mã hàng'] || row['Mã sản phẩm'] || row['Barcode'] || '').trim(),
                   category: row['Nhóm hàng(3 Cấp)'] || row['Nhóm hàng'] || '', 
                   price: Number(row['Giá bán']) || 0, 
                   cost: Number(row['Giá vốn']) || 0, 
@@ -3355,6 +3399,37 @@ function SettingsView({ db, storeId, showToast, storeConfig }) {
                 }
               }
 
+              if (p && identityCollections.includes(type)) {
+                const existingRows = existingIdentityDocs[type] || [];
+                let duplicate = false;
+                if (type === 'products') {
+                  const incomingCode = normalizeIdentityText(p.code || row['Mã hàng'] || row['Mã sản phẩm'] || row['Barcode']);
+                  duplicate = existingRows.some(existing => {
+                    const existingCode = normalizeIdentityText(existing.code || existing.productCode || existing.sku || existing.barcode);
+                    if (incomingCode && existingCode) return incomingCode === existingCode;
+                    return normalizeIdentityText(existing.name) === normalizeIdentityText(p.name);
+                  });
+                } else {
+                  const incomingPhone = normalizeIdentityPhone(p.phone);
+                  duplicate = existingRows.some(existing => {
+                    const existingPhone = normalizeIdentityPhone(existing.phone || existing.mobile);
+                    if (incomingPhone && existingPhone) return incomingPhone === existingPhone;
+                    return !incomingPhone && !existingPhone && normalizeIdentityText(existing.name) === normalizeIdentityText(p.name) && normalizeIdentityText(existing.address) === normalizeIdentityText(p.address);
+                  });
+                }
+                // Cũng chống trùng giữa các dòng trong cùng file Excel trước khi ghi batch.
+                if (!duplicate) {
+                  duplicate = existingRows.some(existing => existing.__pendingImportKey === (type === 'products' ? normalizeIdentityText(p.name) : `${normalizeIdentityText(p.name)}|${normalizeIdentityPhone(p.phone)}`));
+                }
+                if (duplicate) {
+                  skippedIdentityDuplicates++;
+                  p = null;
+                } else {
+                  const pendingKey = type === 'products' ? normalizeIdentityText(p.name) : `${normalizeIdentityText(p.name)}|${normalizeIdentityPhone(p.phone)}`;
+                  existingRows.push({ ...p, __pendingImportKey: pendingKey });
+                  existingIdentityDocs[type] = existingRows;
+                }
+              }
               if (p) { 
                 batch.set(doc(collection(db, 'stores', storeId, type)), p); 
                 count++; 
@@ -3369,9 +3444,10 @@ function SettingsView({ db, storeId, showToast, storeConfig }) {
                 } 
               }
             }
+            if (skippedIdentityDuplicates > 0) duplicateSkipSummary = ` Đã bỏ qua ${skippedIdentityDuplicates} dòng danh mục trùng.`;
           }
           
-          showToast("Đã NHẬP thành công " + success + " dòng (đã gộp các mục nếu là Hóa Đơn).");
+          showToast("Đã NHẬP thành công " + success + " dòng (đã gộp các mục nếu là Hóa Đơn)." + duplicateSkipSummary);
           setLoadingFile(false); 
           e.target.value = '';
         } catch(err) { 
