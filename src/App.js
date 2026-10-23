@@ -10,8 +10,8 @@ const firebaseConfig = {
     projectId: "autrung-7d8be",
     storageBucket: "autrung-7d8be.firebasestorage.app",
     messagingSenderId: "682074587160",
-    appId: "1:682074587160:web:24da7989f82d94d589c36d",
-    measurementId: "G-0YW45XF8QL"
+    appId: "1:682074587160:web:24da7989f82d94d589c36d"
+  measurementId: "G-0YW45XF8QL"
 };
 
 const app = initializeApp(firebaseConfig);
@@ -377,6 +377,7 @@ export default function App() {
   const [suppliers, setSuppliers] = useState([]);
   const [expenses, setExpenses] = useState([]);
   const [warrantyRequests, setWarrantyRequests] = useState([]);
+  const [confirmationReceipts, setConfirmationReceipts] = useState([]);
   const [loading, setLoading] = useState(true);
   const storeId = 'main_store';
   useEffect(() => {
@@ -423,8 +424,9 @@ export default function App() {
     const unsubSuppliers = fetchCol('suppliers', setSuppliers);
     const unsubExpenses = fetchCol('expenses', setExpenses);
     const unsubWarranty = fetchCol('warrantyRequests', setWarrantyRequests);
+    const unsubConfirmations = fetchCol('confirmationReceipts', setConfirmationReceipts);
 
-    return () => { unsubStore(); unsubProducts(); unsubOrders(); unsubImports(); unsubCustomers(); unsubSuppliers(); unsubExpenses(); unsubWarranty(); };
+    return () => { unsubStore(); unsubProducts(); unsubOrders(); unsubImports(); unsubCustomers(); unsubSuppliers(); unsubExpenses(); unsubWarranty(); unsubConfirmations(); };
   }, [user]);
 
   const [toast, setToast] = useState(null);
@@ -436,6 +438,7 @@ export default function App() {
   const allTabs = [
     { id: 'dashboard', icon: LayoutDashboard, label: 'Tổng quan', permId: 'tong_quan_xem' },
     { id: 'reports', icon: FileText, label: 'Báo cáo', permId: 'tong_quan_xem' },
+    { id: 'confirmations', icon: FileText, label: 'Phiếu xác nhận', permId: 'CONFIRMATION_SELLER' },
     { id: 'sales_history', icon: Receipt, label: 'Đơn hàng', permId: 'ban_hang' },
     { id: 'imports', icon: ArrowDownToLine, label: 'Nhập hàng', permId: 'mua_nhap_hang' },
     { id: 'products', icon: Package, label: 'Sản phẩm', permId: 'hh_danh_sach' },
@@ -448,6 +451,7 @@ export default function App() {
 
   const visibleTabs = allTabs.filter(t => {
     if (userData.role === 'admin') return true;
+    if (t.permId === 'CONFIRMATION_SELLER') return userData.role === 'seller';
     if (t.permId === 'ADMIN_ONLY') return false;
     if (t.permId === 'ALWAYS') return true;
     return userData.perms[t.permId];
@@ -476,8 +480,9 @@ export default function App() {
       <main className="flex-1 min-w-0 overflow-auto flex flex-col min-h-[calc(100vh-104px)] relative">
         {toast && <div className={"fixed top-4 right-4 z-50 px-6 py-3.5 rounded-xl shadow-xl flex items-center gap-2 text-white animate-in slide-in-from-top-2 " + (toast.type === 'success' ? 'bg-emerald-600' : 'bg-blue-600')}><div className="bg-white/20 p-1 rounded-full">{toast.type === 'success' ? <Check size={16} /> : <AlertCircle size={16} />}</div><span className="font-bold text-sm tracking-wide">{toast.msg}</span></div>}
         {activeTab === 'reports' && <ReportsView orders={orders} imports={imports} expenses={expenses} />}
-        {activeTab === 'dashboard' && <DashboardView orders={orders} imports={imports} expenses={expenses} customers={customers} suppliers={suppliers} products={products} warrantyRequests={warrantyRequests} showToast={showToast} userData={userData} />}
+        {activeTab === 'dashboard' && <DashboardView orders={orders} imports={imports} expenses={expenses} customers={customers} suppliers={suppliers} products={products} warrantyRequests={warrantyRequests} confirmationReceipts={confirmationReceipts} showToast={showToast} userData={userData} />}
         {activeTab === 'pos' && <POSView products={products} orders={orders} customers={customers} db={db} storeId={storeId} user={user} storeConfig={storeConfig} showToast={showToast} userData={userData} />}
+        {activeTab === 'confirmations' && (userData.role === 'admin' || userData.role === 'seller') && <ConfirmationReceiptsView orders={orders} customers={customers} receipts={confirmationReceipts} db={db} storeId={storeId} user={user} userData={userData} storeConfig={storeConfig} showToast={showToast} />}
         {activeTab === 'sales_history' && <SalesHistoryView orders={orders} imports={imports} products={products} customers={customers} storeConfig={storeConfig} db={db} storeId={storeId} user={user} userData={userData} showToast={showToast} />}
         {activeTab === 'imports' && <ImportView products={products} imports={imports} suppliers={suppliers} db={db} storeId={storeId} user={user} userData={userData} showToast={showToast} storeConfig={storeConfig} setActiveTab={setActiveTab} />}
         {activeTab === 'products' && <InventoryView products={products} orders={orders} imports={imports} warrantyRequests={warrantyRequests} customers={customers} suppliers={suppliers} navigationTarget={navigationTarget} storeConfig={storeConfig} db={db} storeId={storeId} showToast={showToast} />}
@@ -491,7 +496,7 @@ export default function App() {
   );
 }
 
-function DashboardView({ orders, imports, expenses, customers, suppliers, products = [], warrantyRequests = [], showToast, userData = {} }) {
+function DashboardView({ orders, imports, expenses, customers, suppliers, products = [], warrantyRequests = [], confirmationReceipts = [], showToast, userData = {} }) {
   const canShowColumn = (id) => userData.role === 'admin' || userData.perms?.[id] !== false;
   const currentDate = new Date();
   const currentVietnamDate = getVietnamDateParts(currentDate);
@@ -812,7 +817,8 @@ function DashboardView({ orders, imports, expenses, customers, suppliers, produc
         {(() => {
           const activity = [
             ...(orders || []).map(o => ({ ...o, activityType: 'Bán hàng', activityName: o.sellerName || o.sellerUid || 'Chưa lưu nhân viên', partner: o.customerName || 'Khách lẻ', amount: Number(o.total) || 0, date: o.date, rowKey: `sale-${o.id}` })),
-            ...(imports || []).map(i => ({ ...i, activityType: 'Nhập hàng', activityName: i.createdByName || i.createdByUid || 'Chưa lưu nhân viên', partner: i.supplierName || 'Chưa rõ nhà cung cấp', amount: Number(i.total) || 0, date: i.date, rowKey: `import-${i.id}` }))
+            ...(imports || []).map(i => ({ ...i, activityType: 'Nhập hàng', activityName: i.createdByName || i.createdByUid || 'Chưa lưu nhân viên', partner: i.supplierName || 'Chưa rõ nhà cung cấp', amount: Number(i.total) || 0, date: i.date, rowKey: `import-${i.id}` })),
+            ...(confirmationReceipts || []).map(r => ({ ...r, activityType: 'Phiếu xác nhận / Thanh toán', activityName: r.sellerName || 'Chưa lưu nhân viên', partner: r.customerName || 'Khách hàng', amount: Number(r.total) || 0, date: r.createdAt, rowKey: `confirmation-${r.id}` }))
           ].sort((a,b) => new Date(b.date || 0) - new Date(a.date || 0));
           const sortedActivity = sortDashboardRows(activity,'activity',(a,f)=>f==='date'?(a.date||''):f==='type'?a.activityType:f==='staff'?a.activityName:f==='partner'?a.partner:f==='items'?(a.items||[]).map(it=>it.name||'').join(', '):Number(a.amount)||0);
           const visibleActivity = activityRows === 'all' ? sortedActivity : sortedActivity.slice(0, Number(activityRows) || 10);
@@ -821,6 +827,34 @@ function DashboardView({ orders, imports, expenses, customers, suppliers, produc
       </section>
     </div>
   );
+}
+
+
+function SignaturePad({ label, onSave, initialValue = '' }) {
+  const canvasRef = React.useRef(null);
+  const drawing = React.useRef(false);
+  useEffect(() => {
+    const canvas = canvasRef.current; if (!canvas) return;
+    const ctx = canvas.getContext('2d'); ctx.lineWidth = 2.2; ctx.lineCap = 'round'; ctx.strokeStyle = '#111827';
+    if (initialValue) { const img = new window.Image(); img.onload = () => ctx.drawImage(img, 0, 0, canvas.width, canvas.height); img.src = initialValue; }
+  }, [initialValue]);
+  const point = (e) => { const c=canvasRef.current, r=c.getBoundingClientRect(), t=e.touches?.[0]; return {x:((t?.clientX ?? e.clientX)-r.left)*c.width/r.width,y:((t?.clientY ?? e.clientY)-r.top)*c.height/r.height}; };
+  const start = e => { e.preventDefault(); drawing.current=true; const p=point(e),ctx=canvasRef.current.getContext('2d'); ctx.beginPath();ctx.moveTo(p.x,p.y); };
+  const move = e => { if(!drawing.current)return; e.preventDefault();const p=point(e),ctx=canvasRef.current.getContext('2d');ctx.lineTo(p.x,p.y);ctx.stroke(); };
+  const stop = () => { drawing.current=false; };
+  return <div className="space-y-2"><div className="font-bold text-sm">{label}</div><canvas ref={canvasRef} width={640} height={220} onPointerDown={start} onPointerMove={move} onPointerUp={stop} onPointerLeave={stop} onTouchStart={start} onTouchMove={move} onTouchEnd={stop} className="w-full border border-dashed border-gray-400 rounded-xl bg-white touch-none" style={{height:150,touchAction:'none'}}/><div className="flex gap-2"><button type="button" onClick={()=>{const c=canvasRef.current;c.getContext('2d').clearRect(0,0,c.width,c.height);}} className="px-3 py-2 rounded-lg border bg-white">Xóa chữ ký</button><button type="button" onClick={()=>onSave(canvasRef.current.toDataURL('image/png'))} className="px-3 py-2 rounded-lg bg-blue-600 text-white font-bold">Xác nhận chữ ký</button></div></div>;
+}
+
+function ConfirmationReceiptsView({ orders=[], customers=[], receipts=[], db, storeId, user, userData, storeConfig, showToast }) {
+  const [step,setStep]=useState('list'); const [selectedOrder,setSelectedOrder]=useState(null); const [customerName,setCustomerName]=useState(''); const [customerId,setCustomerId]=useState(''); const [items,setItems]=useState([]); const [staffSignature,setStaffSignature]=useState(''); const [customerSignature,setCustomerSignature]=useState(''); const [saving,setSaving]=useState(false); const [savedReceipt,setSavedReceipt]=useState(null);
+  const start = order => { setSelectedOrder(order); setCustomerName(order.customerName || ''); setCustomerId(order.customerId || ''); setItems((order.items||[]).map((it,i)=>({...it, rowNo:i+1, adjustment:Number(it.adjustment)||0}))); setStaffSignature('');setCustomerSignature('');setSavedReceipt(null);setStep('staff'); };
+  const save = async () => { if(!staffSignature || !customerSignature){showToast('Cần đủ chữ ký người thực hiện và khách hàng','error');return;} setSaving(true); try { const receipt={orderId:selectedOrder.id||'', invoiceCode:selectedOrder.invoiceCode||selectedOrder.code||'', customerId:customerId||null, customerName:customerName||'Khách hàng', sellerUid:user.uid, sellerName:userData.name||user.displayName||user.email||'Nhân viên', staffSignature, customerSignature, items, total:Number(selectedOrder.total)||0, createdAt:new Date().toISOString(), title:'PHIẾU XÁC NHẬN / THANH TOÁN'}; const ref=await addDoc(collection(db,'stores',storeId,'confirmationReceipts'),receipt); const full={id:ref.id,...receipt};setSavedReceipt(full);setStep('done');showToast('Đã lưu phiếu xác nhận'); } catch(e){showToast('Không lưu được phiếu xác nhận: '+(e.message||''),'error');} finally{setSaving(false);} };
+  const print = receipt => { const w=window.open('','_blank','width=700,height=900'); if(!w){showToast('Trình duyệt đang chặn cửa sổ in','error');return;} const rows=(receipt.items||[]).map((it,i)=>`<tr><td>${i+1}</td><td>${it.name||it.productName||''}</td><td>${Number(it.quantity??it.qty??1)}</td><td>${Number(it.adjustment||0)}</td></tr>`).join(''); w.document.write(`<html><head><title>${receipt.title}</title><style>@page{size:A5 portrait;margin:10mm}body{font-family:Arial,sans-serif;font-size:12px}h2{text-align:center;font-size:17px}table{width:100%;border-collapse:collapse}td,th{border:1px solid #777;padding:5px;text-align:left}.sign{display:flex;gap:20px;margin-top:28px}.sign div{width:50%;text-align:center}.sign img{height:75px;max-width:100%;object-fit:contain}.name{margin-top:4px;font-weight:bold}</style></head><body><h2>PHIẾU XÁC NHẬN / THANH TOÁN</h2><p>Mã phiếu: ${receipt.invoiceCode||receipt.id||''}</p><p>Khách hàng: ${receipt.customerName||''}</p><p>Thời gian: ${new Date(receipt.createdAt).toLocaleString('vi-VN',{timeZone:'Asia/Ho_Chi_Minh'})}</p><table><thead><tr><th>STT</th><th>Nội dung</th><th>Số lượng</th><th>Điều chỉnh (+/-)</th></tr></thead><tbody>${rows}</tbody></table><p><b>Tổng thanh toán:</b> ${(Number(receipt.total)||0).toLocaleString('vi-VN')} đ</p><div class="sign"><div><b>NGƯỜI THỰC HIỆN</b><br/><img src="${receipt.staffSignature}"/><div class="name">${receipt.sellerName||''}</div></div><div><b>KHÁCH HÀNG</b><br/><img src="${receipt.customerSignature}"/><div class="name">${receipt.customerName||''}</div></div></div><script>window.onload=()=>window.print()</script></body></html>`);w.document.close(); };
+  return <div className="p-3 md:p-6 max-w-6xl mx-auto w-full space-y-4"><div className="flex flex-wrap items-center justify-between gap-3"><div><h2 className="text-xl md:text-2xl font-black text-gray-800">Phiếu xác nhận / Thanh toán</h2><p className="text-gray-500">Chọn đơn hàng, ký hai bên, lưu và in khổ A5.</p></div>{step!=='list'&&<button onClick={()=>setStep('list')} className="px-4 py-2 rounded-lg border bg-white">Quay lại danh sách</button>}</div>
+  {step==='list'&&<><div className="bg-white border rounded-2xl p-3"><h3 className="font-bold mb-3">Chọn đơn hàng để lập phiếu</h3><div className="space-y-2">{orders.slice().sort((a,b)=>new Date(b.date||0)-new Date(a.date||0)).map(o=><div key={o.id} className="border rounded-xl p-3 flex flex-col sm:flex-row sm:items-center justify-between gap-2"><div><div className="font-bold">{o.invoiceCode||o.code||o.id} · {o.customerName||'Khách lẻ'}</div><div className="text-xs text-gray-500">{o.date?formatDate(o.date):''} · {formatCurrency(o.total)}</div></div><button onClick={()=>start(o)} className="px-4 py-2 bg-blue-600 text-white rounded-lg font-bold">Lập phiếu xác nhận</button></div>)}{!orders.length&&<p className="text-gray-500">Chưa có đơn hàng.</p>}</div></div><div className="bg-white border rounded-2xl p-3"><h3 className="font-bold mb-2">Phiếu đã lập</h3>{receipts.slice().sort((a,b)=>new Date(b.createdAt||0)-new Date(a.createdAt||0)).map(r=><div key={r.id} className="flex flex-wrap items-center justify-between gap-2 border-t py-3"><div><b>{r.invoiceCode||r.id}</b> · {r.customerName} <div className="text-xs text-gray-500">{formatDate(r.createdAt)} · {r.sellerName}</div></div><button onClick={()=>print(r)} className="px-3 py-2 border rounded-lg"><Printer size={15} className="inline mr-1"/>In A5</button></div>)}{!receipts.length&&<p className="text-sm text-gray-500">Chưa có phiếu xác nhận.</p>}</div></>}
+  {step==='staff'&&selectedOrder&&<div className="bg-white border rounded-2xl p-4 space-y-4"><h3 className="font-bold">Bước 1/2 — Người thực hiện ký xác nhận</h3><div className="text-sm">Đơn hàng: <b>{selectedOrder.invoiceCode||selectedOrder.id}</b> · Khách hàng: {customerName||'Khách lẻ'}</div><SignaturePad label={`Chữ ký người thực hiện: ${userData.name||user.email||''}`} onSave={v=>{setStaffSignature(v);setStep('customer');}}/></div>}
+  {step==='customer'&&<div className="bg-white border rounded-2xl p-4 space-y-4"><h3 className="font-bold">Bước 2/2 — Khách hàng ký xác nhận</h3><label className="block text-sm font-semibold">Tên khách hàng<input className="mt-1 w-full border rounded-lg p-2" value={customerName} onChange={e=>setCustomerName(e.target.value)}/></label><label className="block text-sm font-semibold">Chọn tài khoản/khách hàng<input className="mt-1 w-full border rounded-lg p-2" value={customerName} onChange={e=>setCustomerName(e.target.value)} list="confirmation-customers"/><datalist id="confirmation-customers">{customers.map(c=><option key={c.id} value={c.name}/>)}</datalist></label><SignaturePad label="Chữ ký khách hàng" onSave={setCustomerSignature}/>{customerSignature&&<div className="flex justify-end"><button disabled={saving} onClick={save} className="px-5 py-3 rounded-xl bg-blue-600 text-white font-bold disabled:opacity-50">{saving?'Đang lưu…':'Lưu phiếu xác nhận'}</button></div>}</div>}
+  {step==='done'&&savedReceipt&&<div className="bg-white border rounded-2xl p-4 space-y-4"><h3 className="text-lg font-black text-green-700">Đã lưu phiếu xác nhận</h3><div className="border rounded-xl p-4"><h3 className="text-center font-black">PHIẾU XÁC NHẬN / THANH TOÁN</h3><p>Khách hàng: {savedReceipt.customerName}</p><p>Người thực hiện: {savedReceipt.sellerName}</p><div className="grid grid-cols-2 gap-4 mt-5 text-center"><div><b>NGƯỜI THỰC HIỆN</b><img src={savedReceipt.staffSignature} className="h-24 w-full object-contain"/><b>{savedReceipt.sellerName}</b></div><div><b>KHÁCH HÀNG</b><img src={savedReceipt.customerSignature} className="h-24 w-full object-contain"/><b>{savedReceipt.customerName}</b></div></div></div><button onClick={()=>print(savedReceipt)} className="px-5 py-3 rounded-xl bg-blue-600 text-white font-bold"><Printer size={16} className="inline mr-2"/>In phiếu A5</button><button onClick={()=>setStep('list')} className="ml-2 px-5 py-3 rounded-xl border">Về danh sách</button></div>}</div>;
 }
 
 function POSView({ products, orders = [], customers, db, storeId, user, storeConfig, showToast, userData }) {
@@ -1608,61 +1642,6 @@ function ContactManager({ type, data, orders, navigationTarget, storeConfig, db,
   const [currentPage, setCurrentPage] = useState(1);
   useEffect(() => { if (navigationTarget?.tab === type && (navigationTarget.id || navigationTarget.name)) { const match = (data || []).find(item => navigationTarget.id && item.id === navigationTarget.id) || (data || []).find(item => navigationTarget.name && (item.name || '').trim().toLocaleLowerCase('vi') === navigationTarget.name.trim().toLocaleLowerCase('vi')); if (match) { setDetailTarget(match); setDetailRowsPerPage('5'); setDetailCurrentPage(1); setSearchTerm(''); setCurrentPage(1); } } }, [navigationTarget?.nonce, navigationTarget?.tab, navigationTarget?.id, navigationTarget?.name, type, data]);
 
-  const handleTransactionDebtAction = async (transaction) => {
-    if (!detailTarget?.id || !transaction?.id) return;
-    const collectionName = isCus ? 'orders' : 'imports';
-    const total = Math.max(0, Number(transaction.total) || 0);
-    const contactRef = doc(db, 'stores', storeId, type, detailTarget.id);
-    const transactionRef = doc(db, 'stores', storeId, collectionName, transaction.id);
-    const currentContact = (data || []).find(row => row.id === detailTarget.id) || detailTarget;
-    const currentDebt = Math.max(0, Number(currentContact.totalDebt) || 0);
-    const isUndo = transaction.status === 'PAID' && transaction.debtPaymentUndoAvailable === true;
-    if (transaction.status === 'DEBT') {
-      if (!window.confirm(`Xác nhận thanh toán nợ ${formatCurrency(total)} cho giao dịch này?`)) return;
-    } else if (isUndo) {
-      if (!window.confirm(`Hoàn tác thanh toán giao dịch này? Công nợ sẽ tăng lại ${formatCurrency(total)}.`)) return;
-    } else {
-      showToast('Giao dịch này không có thao tác hoàn tác thanh toán.', 'error');
-      return;
-    }
-    try {
-      const batch = writeBatch(db);
-      if (transaction.status === 'DEBT') {
-        batch.update(transactionRef, { status: 'PAID', debtPaymentUndoAvailable: true, debtPaidAt: new Date().toISOString(), debtPaidByAction: true });
-        batch.update(contactRef, { totalDebt: Math.max(0, currentDebt - total) });
-      } else {
-        batch.update(transactionRef, { status: 'DEBT', debtPaymentUndoAvailable: false, debtPaymentUndoneAt: new Date().toISOString() });
-        batch.update(contactRef, { totalDebt: currentDebt + total });
-      }
-      await batch.commit();
-      const updatedDebt = transaction.status === 'DEBT' ? Math.max(0, currentDebt - total) : currentDebt + total;
-      setDetailTarget(prev => prev ? { ...prev, totalDebt: updatedDebt } : prev);
-      showToast(transaction.status === 'DEBT' ? 'Đã ghi nhận thanh toán nợ' : 'Đã hoàn tác thanh toán, công nợ được khôi phục');
-    } catch (err) {
-      showToast('Không thể cập nhật thanh toán nợ: ' + (err?.message || 'Lỗi không xác định'), 'error');
-    }
-  };
-
-  const handleUndoDebtPayment = async (payment) => {
-    if (!detailTarget?.id || !payment?.id || savingDebtPayment) return;
-    if (!window.confirm(`Hoàn tác khoản trừ công nợ ${formatCurrency(payment.amount)}? Số nợ sẽ được cộng trở lại.`)) return;
-    setSavingDebtPayment(true);
-    try {
-      const currentContact = (data || []).find(row => row.id === detailTarget.id) || detailTarget;
-      const restoredDebt = Math.max(0, Number(currentContact.totalDebt) || 0) + Math.max(0, Number(payment.amount) || 0);
-      const batch = writeBatch(db);
-      batch.update(doc(db, 'stores', storeId, type, detailTarget.id), { totalDebt: restoredDebt });
-      batch.delete(doc(db, 'stores', storeId, type, detailTarget.id, 'debtPayments', payment.id));
-      await batch.commit();
-      setDetailTarget(prev => prev ? { ...prev, totalDebt: restoredDebt } : prev);
-      if (editingDebtPayment?.id === payment.id) setEditingDebtPayment(null);
-      setDebtPaymentAmount(''); setDebtPaymentMode('partial'); setDebtPaymentMethod('cash');
-      showToast('Đã hoàn tác khoản trừ công nợ');
-    } catch (err) {
-      showToast('Không thể hoàn tác khoản trừ công nợ: ' + (err?.message || 'Lỗi không xác định'), 'error');
-    } finally { setSavingDebtPayment(false); }
-  };
-
   const handleDebtPaymentSave = async (e) => {
     e.preventDefault();
     if (!detailTarget?.id || savingDebtPayment) return;
@@ -1871,7 +1850,7 @@ function ContactManager({ type, data, orders, navigationTarget, storeConfig, db,
               </form>
               {editingDebtPayment && <button type="button" onClick={()=>{setEditingDebtPayment(null);setDebtPaymentAmount('');setDebtPaymentMode('partial');setDebtPaymentMethod('cash');}} className="text-xs text-gray-600 underline">Hủy chỉnh sửa</button>}
               <div className="border rounded-lg overflow-x-auto"><table className="w-full text-xs text-left"><thead className="bg-gray-100"><tr><th className="p-2">Thời gian</th><th className="p-2">Số tiền</th><th className="p-2">Cách trừ</th><th className="p-2">Phương thức</th><th className="p-2">Thao tác</th></tr></thead><tbody>
-                {debtPayments.map(payment => <tr key={payment.id} className="border-t"><td className="p-2 whitespace-nowrap">{formatDate(payment.date)}</td><td className="p-2 font-bold">{formatCurrency(payment.amount)}</td><td className="p-2">{payment.mode==='all'?'Trừ trên tổng nợ':'Trừ từng phần'}</td><td className="p-2">{payment.method==='transfer'?'Chuyển khoản':'Tiền mặt'}</td><td className="p-2"><div className="flex flex-wrap gap-2"><button type="button" onClick={()=>{setEditingDebtPayment(payment);setDebtPaymentMode(payment.mode==='all'?'all':'partial');setDebtPaymentAmount(String(payment.amount||''));setDebtPaymentMethod(payment.method||'cash');}} className="text-blue-600 underline font-semibold">Chỉnh sửa</button><button type="button" onClick={()=>handleUndoDebtPayment(payment)} disabled={savingDebtPayment} className="text-red-600 underline font-semibold disabled:opacity-50">Hoàn tác</button></div></td></tr>)}
+                {debtPayments.map(payment => <tr key={payment.id} className="border-t"><td className="p-2 whitespace-nowrap">{formatDate(payment.date)}</td><td className="p-2 font-bold">{formatCurrency(payment.amount)}</td><td className="p-2">{payment.mode==='all'?'Trừ trên tổng nợ':'Trừ từng phần'}</td><td className="p-2">{payment.method==='transfer'?'Chuyển khoản':'Tiền mặt'}</td><td className="p-2"><button type="button" onClick={()=>{setEditingDebtPayment(payment);setDebtPaymentMode(payment.mode==='all'?'all':'partial');setDebtPaymentAmount(String(payment.amount||''));setDebtPaymentMethod(payment.method||'cash');}} className="text-blue-600 underline font-semibold">Chỉnh sửa</button></td></tr>)}
                 {debtPayments.length===0 && <tr><td colSpan="5" className="p-3 text-center text-gray-400">Chưa có giao dịch trừ công nợ</td></tr>}
               </tbody></table></div>
             </section>
@@ -1880,7 +1859,7 @@ function ContactManager({ type, data, orders, navigationTarget, storeConfig, db,
               <div className="border rounded-xl overflow-hidden">
                 <div className="flex flex-wrap items-center justify-between gap-2 p-2 border-b bg-gray-50"><span className="text-xs text-gray-500">{detailData.list.length} giao dịch</span><label className="text-xs flex items-center gap-2">Hiển thị <select className="border rounded-lg p-1.5 bg-white" value={detailRowsPerPage} onChange={e=>{setDetailRowsPerPage(e.target.value);setDetailCurrentPage(1);}}><option value="5">5 dòng</option><option value="10">10 dòng</option><option value="20">20 dòng</option><option value="all">Tất cả</option></select></label></div>
                 <div className="max-h-80 overflow-auto"><table className="w-full text-xs text-left">
-                  <thead className="bg-gray-100 sticky top-0 border-b"><tr><th className="p-2.5">Thời gian</th><th className="p-2.5">Mặt hàng & Ghi chú/BH</th><th className="p-2.5">Giá nhập</th><th className="p-2.5">Giá bán</th><th className="p-2.5">Giá trị đơn</th><th className="p-2.5">Trạng thái nợ</th><th className="p-2.5">Thao tác</th></tr></thead>
+                  <thead className="bg-gray-100 sticky top-0 border-b"><tr><th className="p-2.5">Thời gian</th><th className="p-2.5">Mặt hàng & Ghi chú/BH</th><th className="p-2.5">Giá nhập</th><th className="p-2.5">Giá bán</th><th className="p-2.5">Giá trị đơn</th><th className="p-2.5">Trạng thái nợ</th></tr></thead>
                   <tbody>
                     {detailPageList.map(ord => {
                       const statusClass = ord.status === 'PAID' ? 'bg-green-100 text-green-700' : 'bg-orange-100 text-orange-700';
@@ -1904,11 +1883,10 @@ function ContactManager({ type, data, orders, navigationTarget, storeConfig, db,
                           <td className="p-2.5 align-top">{(ord.items || []).map((it, idx) => <div key={idx} className="mb-1 whitespace-nowrap">{formatCurrency(Number(it.price) || 0)}</div>)}</td>
                           <td className="p-2.5 font-bold text-gray-800 align-top">{formatCurrency(ord.total)}</td>
                           <td className="p-2.5 align-top"><span className={"px-2 py-0.5 rounded text-[10px] font-bold " + statusClass}>{ord.status === 'PAID' ? 'Đã trả' : 'Đang nợ'}</span></td>
-                          <td className="p-2.5 align-top"><div className="flex flex-col gap-1.5 min-w-[105px]">{ord.status === 'DEBT' ? <button type="button" onClick={() => handleTransactionDebtAction(ord)} className="rounded bg-green-600 px-2 py-1.5 text-[10px] font-bold text-white hover:bg-green-700">Thanh toán nợ</button> : ord.debtPaymentUndoAvailable === true ? <button type="button" onClick={() => handleTransactionDebtAction(ord)} className="rounded bg-amber-100 px-2 py-1.5 text-[10px] font-bold text-amber-800 hover:bg-amber-200">Hoàn tác</button> : <span className="text-[10px] text-gray-400">—</span>}</div></td>
                         </tr>
                       );
                     })}
-                    {detailData.list.length === 0 && (<tr><td colSpan="7" className="p-4 text-center text-gray-400">Không có phát sinh giao dịch</td></tr>)}
+                    {detailData.list.length === 0 && (<tr><td colSpan="6" className="p-4 text-center text-gray-400">Không có phát sinh giao dịch</td></tr>)}
                   </tbody>
                 </table></div>
                 <div className="flex flex-wrap items-center justify-between gap-2 p-2 border-t bg-gray-50"><span className="text-xs text-gray-500">Trang {detailRowsPerPage === 'all' ? 1 : detailCurrentPage} / {detailTotalPages}</span><div className="flex gap-2"><button type="button" onClick={()=>setDetailCurrentPage(p=>Math.max(1,p-1))} disabled={detailCurrentPage===1 || detailRowsPerPage==='all'} className="border rounded px-3 py-1 text-xs disabled:opacity-40">Lùi</button><button type="button" onClick={()=>setDetailCurrentPage(p=>Math.min(detailTotalPages,p+1))} disabled={detailCurrentPage>=detailTotalPages || detailRowsPerPage==='all'} className="border rounded px-3 py-1 text-xs disabled:opacity-40">Tiến</button></div></div>
@@ -3130,24 +3108,14 @@ function SettingsView({ db, storeId, showToast, storeConfig }) {
           let batch = writeBatch(db); 
           let count = 0; 
           let success = 0;
-          let duplicateSkipSummary = '';
 
           // --- LOGIC NHẬP LỊCH SỬ NHẬP HÀNG TỪ EXCEL KIOTVIET ---
           if (type === 'imports') {
             const productSnap = await getDocs(collection(db, 'stores', storeId, 'products'));
             const supplierSnap = await getDocs(collection(db, 'stores', storeId, 'suppliers'));
-            const existingImportSnap = await getDocs(collection(db, 'stores', storeId, 'imports'));
             const productDocs = productSnap.docs.map(d => ({ id: d.id, ...d.data() }));
-            const normalizeImportIdentity = value => String(value || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/đ/g, 'd').replace(/Đ/g, 'D').trim().toLocaleLowerCase('vi');
-            const productByName = new Map(productDocs.map(p => [normalizeImportIdentity(p.name), p]));
-            const supplierByName = new Map(supplierSnap.docs.map(d => [normalizeImportIdentity(d.data().name), { id: d.id, ...d.data() }]));
-            const existingReceiptCodes = new Set(existingImportSnap.docs.map(d => normalizeImportIdentity(d.data().receiptCode || d.data().invoiceCode)).filter(Boolean));
-            const existingReceiptSignatures = new Set(existingImportSnap.docs.map(d => {
-              const item = d.data();
-              const dateValue = item.date ? new Date(item.date) : null;
-              const day = dateValue && !Number.isNaN(dateValue.getTime()) ? dateValue.toISOString().slice(0, 10) : '';
-              return `${normalizeImportIdentity(item.supplierName)}|${day}|${Number(item.total || 0)}`;
-            }));
+            const productByName = new Map(productDocs.map(p => [String(p.name || '').trim().toLowerCase(), p]));
+            const supplierByName = new Map(supplierSnap.docs.map(d => [String(d.data().name || '').trim().toLowerCase(), { id: d.id, ...d.data() }]));
             const receipts = {};
             const parseExcelDate = (value) => {
               if (!value) return new Date().toISOString();
@@ -3164,7 +3132,7 @@ function SettingsView({ db, storeId, showToast, storeConfig }) {
               const date = parseExcelDate(row['Thời gian'] || row['Ngày nhập'] || row['Ngày tạo']);
               const groupKey = receiptCode || `${supplierName}|${date.slice(0, 10)}`;
               if (!receipts[groupKey]) receipts[groupKey] = { receiptCode, supplierName, date, items: [], total: 0, source: 'KiotViet Excel' };
-              const product = productByName.get(normalizeImportIdentity(productName));
+              const product = productByName.get(productName.toLowerCase());
               const unitCost = Number(row['Giá nhập'] || row['Đơn giá nhập'] || row['Giá vốn'] || row['Đơn giá']) || 0;
               const lineTotal = Number(row['Thành tiền'] || row['Tổng tiền hàng']) || qty * unitCost;
               receipts[groupKey].items.push({ id: product?.id || '', name: productName, category: product?.category || String(row['Nhóm hàng'] || ''), qty, importCost: unitCost, price: Number(product?.price) || Number(row['Giá bán']) || 0 });
@@ -3174,26 +3142,12 @@ function SettingsView({ db, storeId, showToast, storeConfig }) {
             if (!receiptEntries.length) throw new Error('Không tìm thấy dòng nhập hàng hợp lệ. Cần có cột Tên hàng và Số lượng.');
             let importBatch = writeBatch(db);
             let writes = 0;
-            let skippedDuplicates = 0;
-            const seenReceiptCodes = new Set(existingReceiptCodes);
-            const seenReceiptSignatures = new Set(existingReceiptSignatures);
             for (const receipt of receiptEntries) {
-              const normalizedReceiptCode = normalizeImportIdentity(receipt.receiptCode);
-              const receiptDate = receipt.date ? new Date(receipt.date) : null;
-              const receiptDay = receiptDate && !Number.isNaN(receiptDate.getTime()) ? receiptDate.toISOString().slice(0, 10) : '';
-              const receiptTotal = receipt.total || receipt.items.reduce((sum, item) => sum + Number(item.qty || 0) * Number(item.importCost || 0), 0);
-              const receiptSignature = `${normalizeImportIdentity(receipt.supplierName)}|${receiptDay}|${Number(receiptTotal || 0)}`;
-              if ((normalizedReceiptCode && seenReceiptCodes.has(normalizedReceiptCode)) || (!normalizedReceiptCode && seenReceiptSignatures.has(receiptSignature))) {
-                skippedDuplicates++;
-                continue;
-              }
-              if (normalizedReceiptCode) seenReceiptCodes.add(normalizedReceiptCode);
-              seenReceiptSignatures.add(receiptSignature);
-              let supplier = supplierByName.get(normalizeImportIdentity(receipt.supplierName));
+              let supplier = supplierByName.get(receipt.supplierName.toLowerCase());
               if (!supplier) {
                 const supplierRef = doc(collection(db, 'stores', storeId, 'suppliers'));
                 supplier = { id: supplierRef.id, name: receipt.supplierName, phone: '', address: '', totalDebt: 0, createdAt: new Date().toISOString() };
-                supplierByName.set(normalizeImportIdentity(receipt.supplierName), supplier);
+                supplierByName.set(receipt.supplierName.toLowerCase(), supplier);
                 importBatch.set(supplierRef, supplier); writes++;
               }
               const validItems = receipt.items.filter(item => item.id && productDocs.some(p => p.id === item.id));
@@ -3217,23 +3171,14 @@ function SettingsView({ db, storeId, showToast, storeConfig }) {
               success++;
             }
             if (writes > 0) await importBatch.commit();
-            if (skippedDuplicates > 0) duplicateSkipSummary = ` Đã bỏ qua ${skippedDuplicates} phiếu nhập trùng.`;
           }
           // --- LOGIC GOM NHÓM ĐƠN HÀNG KIOTVIET ---
           else if (type === 'orders') {
             const ordersMap = {};
-            const existingOrdersSnap = await getDocs(collection(db, 'stores', storeId, 'orders'));
-            const normalizeOrderCode = value => String(value || '').trim().toLocaleLowerCase('vi');
-            const existingOrderCodes = new Set(existingOrdersSnap.docs.map(d => normalizeOrderCode(d.data().invoiceCode || d.data().id || d.id)).filter(Boolean));
-            let skippedDuplicateOrders = 0;
             
             data.forEach(row => {
-              const orderId = String(row['Mã hóa đơn'] || '').trim();
+              const orderId = row['Mã hóa đơn'];
               if (!orderId) return;
-              if (existingOrderCodes.has(normalizeOrderCode(orderId))) {
-                skippedDuplicateOrders++;
-                return;
-              }
 
               // Nếu mã hóa đơn chưa có trong map, khởi tạo
               if (!ordersMap[orderId]) {
@@ -3292,19 +3237,9 @@ function SettingsView({ db, storeId, showToast, storeConfig }) {
               }
             }
             if (count > 0) await batch.commit();
-            if (skippedDuplicateOrders > 0) duplicateSkipSummary = ` Đã bỏ qua ${skippedDuplicateOrders} đơn hàng trùng mã.`;
           } 
           // --- LOGIC NHẬP CÁC DANH MỤC KHÁC ---
           else {
-            const identityCollections = ['products', 'customers', 'suppliers'];
-            const existingIdentityDocs = {};
-            if (identityCollections.includes(type)) {
-              const identitySnap = await getDocs(collection(db, 'stores', storeId, type));
-              existingIdentityDocs[type] = identitySnap.docs.map(d => ({ id: d.id, ...d.data() }));
-            }
-            const normalizeIdentityText = value => String(value || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/đ/g, 'd').replace(/Đ/g, 'D').trim().toLocaleLowerCase('vi');
-            const normalizeIdentityPhone = value => String(value || '').replace(/\.0$/, '').replace(/[^0-9]/g, '');
-            let skippedIdentityDuplicates = 0;
             for (let i = 0; i < data.length; i++) {
               let p = null; 
               const row = data[i]; 
@@ -3319,8 +3254,7 @@ function SettingsView({ db, storeId, showToast, storeConfig }) {
               
               if (type === 'products' && row['Tên hàng']) {
                 p = { 
-                  name: String(row['Tên hàng']).trim(),
-                  code: String(row['Mã hàng'] || row['Mã sản phẩm'] || row['Barcode'] || '').trim(),
+                  name: String(row['Tên hàng']), 
                   category: row['Nhóm hàng(3 Cấp)'] || row['Nhóm hàng'] || '', 
                   price: Number(row['Giá bán']) || 0, 
                   cost: Number(row['Giá vốn']) || 0, 
@@ -3399,37 +3333,6 @@ function SettingsView({ db, storeId, showToast, storeConfig }) {
                 }
               }
 
-              if (p && identityCollections.includes(type)) {
-                const existingRows = existingIdentityDocs[type] || [];
-                let duplicate = false;
-                if (type === 'products') {
-                  const incomingCode = normalizeIdentityText(p.code || row['Mã hàng'] || row['Mã sản phẩm'] || row['Barcode']);
-                  duplicate = existingRows.some(existing => {
-                    const existingCode = normalizeIdentityText(existing.code || existing.productCode || existing.sku || existing.barcode);
-                    if (incomingCode && existingCode) return incomingCode === existingCode;
-                    return normalizeIdentityText(existing.name) === normalizeIdentityText(p.name);
-                  });
-                } else {
-                  const incomingPhone = normalizeIdentityPhone(p.phone);
-                  duplicate = existingRows.some(existing => {
-                    const existingPhone = normalizeIdentityPhone(existing.phone || existing.mobile);
-                    if (incomingPhone && existingPhone) return incomingPhone === existingPhone;
-                    return !incomingPhone && !existingPhone && normalizeIdentityText(existing.name) === normalizeIdentityText(p.name) && normalizeIdentityText(existing.address) === normalizeIdentityText(p.address);
-                  });
-                }
-                // Cũng chống trùng giữa các dòng trong cùng file Excel trước khi ghi batch.
-                if (!duplicate) {
-                  duplicate = existingRows.some(existing => existing.__pendingImportKey === (type === 'products' ? normalizeIdentityText(p.name) : `${normalizeIdentityText(p.name)}|${normalizeIdentityPhone(p.phone)}`));
-                }
-                if (duplicate) {
-                  skippedIdentityDuplicates++;
-                  p = null;
-                } else {
-                  const pendingKey = type === 'products' ? normalizeIdentityText(p.name) : `${normalizeIdentityText(p.name)}|${normalizeIdentityPhone(p.phone)}`;
-                  existingRows.push({ ...p, __pendingImportKey: pendingKey });
-                  existingIdentityDocs[type] = existingRows;
-                }
-              }
               if (p) { 
                 batch.set(doc(collection(db, 'stores', storeId, type)), p); 
                 count++; 
@@ -3444,10 +3347,9 @@ function SettingsView({ db, storeId, showToast, storeConfig }) {
                 } 
               }
             }
-            if (skippedIdentityDuplicates > 0) duplicateSkipSummary = ` Đã bỏ qua ${skippedIdentityDuplicates} dòng danh mục trùng.`;
           }
           
-          showToast("Đã NHẬP thành công " + success + " dòng (đã gộp các mục nếu là Hóa Đơn)." + duplicateSkipSummary);
+          showToast("Đã NHẬP thành công " + success + " dòng (đã gộp các mục nếu là Hóa Đơn).");
           setLoadingFile(false); 
           e.target.value = '';
         } catch(err) { 
