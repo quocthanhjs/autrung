@@ -515,6 +515,9 @@ function DashboardView({ orders, imports, expenses, customers, suppliers, produc
   const sortDashboardRows = (rows, table, getter) => { const config = dashboardColumnSort[table]; if (!config) return rows; return [...rows].sort((a,b) => { const av=getter(a,config.field), bv=getter(b,config.field); const an=Number(av), bn=Number(bv); const cmp=av!=='' && bv!=='' && Number.isFinite(an) && Number.isFinite(bn) ? an-bn : String(av??'').localeCompare(String(bv??''),'vi',{numeric:true,sensitivity:'base'}); return config.direction==='asc'?cmp:-cmp; }); };
   const [showAllCust, setShowAllCust] = useState('10');
   const [showAllSupp, setShowAllSupp] = useState('10');
+  const [overdueMonth, setOverdueMonth] = useState('ALL');
+  const [overdueYear, setOverdueYear] = useState(currentVietnamDate.year.toString());
+  const [overdueRows, setOverdueRows] = useState('10');
   const [chartFilter, setChartFilter] = useState('7days');
 
   const stats = useMemo(() => {
@@ -677,28 +680,6 @@ function DashboardView({ orders, imports, expenses, customers, suppliers, produc
 
 
 
-      {stats.overdueCust1Week.length > 0 && (
-        <div className="bg-blue-50 border-2 border-blue-500 rounded-2xl shadow-sm overflow-hidden">
-          <div className="p-4 bg-blue-600 flex justify-between items-center text-white"> <h3 className="font-bold flex items-center gap-2 text-lg"><Bell size={24}/> CẢNH BÁO: KHÁCH HÀNG NỢ QUÁ HẠN 1 TUẦN ({stats.overdueCust1Week.length})</h3> </div>
-          <div className="max-h-60 overflow-y-auto">
-            <table className="w-full text-left text-sm bg-white">
-              <thead className="bg-blue-50 sticky top-0 border-b border-blue-200">
-                <tr>{[['customer','Khách hàng','dash_overdue_customer'],['date','Ngày mua','dash_overdue_date'],['days','Số ngày nợ','dash_overdue_days'],['amount','Số tiền','dash_overdue_amount']].filter(([, ,perm])=>canShowColumn(perm)).map(([field,label])=><th key={field} onClick={()=>toggleDashboardColumnSort('overdue',field)} className="p-3 text-blue-800 cursor-pointer select-none hover:bg-blue-100">{label} <ArrowUpDown size={11} className="inline"/></th>)}</tr>
-              </thead>
-              <tbody>
-                {sortDashboardRows(stats.overdueCust1Week,'overdue',(o,f)=>f==='customer'?o.customerName:f==='date'?o.date:f==='days'?getDaysDifference(o.date):Number(o.total)||0).map(o => (
-                  <tr key={o.id} className="border-b hover:bg-blue-50/50">
-                    {canShowColumn('dash_overdue_customer') && <td className="p-3 font-bold text-gray-800">{o.customerName}</td>}
-                    {canShowColumn('dash_overdue_date') && <td className="p-3 text-gray-600">{formatDate(o.date)}</td>}
-                    {canShowColumn('dash_overdue_days') && <td className="p-3 font-bold text-blue-600">{getDaysDifference(o.date)} ngày</td>}
-                    {canShowColumn('dash_overdue_amount') && <td className="p-3 font-bold text-blue-600 text-lg">{formatCurrency(o.total)}</td>}
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        </div>
-      )}
 
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
         {canShowColumn('dash_stat_revenue') && <StatCard icon={<TrendingUp />} title={filterDay ? "Doanh Thu (" + filterDay + ")" : "Doanh Thu (T" + (filterMonth==='ALL'?'ổng':filterMonth) + ")"} value={formatCurrency(stats.totalRev)} color="bg-blue-100 text-blue-600" />}
@@ -757,63 +738,34 @@ function DashboardView({ orders, imports, expenses, customers, suppliers, produc
         </div>
       </div>
 
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-        <div className="bg-white p-5 rounded-2xl shadow-sm border border-gray-200 flex flex-col">
-          <div className="flex flex-wrap justify-between items-center gap-2 mb-3">
-            <div className="flex flex-wrap items-center gap-2"><h3 className="font-bold text-gray-800 flex items-center gap-2 text-blue-600"> <Users size={18}/> Nhắc nợ Khách hàng ({custDebtMonth === 'ALL' ? `Năm ${custDebtYear}` : `Tháng ${custDebtMonth}/${custDebtYear}`}) </h3><select aria-label="Tháng nhắc nợ khách hàng" value={custDebtMonth} onChange={e=>setCustDebtMonth(e.target.value)} className="border rounded-lg px-2 py-1.5 bg-white text-xs"><option value="ALL">Cả năm</option>{Array.from({length:12},(_,i)=><option key={i+1} value={String(i+1)}>Tháng {i+1}</option>)}</select><select aria-label="Năm nhắc nợ khách hàng" value={custDebtYear} onChange={e=>setCustDebtYear(e.target.value)} className="border rounded-lg px-2 py-1.5 bg-white text-xs">{Array.from({length:8},(_,i)=>currentVietnamDate.year-i).map(y=><option key={y} value={String(y)}>Năm {y}</option>)}</select></div>
-            <button onClick={() => setCustSortOrder(prev => prev === 'desc' ? 'asc' : 'desc')} className="text-xs bg-gray-100 hover:bg-gray-200 text-gray-700 px-2.5 py-1 rounded-lg font-medium flex items-center gap-1 transition" > <ArrowUpDown size={12}/> {custSortOrder === 'desc' ? 'Lâu nhất trước' : 'Gần nhất trước'} </button>
+      {(() => {
+        const overdueFiltered = stats.overdueCust1Week.filter(o => {
+          const d = getVietnamDateParts(new Date(o.date));
+          return d.year.toString() === overdueYear && (overdueMonth === 'ALL' || d.month.toString() === overdueMonth);
+        });
+        const overdueSorted = sortDashboardRows(overdueFiltered, 'overdue', (o, f) => f === 'customer' ? o.customerName : f === 'date' ? o.date : f === 'days' ? getDaysDifference(o.date) : Number(o.total) || 0);
+        const overdueVisible = overdueRows === 'all' ? overdueSorted : overdueSorted.slice(0, Number(overdueRows) || 10);
+        return (
+          <div className="bg-blue-50 border-2 border-blue-500 rounded-2xl shadow-sm overflow-hidden">
+            <div className="p-4 bg-blue-600 flex flex-wrap justify-between items-center gap-3 text-white">
+              <h3 className="font-bold flex items-center gap-2 text-lg"><Bell size={24}/> CẢNH BÁO: KHÁCH HÀNG NỢ QUÁ HẠN 1 TUẦN ({overdueFiltered.length})</h3>
+              <div className="flex flex-wrap gap-2 items-center">
+                <select aria-label="Tháng cảnh báo nợ quá hạn" value={overdueMonth} onChange={e=>setOverdueMonth(e.target.value)} className="rounded-lg px-2 py-1.5 bg-white text-gray-800 text-xs"><option value="ALL">Tất cả tháng</option>{Array.from({length:12},(_,i)=><option key={i+1} value={String(i+1)}>Tháng {i+1}</option>)}</select>
+                <select aria-label="Năm cảnh báo nợ quá hạn" value={overdueYear} onChange={e=>setOverdueYear(e.target.value)} className="rounded-lg px-2 py-1.5 bg-white text-gray-800 text-xs">{Array.from({length:8},(_,i)=>currentVietnamDate.year-i).map(y=><option key={y} value={String(y)}>Năm {y}</option>)}</select>
+                <label className="text-xs flex items-center gap-1">Hiển thị <select value={overdueRows} onChange={e=>setOverdueRows(e.target.value)} className="rounded-lg px-2 py-1.5 bg-white text-gray-800"><option value="10">10</option><option value="20">20</option><option value="50">50</option><option value="100">100</option><option value="all">Tất cả</option></select></label>
+              </div>
+            </div>
+            <div className="max-h-80 overflow-y-auto">
+              <table className="w-full text-left text-sm bg-white">
+                <thead className="bg-blue-50 sticky top-0 border-b border-blue-200"><tr>{[['customer','Khách hàng','dash_overdue_customer'],['date','Ngày mua','dash_overdue_date'],['days','Số ngày nợ','dash_overdue_days'],['amount','Số tiền','dash_overdue_amount']].filter(([, ,perm])=>canShowColumn(perm)).map(([field,label])=><th key={field} onClick={()=>toggleDashboardColumnSort('overdue',field)} className="p-3 text-blue-800 cursor-pointer select-none hover:bg-blue-100">{label} <ArrowUpDown size={11} className="inline"/></th>)}</tr></thead>
+                <tbody>{overdueVisible.map(o => <tr key={o.id} className="border-b hover:bg-blue-50/50">{canShowColumn('dash_overdue_customer') && <td className="p-3 font-bold text-gray-800">{o.customerName}</td>}{canShowColumn('dash_overdue_date') && <td className="p-3 text-gray-600">{formatDate(o.date)}</td>}{canShowColumn('dash_overdue_days') && <td className="p-3 font-bold text-blue-600">{getDaysDifference(o.date)} ngày</td>}{canShowColumn('dash_overdue_amount') && <td className="p-3 font-bold text-blue-600 text-lg">{formatCurrency(o.total)}</td>}</tr>)}
+                  {overdueVisible.length === 0 && <tr><td colSpan="4" className="p-4 text-center text-gray-400">Không có khách hàng nợ quá hạn trong tháng/năm đã chọn.</td></tr>}
+                </tbody>
+              </table>
+            </div>
           </div>
-          <div className="overflow-y-auto border rounded-xl flex-1 max-h-72">
-            <table className="w-full text-left text-xs">
-              <thead className="bg-blue-50 sticky top-0 border-b">
-                <tr>{[['name','Khách hàng'],['days','Thời gian chưa trả'],['debt','Tổng Nợ']].map(([field,label])=><th key={field} onClick={()=>toggleDashboardColumnSort('custDebt',field)} className="p-2.5 cursor-pointer select-none hover:bg-blue-100">{label} <ArrowUpDown size={11} className="inline"/></th>)}</tr>
-              </thead>
-              <tbody>
-                {(showAllCust === 'all' ? sortDashboardRows(stats.filteredCustDebt,'custDebt',(c,f)=>f==='name'?c.name:f==='days'?(c.createdAt?getDaysDifference(c.createdAt):0):Number(c.totalDebt)||0) : sortDashboardRows(stats.filteredCustDebt,'custDebt',(c,f)=>f==='name'?c.name:f==='days'?(c.createdAt?getDaysDifference(c.createdAt):0):Number(c.totalDebt)||0).slice(0, Number(showAllCust) || 10)).map(c => {
-                  const daysAgo = c.createdAt ? getDaysDifference(c.createdAt) : 0;
-                  return (
-                    <tr key={c.id} className="border-b hover:bg-gray-50">
-                      <td className="p-2.5 font-bold text-gray-800">{c.name}<p className="text-[10px] text-gray-400 font-normal">{c.phone || 'Không có SĐT'}</p></td>
-                      <td className="p-2.5 font-semibold text-orange-600">{daysAgo} ngày trước</td>
-                      <td className="p-2.5 text-right font-bold text-blue-600">{formatCurrency(c.totalDebt)}</td>
-                    </tr>
-                  );
-                })}
-                {stats.filteredCustDebt.length === 0 && ( <tr><td colSpan="3" className="p-4 text-center text-gray-400">Không có khách hàng nợ trong kỳ này</td></tr> )}
-              </tbody>
-            </table>
-          </div>
-          <div className="mt-3 flex items-center justify-end gap-2 text-xs text-gray-500">Hiển thị <select value={showAllCust} onChange={e=>setShowAllCust(e.target.value)} className="border rounded-lg px-2 py-1 bg-white font-bold"><option value="10">10</option><option value="20">20</option><option value="50">50</option><option value="all">Tất cả</option></select></div>
-        </div>
-        
-        <div className="bg-white p-5 rounded-2xl shadow-sm border border-gray-200 flex flex-col">
-          <div className="flex flex-wrap justify-between items-center gap-2 mb-3">
-            <div className="flex flex-wrap items-center gap-2"><h3 className="font-bold text-gray-800 flex items-center gap-2 text-orange-600"> <Truck size={18}/> Nhắc nợ Nhà cung cấp ({suppDebtMonth === 'ALL' ? `Năm ${suppDebtYear}` : `Tháng ${suppDebtMonth}/${suppDebtYear}`}) </h3><select aria-label="Tháng nhắc nợ nhà cung cấp" value={suppDebtMonth} onChange={e=>setSuppDebtMonth(e.target.value)} className="border rounded-lg px-2 py-1.5 bg-white text-xs"><option value="ALL">Cả năm</option>{Array.from({length:12},(_,i)=><option key={i+1} value={String(i+1)}>Tháng {i+1}</option>)}</select><select aria-label="Năm nhắc nợ nhà cung cấp" value={suppDebtYear} onChange={e=>setSuppDebtYear(e.target.value)} className="border rounded-lg px-2 py-1.5 bg-white text-xs">{Array.from({length:8},(_,i)=>currentVietnamDate.year-i).map(y=><option key={y} value={String(y)}>Năm {y}</option>)}</select></div>
-            <button onClick={() => setSuppSortOrder(prev => prev === 'desc' ? 'asc' : 'desc')} className="text-xs bg-gray-100 hover:bg-gray-200 text-gray-700 px-2.5 py-1 rounded-lg font-medium flex items-center gap-1 transition" > <ArrowUpDown size={12}/> {suppSortOrder === 'desc' ? 'Lâu nhất trước' : 'Gần nhất trước'} </button>
-          </div>
-          <div className="overflow-y-auto border rounded-xl flex-1 max-h-72">
-            <table className="w-full text-left text-xs">
-              <thead className="bg-orange-50 sticky top-0 border-b">
-                <tr>{[['name','Nhà cung cấp'],['days','Thời gian chưa trả'],['debt','Cần trả']].map(([field,label])=><th key={field} onClick={()=>toggleDashboardColumnSort('suppDebt',field)} className="p-2.5 cursor-pointer select-none hover:bg-orange-100">{label} <ArrowUpDown size={11} className="inline"/></th>)}</tr>
-              </thead>
-              <tbody>
-                {(showAllSupp === 'all' ? sortDashboardRows(stats.filteredSuppDebt,'suppDebt',(s,f)=>f==='name'?s.name:f==='days'?(s.createdAt?getDaysDifference(s.createdAt):0):Number(s.totalDebt)||0) : sortDashboardRows(stats.filteredSuppDebt,'suppDebt',(s,f)=>f==='name'?s.name:f==='days'?(s.createdAt?getDaysDifference(s.createdAt):0):Number(s.totalDebt)||0).slice(0, Number(showAllSupp) || 10)).map(s => {
-                  const daysAgo = s.createdAt ? getDaysDifference(s.createdAt) : 0;
-                  return (
-                    <tr key={s.id} className="border-b hover:bg-gray-50">
-                      <td className="p-2.5 font-bold text-gray-800">{s.name}<p className="text-[10px] text-gray-400 font-normal">{s.phone || 'Không có SĐT'}</p></td>
-                      <td className="p-2.5 font-semibold text-orange-600">{daysAgo} ngày trước</td>
-                      <td className="p-2.5 text-right font-bold text-orange-600">{formatCurrency(s.totalDebt)}</td>
-                    </tr>
-                  );
-                })}
-                {stats.filteredSuppDebt.length === 0 && ( <tr><td colSpan="3" className="p-4 text-center text-gray-400">Không có nhà cung cấp nợ trong kỳ này</td></tr> )}
-              </tbody>
-            </table>
-          </div>
-          <div className="mt-3 flex items-center justify-end gap-2 text-xs text-gray-500">Hiển thị <select value={showAllSupp} onChange={e=>setShowAllSupp(e.target.value)} className="border rounded-lg px-2 py-1 bg-white font-bold"><option value="10">10</option><option value="20">20</option><option value="50">50</option><option value="all">Tất cả</option></select></div>
-        </div>
-      </div>
+        );
+      })()}
 
       <section className="bg-white p-5 rounded-2xl shadow-sm border border-gray-200 space-y-4">
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
@@ -1481,6 +1433,22 @@ function StaffManagerView({ db, showToast }) {
   }, []);
 
 
+  const handleUndoDebtPayment = async (payment) => {
+    if (!detailTarget?.id || !payment?.id || savingDebtPayment) return;
+    if (!window.confirm(`Hoàn tác giao dịch ${formatCurrency(payment.amount)}? Số tiền sẽ được cộng trở lại công nợ.`)) return;
+    setSavingDebtPayment(true);
+    try {
+      const contactRef = doc(db, 'stores', storeId, type, detailTarget.id);
+      const paymentRef = doc(db, 'stores', storeId, type, detailTarget.id, 'debtPayments', payment.id);
+      await updateDoc(contactRef, { totalDebt: Math.max(0, Number(detailTarget.totalDebt || 0) + Number(payment.amount || 0)) });
+      await deleteDoc(paymentRef);
+      setDetailTarget(prev => prev ? { ...prev, totalDebt: Math.max(0, Number(prev.totalDebt || 0) + Number(payment.amount || 0)) } : prev);
+      if (editingDebtPayment?.id === payment.id) setEditingDebtPayment(null);
+      showToast('Đã hoàn tác giao dịch công nợ');
+    } catch (err) { showToast('Không thể hoàn tác giao dịch công nợ', 'error'); }
+    finally { setSavingDebtPayment(false); }
+  };
+
   const handleSave = async (e) => {
     e.preventDefault();
     if (form.password && form.password !== form.confirmPassword) { showToast("Mật khẩu và Xác nhận mật khẩu không khớp!", "error"); return; }
@@ -1839,7 +1807,7 @@ function ContactManager({ type, data, orders, navigationTarget, storeConfig, db,
               </form>
               {editingDebtPayment && <button type="button" onClick={()=>{setEditingDebtPayment(null);setDebtPaymentAmount('');setDebtPaymentMode('partial');setDebtPaymentMethod('cash');}} className="text-xs text-gray-600 underline">Hủy chỉnh sửa</button>}
               <div className="border rounded-lg overflow-x-auto"><table className="w-full text-xs text-left"><thead className="bg-gray-100"><tr><th className="p-2">Thời gian</th><th className="p-2">Số tiền</th><th className="p-2">Cách trừ</th><th className="p-2">Phương thức</th><th className="p-2">Thao tác</th></tr></thead><tbody>
-                {debtPayments.map(payment => <tr key={payment.id} className="border-t"><td className="p-2 whitespace-nowrap">{formatDate(payment.date)}</td><td className="p-2 font-bold">{formatCurrency(payment.amount)}</td><td className="p-2">{payment.mode==='all'?'Trừ trên tổng nợ':'Trừ từng phần'}</td><td className="p-2">{payment.method==='transfer'?'Chuyển khoản':'Tiền mặt'}</td><td className="p-2"><button type="button" onClick={()=>{setEditingDebtPayment(payment);setDebtPaymentMode(payment.mode==='all'?'all':'partial');setDebtPaymentAmount(String(payment.amount||''));setDebtPaymentMethod(payment.method||'cash');}} className="text-blue-600 underline font-semibold">Chỉnh sửa</button></td></tr>)}
+                {debtPayments.map(payment => <tr key={payment.id} className="border-t"><td className="p-2 whitespace-nowrap">{formatDate(payment.date)}</td><td className="p-2 font-bold">{formatCurrency(payment.amount)}</td><td className="p-2">{payment.mode==='all'?'Trừ trên tổng nợ':'Trừ từng phần'}</td><td className="p-2">{payment.method==='transfer'?'Chuyển khoản':'Tiền mặt'}</td><td className="p-2"><div className="flex flex-wrap gap-2"><button type="button" onClick={()=>{setEditingDebtPayment(payment);setDebtPaymentMode(payment.mode==='all'?'all':'partial');setDebtPaymentAmount(String(payment.amount||''));setDebtPaymentMethod(payment.method||'cash');}} className="text-blue-600 underline font-semibold">Chỉnh sửa</button><button type="button" disabled={savingDebtPayment} onClick={()=>handleUndoDebtPayment(payment)} className="text-red-600 underline font-semibold disabled:opacity-50">Hoàn tác</button></div></td></tr>)}
                 {debtPayments.length===0 && <tr><td colSpan="5" className="p-3 text-center text-gray-400">Chưa có giao dịch trừ công nợ</td></tr>}
               </tbody></table></div>
             </section>
@@ -3137,10 +3105,21 @@ function SettingsView({ db, storeId, showToast, storeConfig }) {
               const keys = [code && 'c:' + norm(code), name && 'n:' + norm(name)].filter(Boolean);
               if (keys.some(k => seen.has(k))) continue;
               keys.forEach(k => seen.add(k));
-              if (keys.some(k => existingByKey.has(k))) continue;
-              const ref = doc(collection(db, 'stores', storeId, type));
-              batch.set(ref, { code, name }); writes++; success++;
-              keys.forEach(k => existingByKey.set(k, ref.id));
+              const phone = textVal(row['Điện thoại'] || row['Số điện thoại'] || row['SĐT'] || row['Số ĐT']);
+              const address = textVal(row['Địa chỉ'] || row['Địa chỉ giao hàng'] || row['Địa chỉ khách hàng']);
+              const debtRaw = isCustomer
+                ? (row['Tổng nợ'] ?? row['Tổng Nợ'] ?? row['Nợ phải thu'] ?? row['Nợ cần thu hiện tại'] ?? 0)
+                : (row['Tổng nợ'] ?? row['Tổng Nợ'] ?? row['Nợ phải trả'] ?? row['Nợ cần trả hiện tại'] ?? 0);
+              const totalDebt = Math.max(0, numberVal(debtRaw));
+              const contactPayload = { code, name, phone, address, totalDebt };
+              const matchedId = keys.map(k => existingByKey.get(k)).find(Boolean);
+              if (matchedId) {
+                batch.update(doc(db, 'stores', storeId, type, matchedId), contactPayload); writes++; success++;
+              } else {
+                const ref = doc(collection(db, 'stores', storeId, type));
+                batch.set(ref, contactPayload); writes++; success++;
+                keys.forEach(k => existingByKey.set(k, ref.id));
+              }
               if (writes >= 400) { await batch.commit(); batch = writeBatch(db); writes = 0; }
             }
             if (writes) await batch.commit();
@@ -3353,8 +3332,8 @@ function SettingsView({ db, storeId, showToast, storeConfig }) {
       snap.docs.forEach(d => {
         const item = d.data();
         if (type === 'products') exportData.push({ 'Mã hàng': item.code || '', 'Tên hàng': item.name || '', 'Giá bán': Number(item.price) || 0, 'Giá vốn': Number(item.cost) || 0, 'Tồn kho': Number(item.stock) || 0 });
-        if (type === 'customers') exportData.push({ 'Mã khách hàng': item.code || '', 'Tên khách hàng': item.name || '' });
-        if (type === 'suppliers') exportData.push({ 'Mã nhà cung cấp': item.code || '', 'Tên nhà cung cấp': item.name || '' });
+        if (type === 'customers') exportData.push({ 'Mã khách hàng': item.code || '', 'Tên khách hàng': item.name || '', 'Tổng nợ': Number(item.totalDebt) || 0, 'Địa chỉ': item.address || '', 'Điện thoại': item.phone || '' });
+        if (type === 'suppliers') exportData.push({ 'Mã nhà cung cấp': item.code || '', 'Tên nhà cung cấp': item.name || '', 'Tổng nợ': Number(item.totalDebt) || 0, 'Địa chỉ': item.address || '', 'Điện thoại': item.phone || '' });
         if (type === 'expenses') exportData.push({ 'Ngày': formatDate(item.date), 'Nội dung': item.note, 'Số tiền': item.amount });
         if (type === 'orders') (item.items || []).forEach(it => exportData.push({ 'Mã hóa đơn': item.invoiceCode || '', 'Thời gian': item.date || '', 'Mã khách hàng': item.customerId || '', 'Tên khách hàng': item.customerName || 'Khách lẻ', 'Người bán': item.sellerName || '', 'Tổng tiền hàng': Number(item.total) || 0, 'Khách đã trả': Number(item.paidAmount) || 0, 'Nhóm hàng': it.category || '', 'Tên hàng': it.name || '', 'ĐVT': it.unit || '', 'Số lượng': Number(it.quantity ?? it.qty) || 0, 'Đơn giá': Number(it.price) || 0, 'Giá bán': Number(it.salePrice ?? it.price) || 0, 'Thành tiền': Number(it.lineTotal) || (Number(it.quantity ?? it.qty) || 0) * (Number(it.salePrice ?? it.price) || 0) }));
         if (type === 'imports') (item.items || []).forEach(it => exportData.push({ 'Thời gian': item.date || '', 'Mã nhà cung cấp': item.supplierCode || '', 'Tên nhà cung cấp': item.supplierName || '', 'Điện thoại': item.supplierPhone || '', 'Người nhập': item.createdByName || '', 'Tổng tiền hàng': Number(item.total) || 0, 'Cần trả NCC': Number(item.payable) || 0, 'Ghi chú': item.note || '', 'Tổng số lượng': Number(item.totalQty) || 0, 'Tổng số mặt hàng': Number(item.totalItems) || (item.items || []).length, 'Mã hàng': it.code || '', 'Tên hàng': it.name || '', 'ĐVT': it.unit || '', 'Đơn giá': Number(it.price) || 0, 'Giá nhập': Number(it.importCost) || 0, 'Thành tiền': Number(it.lineTotal) || (Number(it.qty ?? it.quantity) || 0) * (Number(it.importCost) || 0), 'Số lượng': Number(it.qty ?? it.quantity) || 0 }));
