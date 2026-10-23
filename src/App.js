@@ -1,4 +1,4 @@
-‪import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { LayoutDashboard, ShoppingCart, Package, Users, Truck, Plus, Edit, Trash2, Check, X, Image as ImageIcon, ShoppingBag, TrendingUp, AlertCircle, ArrowDownToLine, Phone, DollarSign, CheckCircle2, Printer, FileText, CreditCard, Lock, LogOut, ShieldAlert, User as UserIcon, Database, UserCog, KeyRound, MonitorSmartphone, Mail, Download, Upload, ArrowUpDown, Search, Eye, EyeOff, Bell, Award, BarChart3, Receipt, ChevronDown, ChevronUp, Image, Store, Sliders, HardDrive, ChevronLeft, ChevronRight } from 'lucide-react';
 import { initializeApp } from 'firebase/app';
 import { getAuth, signInWithEmailAndPassword, signOut, onAuthStateChanged, sendPasswordResetEmail, EmailAuthProvider, reauthenticateWithCredential } from 'firebase/auth';
