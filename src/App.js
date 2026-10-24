@@ -2,7 +2,7 @@ import React, { useState, useEffect, useMemo } from 'react';
 import { LayoutDashboard, ShoppingCart, Package, Users, Truck, Plus, Edit, Trash2, Check, X, Image as ImageIcon, ShoppingBag, TrendingUp, AlertCircle, ArrowDownToLine, Phone, DollarSign, CheckCircle2, Printer, FileText, CreditCard, Lock, LogOut, ShieldAlert, User as UserIcon, Database, UserCog, KeyRound, MonitorSmartphone, Mail, Download, Upload, ArrowUpDown, Search, Eye, EyeOff, Bell, Award, BarChart3, Receipt, ChevronDown, ChevronUp, Image, Store, Sliders, HardDrive, ChevronLeft, ChevronRight } from 'lucide-react';
 import { initializeApp } from 'firebase/app';
 import { getAuth, signInWithEmailAndPassword, signOut, onAuthStateChanged, sendPasswordResetEmail, EmailAuthProvider, reauthenticateWithCredential } from 'firebase/auth';
-import { getFirestore, doc, setDoc, getDoc, getDocs, addDoc, updateDoc, deleteDoc, onSnapshot, collection, writeBatch, query, orderBy, where } from 'firebase/firestore';
+import { getFirestore, doc, setDoc, getDoc, getDocs, addDoc, updateDoc, deleteDoc, onSnapshot, collection, writeBatch, query, orderBy, where, limit } from 'firebase/firestore';
 
 const firebaseConfig = {
  apiKey: "AIzaSyC9nnxzOOWIDTym9Lzo2Kn2J1gS0ro-QQs",
@@ -498,15 +498,15 @@ function DashboardView({ orders, imports, expenses, customers, suppliers, produc
   const [activityRows, setActivityRows] = useState('10');
   const [warrantyRows, setWarrantyRows] = useState('10');
   const [warrantySortOrder, setWarrantySortOrder] = useState('oldest');
-  const [statsPeriodMode, setStatsPeriodMode] = useState('day');
-  const [statsSelectedDate, setStatsSelectedDate] = useState(getVietnamDateKey(currentDate));
-  const [statsSelectedMonth, setStatsSelectedMonth] = useState(`${currentVietnamDate.year}-${String(currentVietnamDate.month).padStart(2, '0')}`);
-  const [statsSelectedYear, setStatsSelectedYear] = useState(currentVietnamDate.year.toString());
+  const [filterMonth, setFilterMonth] = useState(currentVietnamDate.month.toString());
+  const [filterYear, setFilterYear] = useState(currentVietnamDate.year.toString());
   // Bộ lọc riêng cho hai bảng nhắc nợ, không phụ thuộc bộ lọc tổng quan chung.
   const [custDebtMonth, setCustDebtMonth] = useState('ALL');
   const [custDebtYear, setCustDebtYear] = useState(currentVietnamDate.year.toString());
   const [suppDebtMonth, setSuppDebtMonth] = useState('ALL');
   const [suppDebtYear, setSuppDebtYear] = useState(currentVietnamDate.year.toString());
+  const [filterDay, setFilterDay] = useState(getVietnamDateKey(currentDate));
+  const [statsPeriodMode, setStatsPeriodMode] = useState('day');
   const [chartPeriodMode, setChartPeriodMode] = useState('day');
   const [selectedChartPeriod, setSelectedChartPeriod] = useState(null);
   const [custSortOrder, setCustSortOrder] = useState('desc');
@@ -516,35 +516,34 @@ function DashboardView({ orders, imports, expenses, customers, suppliers, produc
   const sortDashboardRows = (rows, table, getter) => { const config = dashboardColumnSort[table]; if (!config) return rows; return [...rows].sort((a,b) => { const av=getter(a,config.field), bv=getter(b,config.field); const an=Number(av), bn=Number(bv); const cmp=av!=='' && bv!=='' && Number.isFinite(an) && Number.isFinite(bn) ? an-bn : String(av??'').localeCompare(String(bv??''),'vi',{numeric:true,sensitivity:'base'}); return config.direction==='asc'?cmp:-cmp; }); };
   const [showAllCust, setShowAllCust] = useState('10');
   const [showAllSupp, setShowAllSupp] = useState('10');
+  const [overdueMonth, setOverdueMonth] = useState('ALL');
+  const [overdueYear, setOverdueYear] = useState(currentVietnamDate.year.toString());
+  const [overdueRows, setOverdueRows] = useState('10');
   const [chartFilter, setChartFilter] = useState('7days');
 
   const stats = useMemo(() => {
-    const selectedDate = statsPeriodMode === 'day' ? statsSelectedDate : statsPeriodMode === 'week' ? statsSelectedDate : statsPeriodMode === 'month' ? `${statsSelectedMonth}-01` : `${statsSelectedYear}-01-01`;
-    const selectedParts = getVietnamDateParts(new Date(`${selectedDate}T12:00:00+07:00`));
-    const periodStart = new Date(Date.UTC(selectedParts.year, selectedParts.month - 1, selectedParts.day));
-    const periodEnd = new Date(periodStart);
+    // Bốn chỉ số dùng chung một khoảng thời gian; ngày được hiểu theo múi giờ Việt Nam.
+    const anchor = filterDay ? new Date(`${filterDay}T12:00:00+07:00`) : new Date();
+    const anchorParts = getVietnamDateParts(anchor);
+    let rangeStart = filterDay || getVietnamDateKey(currentDate);
+    let rangeEnd = rangeStart;
     if (statsPeriodMode === 'week') {
-      const dayOffset = (periodStart.getUTCDay() + 6) % 7;
-      periodStart.setUTCDate(periodStart.getUTCDate() - dayOffset);
-      periodEnd.setTime(periodStart.getTime()); periodEnd.setUTCDate(periodEnd.getUTCDate() + 6);
+      const startDate = new Date(Date.UTC(anchorParts.year, anchorParts.month - 1, anchorParts.day));
+      startDate.setUTCDate(startDate.getUTCDate() - ((startDate.getUTCDay() + 6) % 7));
+      const endDate = new Date(startDate); endDate.setUTCDate(endDate.getUTCDate() + 6);
+      const key = d => `${d.getUTCFullYear()}-${String(d.getUTCMonth()+1).padStart(2,'0')}-${String(d.getUTCDate()).padStart(2,'0')}`;
+      rangeStart = key(startDate); rangeEnd = key(endDate);
     } else if (statsPeriodMode === 'month') {
-      periodStart.setUTCDate(1);
-      periodEnd.setUTCFullYear(periodStart.getUTCFullYear(), periodStart.getUTCMonth() + 1, 0);
+      rangeStart = `${anchorParts.year}-${String(anchorParts.month).padStart(2,'0')}-01`;
+      const endDate = new Date(Date.UTC(anchorParts.year, anchorParts.month, 0));
+      rangeEnd = `${endDate.getUTCFullYear()}-${String(endDate.getUTCMonth()+1).padStart(2,'0')}-${String(endDate.getUTCDate()).padStart(2,'0')}`;
     } else if (statsPeriodMode === 'year') {
-      periodStart.setUTCMonth(0, 1);
-      periodEnd.setUTCFullYear(periodStart.getUTCFullYear(), 11, 31);
+      rangeStart = `${anchorParts.year}-01-01`; rangeEnd = `${anchorParts.year}-12-31`;
     }
-    const periodStartKey = `${periodStart.getUTCFullYear()}-${String(periodStart.getUTCMonth()+1).padStart(2,'0')}-${String(periodStart.getUTCDate()).padStart(2,'0')}`;
-    const periodEndKey = `${periodEnd.getUTCFullYear()}-${String(periodEnd.getUTCMonth()+1).padStart(2,'0')}-${String(periodEnd.getUTCDate()).padStart(2,'0')}`;
-    const inSelectedPeriod = value => {
-      const time = new Date(value);
-      if (Number.isNaN(time.getTime())) return false;
-      const key = getVietnamDateKey(time);
-      return key >= periodStartKey && key <= periodEndKey;
-    };
-    const fOrders = orders.filter(o => inSelectedPeriod(o.date));
-    const fImports = imports.filter(i => inSelectedPeriod(i.date));
-    const fExpenses = expenses.filter(e => inSelectedPeriod(e.date));
+    const inStatsRange = value => { if (!value) return false; const key = getVietnamDateKey(new Date(value)); return key >= rangeStart && key <= rangeEnd; };
+    const fOrders = orders.filter(o => inStatsRange(o.date));
+    const fImports = imports.filter(i => inStatsRange(i.date));
+    const fExpenses = expenses.filter(e => inStatsRange(e.date));
 
     const totalRev = fOrders.reduce((s, o) => s + (Number(o.total) || 0), 0);
     // Tính giá vốn theo FIFO: ưu tiên lô nhập cũ nhất còn số lượng (> 0) tại thời điểm bán.
@@ -659,9 +658,8 @@ function DashboardView({ orders, imports, expenses, customers, suppliers, produc
     const topProducts = Object.values(productSalesMap).sort((a, b) => b.totalQty - a.totalQty).slice(0, 5);
 
     return { totalRev, totalCost, totalExp, netProfit, overdueCust, overdueCust1Week, chartData, chartMeta, topProducts, filteredCustDebt, filteredSuppDebt };
-  }, [orders, imports, expenses, customers, suppliers, products, statsPeriodMode, statsSelectedDate, statsSelectedMonth, statsSelectedYear, custDebtMonth, custDebtYear, suppDebtMonth, suppDebtYear, custSortOrder, suppSortOrder, chartFilter, chartPeriodMode]);
+  }, [orders, imports, expenses, customers, suppliers, products, filterMonth, filterYear, filterDay, statsPeriodMode, custDebtMonth, custDebtYear, suppDebtMonth, suppDebtYear, custSortOrder, suppSortOrder, chartFilter, chartPeriodMode]);
 
-  const statsPeriodLabel = statsPeriodMode === 'day' ? `Ngày ${statsSelectedDate}` : statsPeriodMode === 'week' ? `Tuần chứa ${statsSelectedDate}` : statsPeriodMode === 'month' ? `Tháng ${statsSelectedMonth}` : `Năm ${statsSelectedYear}`;
   const years = Array.from({length: 5}, (_, i) => currentVietnamDate.year - i);
   const StatCard = ({ icon, title, value, color, highlight = false }) => {
     const borderClass = highlight ? 'border-green-300 ring-2 ring-green-100 shadow-md' : 'border-gray-200';
@@ -679,48 +677,24 @@ function DashboardView({ orders, imports, expenses, customers, suppliers, produc
       <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
         <h2 className="text-2xl font-bold text-gray-800">Tổng quan kinh doanh & Nhắc nợ</h2>
         <div className="flex flex-wrap items-center gap-3 bg-white p-2 rounded-xl shadow-sm border border-gray-200">
-          <label className="text-xs font-semibold text-gray-500">Thống kê theo
-            <select value={statsPeriodMode} onChange={e=>setStatsPeriodMode(e.target.value)} className="ml-2 bg-transparent font-medium outline-none border rounded p-1">
+          <label className="text-xs font-semibold text-gray-500">Xem theo
+            <select value={statsPeriodMode} onChange={e=>setStatsPeriodMode(e.target.value)} className="ml-2 bg-white font-medium outline-none border rounded p-1">
               <option value="day">Ngày</option><option value="week">Tuần</option><option value="month">Tháng</option><option value="year">Năm</option>
             </select>
           </label>
-          {statsPeriodMode === 'day' && <label className="text-xs font-semibold text-gray-500">Ngày <input type="date" value={statsSelectedDate} onChange={e=>setStatsSelectedDate(e.target.value)} className="ml-1 bg-transparent font-medium outline-none border rounded p-1"/></label>}
-          {statsPeriodMode === 'week' && <label className="text-xs font-semibold text-gray-500">Chọn ngày trong tuần <input type="date" value={statsSelectedDate} onChange={e=>setStatsSelectedDate(e.target.value)} className="ml-1 bg-transparent font-medium outline-none border rounded p-1"/></label>}
-          {statsPeriodMode === 'month' && <label className="text-xs font-semibold text-gray-500">Tháng <input type="month" value={statsSelectedMonth} onChange={e=>setStatsSelectedMonth(e.target.value)} className="ml-1 bg-transparent font-medium outline-none border rounded p-1"/></label>}
-          {statsPeriodMode === 'year' && <label className="text-xs font-semibold text-gray-500">Năm <select value={statsSelectedYear} onChange={e=>setStatsSelectedYear(e.target.value)} className="ml-1 bg-transparent font-medium outline-none border rounded p-1">{Array.from({length: 12}, (_, i) => currentVietnamDate.year - i).map(y=><option key={y} value={String(y)}>{y}</option>)}</select></label>}
+          <label className="text-xs font-semibold text-gray-500">Ngày chọn <input type="date" value={filterDay} onChange={e=>setFilterDay(e.target.value)} className="ml-1 bg-transparent font-medium outline-none border rounded p-1"/></label>
+          <button type="button" onClick={()=>{setFilterDay(getVietnamDateKey(new Date()));setStatsPeriodMode('day');}} className="text-xs text-blue-600 font-bold">Hôm nay</button>
         </div>
       </div>
 
 
 
-      {stats.overdueCust1Week.length > 0 && (
-        <div className="bg-blue-50 border-2 border-blue-500 rounded-2xl shadow-sm overflow-hidden">
-          <div className="p-4 bg-blue-600 flex justify-between items-center text-white"> <h3 className="font-bold flex items-center gap-2 text-lg"><Bell size={24}/> CẢNH BÁO: KHÁCH HÀNG NỢ QUÁ HẠN 1 TUẦN ({stats.overdueCust1Week.length})</h3> </div>
-          <div className="max-h-60 overflow-y-auto">
-            <table className="w-full text-left text-sm bg-white">
-              <thead className="bg-blue-50 sticky top-0 border-b border-blue-200">
-                <tr>{[['customer','Khách hàng','dash_overdue_customer'],['date','Ngày mua','dash_overdue_date'],['days','Số ngày nợ','dash_overdue_days'],['amount','Số tiền','dash_overdue_amount']].filter(([, ,perm])=>canShowColumn(perm)).map(([field,label])=><th key={field} onClick={()=>toggleDashboardColumnSort('overdue',field)} className="p-3 text-blue-800 cursor-pointer select-none hover:bg-blue-100">{label} <ArrowUpDown size={11} className="inline"/></th>)}</tr>
-              </thead>
-              <tbody>
-                {sortDashboardRows(stats.overdueCust1Week,'overdue',(o,f)=>f==='customer'?o.customerName:f==='date'?o.date:f==='days'?getDaysDifference(o.date):Number(o.total)||0).map(o => (
-                  <tr key={o.id} className="border-b hover:bg-blue-50/50">
-                    {canShowColumn('dash_overdue_customer') && <td className="p-3 font-bold text-gray-800">{o.customerName}</td>}
-                    {canShowColumn('dash_overdue_date') && <td className="p-3 text-gray-600">{formatDate(o.date)}</td>}
-                    {canShowColumn('dash_overdue_days') && <td className="p-3 font-bold text-blue-600">{getDaysDifference(o.date)} ngày</td>}
-                    {canShowColumn('dash_overdue_amount') && <td className="p-3 font-bold text-blue-600 text-lg">{formatCurrency(o.total)}</td>}
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        </div>
-      )}
 
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-        {canShowColumn('dash_stat_revenue') && <StatCard icon={<TrendingUp />} title={'Doanh thu (' + statsPeriodLabel + ')'} value={formatCurrency(stats.totalRev)} color="bg-blue-100 text-blue-600" />}
-        {canShowColumn('dash_stat_cost') && <StatCard icon={<Package />} title={'Tổng giá vốn (' + statsPeriodLabel + ')'} value={formatCurrency(stats.totalCost)} color="bg-gray-200 text-gray-700" />}
-        {canShowColumn('dash_stat_expense') && <StatCard icon={<CreditCard />} title={'Tổng chi phí (' + statsPeriodLabel + ')'} value={formatCurrency(stats.totalExp)} color="bg-orange-100 text-orange-600" />}
-        {canShowColumn('dash_stat_profit') && <StatCard icon={<DollarSign />} title={'Lãi ròng (đã trừ phí) (' + statsPeriodLabel + ')'} value={formatCurrency(stats.netProfit)} color="bg-green-100 text-green-600" highlight={true} />}
+        {canShowColumn('dash_stat_revenue') && <StatCard icon={<TrendingUp />} title={"Doanh thu (" + (statsPeriodMode === 'day' ? filterDay : statsPeriodMode === 'week' ? 'tuần' : statsPeriodMode === 'month' ? filterDay.slice(0,7) : filterDay.slice(0,4)) + ")"} value={formatCurrency(stats.totalRev)} color="bg-blue-100 text-blue-600" />}
+        {canShowColumn('dash_stat_cost') && <StatCard icon={<Package />} title="Tổng Giá Vốn" value={formatCurrency(stats.totalCost)} color="bg-gray-200 text-gray-700" />}
+        {canShowColumn('dash_stat_expense') && <StatCard icon={<CreditCard />} title="Tổng Chi Phí" value={formatCurrency(stats.totalExp)} color="bg-orange-100 text-orange-600" />}
+        {canShowColumn('dash_stat_profit') && <StatCard icon={<DollarSign />} title="Lãi Ròng (Đã trừ phí)" value={formatCurrency(stats.netProfit)} color="bg-green-100 text-green-600" highlight={true} />}
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
@@ -773,63 +747,34 @@ function DashboardView({ orders, imports, expenses, customers, suppliers, produc
         </div>
       </div>
 
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-        <div className="bg-white p-5 rounded-2xl shadow-sm border border-gray-200 flex flex-col">
-          <div className="flex flex-wrap justify-between items-center gap-2 mb-3">
-            <div className="flex flex-wrap items-center gap-2"><h3 className="font-bold text-gray-800 flex items-center gap-2 text-blue-600"> <Users size={18}/> Nhắc nợ Khách hàng ({custDebtMonth === 'ALL' ? `Năm ${custDebtYear}` : `Tháng ${custDebtMonth}/${custDebtYear}`}) </h3><select aria-label="Tháng nhắc nợ khách hàng" value={custDebtMonth} onChange={e=>setCustDebtMonth(e.target.value)} className="border rounded-lg px-2 py-1.5 bg-white text-xs"><option value="ALL">Cả năm</option>{Array.from({length:12},(_,i)=><option key={i+1} value={String(i+1)}>Tháng {i+1}</option>)}</select><select aria-label="Năm nhắc nợ khách hàng" value={custDebtYear} onChange={e=>setCustDebtYear(e.target.value)} className="border rounded-lg px-2 py-1.5 bg-white text-xs">{Array.from({length:8},(_,i)=>currentVietnamDate.year-i).map(y=><option key={y} value={String(y)}>Năm {y}</option>)}</select></div>
-            <button onClick={() => setCustSortOrder(prev => prev === 'desc' ? 'asc' : 'desc')} className="text-xs bg-gray-100 hover:bg-gray-200 text-gray-700 px-2.5 py-1 rounded-lg font-medium flex items-center gap-1 transition" > <ArrowUpDown size={12}/> {custSortOrder === 'desc' ? 'Lâu nhất trước' : 'Gần nhất trước'} </button>
+      {(() => {
+        const overdueFiltered = stats.overdueCust1Week.filter(o => {
+          const d = getVietnamDateParts(new Date(o.date));
+          return d.year.toString() === overdueYear && (overdueMonth === 'ALL' || d.month.toString() === overdueMonth);
+        });
+        const overdueSorted = sortDashboardRows(overdueFiltered, 'overdue', (o, f) => f === 'customer' ? o.customerName : f === 'date' ? o.date : f === 'days' ? getDaysDifference(o.date) : Number(o.total) || 0);
+        const overdueVisible = overdueRows === 'all' ? overdueSorted : overdueSorted.slice(0, Number(overdueRows) || 10);
+        return (
+          <div className="bg-blue-50 border-2 border-blue-500 rounded-2xl shadow-sm overflow-hidden">
+            <div className="p-4 bg-blue-600 flex flex-wrap justify-between items-center gap-3 text-white">
+              <h3 className="font-bold flex items-center gap-2 text-lg"><Bell size={24}/> CẢNH BÁO: KHÁCH HÀNG NỢ QUÁ HẠN 1 TUẦN ({overdueFiltered.length})</h3>
+              <div className="flex flex-wrap gap-2 items-center">
+                <select aria-label="Tháng cảnh báo nợ quá hạn" value={overdueMonth} onChange={e=>setOverdueMonth(e.target.value)} className="rounded-lg px-2 py-1.5 bg-white text-gray-800 text-xs"><option value="ALL">Tất cả tháng</option>{Array.from({length:12},(_,i)=><option key={i+1} value={String(i+1)}>Tháng {i+1}</option>)}</select>
+                <select aria-label="Năm cảnh báo nợ quá hạn" value={overdueYear} onChange={e=>setOverdueYear(e.target.value)} className="rounded-lg px-2 py-1.5 bg-white text-gray-800 text-xs">{Array.from({length:8},(_,i)=>currentVietnamDate.year-i).map(y=><option key={y} value={String(y)}>Năm {y}</option>)}</select>
+                <label className="text-xs flex items-center gap-1">Hiển thị <select value={overdueRows} onChange={e=>setOverdueRows(e.target.value)} className="rounded-lg px-2 py-1.5 bg-white text-gray-800"><option value="10">10</option><option value="20">20</option><option value="50">50</option><option value="100">100</option><option value="all">Tất cả</option></select></label>
+              </div>
+            </div>
+            <div className="max-h-80 overflow-y-auto">
+              <table className="w-full text-left text-sm bg-white">
+                <thead className="bg-blue-50 sticky top-0 border-b border-blue-200"><tr>{[['customer','Khách hàng','dash_overdue_customer'],['date','Ngày mua','dash_overdue_date'],['days','Số ngày nợ','dash_overdue_days'],['amount','Số tiền','dash_overdue_amount']].filter(([, ,perm])=>canShowColumn(perm)).map(([field,label])=><th key={field} onClick={()=>toggleDashboardColumnSort('overdue',field)} className="p-3 text-blue-800 cursor-pointer select-none hover:bg-blue-100">{label} <ArrowUpDown size={11} className="inline"/></th>)}</tr></thead>
+                <tbody>{overdueVisible.map(o => <tr key={o.id} className="border-b hover:bg-blue-50/50">{canShowColumn('dash_overdue_customer') && <td className="p-3 font-bold text-gray-800">{o.customerName}</td>}{canShowColumn('dash_overdue_date') && <td className="p-3 text-gray-600">{formatDate(o.date)}</td>}{canShowColumn('dash_overdue_days') && <td className="p-3 font-bold text-blue-600">{getDaysDifference(o.date)} ngày</td>}{canShowColumn('dash_overdue_amount') && <td className="p-3 font-bold text-blue-600 text-lg">{formatCurrency(o.total)}</td>}</tr>)}
+                  {overdueVisible.length === 0 && <tr><td colSpan="4" className="p-4 text-center text-gray-400">Không có khách hàng nợ quá hạn trong tháng/năm đã chọn.</td></tr>}
+                </tbody>
+              </table>
+            </div>
           </div>
-          <div className="overflow-y-auto border rounded-xl flex-1 max-h-72">
-            <table className="w-full text-left text-xs">
-              <thead className="bg-blue-50 sticky top-0 border-b">
-                <tr>{[['name','Khách hàng'],['days','Thời gian chưa trả'],['debt','Tổng Nợ']].map(([field,label])=><th key={field} onClick={()=>toggleDashboardColumnSort('custDebt',field)} className="p-2.5 cursor-pointer select-none hover:bg-blue-100">{label} <ArrowUpDown size={11} className="inline"/></th>)}</tr>
-              </thead>
-              <tbody>
-                {(showAllCust === 'all' ? sortDashboardRows(stats.filteredCustDebt,'custDebt',(c,f)=>f==='name'?c.name:f==='days'?(c.createdAt?getDaysDifference(c.createdAt):0):Number(c.totalDebt)||0) : sortDashboardRows(stats.filteredCustDebt,'custDebt',(c,f)=>f==='name'?c.name:f==='days'?(c.createdAt?getDaysDifference(c.createdAt):0):Number(c.totalDebt)||0).slice(0, Number(showAllCust) || 10)).map(c => {
-                  const daysAgo = c.createdAt ? getDaysDifference(c.createdAt) : 0;
-                  return (
-                    <tr key={c.id} className="border-b hover:bg-gray-50">
-                      <td className="p-2.5 font-bold text-gray-800">{c.name}<p className="text-[10px] text-gray-400 font-normal">{c.phone || 'Không có SĐT'}</p></td>
-                      <td className="p-2.5 font-semibold text-orange-600">{daysAgo} ngày trước</td>
-                      <td className="p-2.5 text-right font-bold text-blue-600">{formatCurrency(c.totalDebt)}</td>
-                    </tr>
-                  );
-                })}
-                {stats.filteredCustDebt.length === 0 && ( <tr><td colSpan="3" className="p-4 text-center text-gray-400">Không có khách hàng nợ trong kỳ này</td></tr> )}
-              </tbody>
-            </table>
-          </div>
-          <div className="mt-3 flex items-center justify-end gap-2 text-xs text-gray-500">Hiển thị <select value={showAllCust} onChange={e=>setShowAllCust(e.target.value)} className="border rounded-lg px-2 py-1 bg-white font-bold"><option value="10">10</option><option value="20">20</option><option value="50">50</option><option value="all">Tất cả</option></select></div>
-        </div>
-        
-        <div className="bg-white p-5 rounded-2xl shadow-sm border border-gray-200 flex flex-col">
-          <div className="flex flex-wrap justify-between items-center gap-2 mb-3">
-            <div className="flex flex-wrap items-center gap-2"><h3 className="font-bold text-gray-800 flex items-center gap-2 text-orange-600"> <Truck size={18}/> Nhắc nợ Nhà cung cấp ({suppDebtMonth === 'ALL' ? `Năm ${suppDebtYear}` : `Tháng ${suppDebtMonth}/${suppDebtYear}`}) </h3><select aria-label="Tháng nhắc nợ nhà cung cấp" value={suppDebtMonth} onChange={e=>setSuppDebtMonth(e.target.value)} className="border rounded-lg px-2 py-1.5 bg-white text-xs"><option value="ALL">Cả năm</option>{Array.from({length:12},(_,i)=><option key={i+1} value={String(i+1)}>Tháng {i+1}</option>)}</select><select aria-label="Năm nhắc nợ nhà cung cấp" value={suppDebtYear} onChange={e=>setSuppDebtYear(e.target.value)} className="border rounded-lg px-2 py-1.5 bg-white text-xs">{Array.from({length:8},(_,i)=>currentVietnamDate.year-i).map(y=><option key={y} value={String(y)}>Năm {y}</option>)}</select></div>
-            <button onClick={() => setSuppSortOrder(prev => prev === 'desc' ? 'asc' : 'desc')} className="text-xs bg-gray-100 hover:bg-gray-200 text-gray-700 px-2.5 py-1 rounded-lg font-medium flex items-center gap-1 transition" > <ArrowUpDown size={12}/> {suppSortOrder === 'desc' ? 'Lâu nhất trước' : 'Gần nhất trước'} </button>
-          </div>
-          <div className="overflow-y-auto border rounded-xl flex-1 max-h-72">
-            <table className="w-full text-left text-xs">
-              <thead className="bg-orange-50 sticky top-0 border-b">
-                <tr>{[['name','Nhà cung cấp'],['days','Thời gian chưa trả'],['debt','Cần trả']].map(([field,label])=><th key={field} onClick={()=>toggleDashboardColumnSort('suppDebt',field)} className="p-2.5 cursor-pointer select-none hover:bg-orange-100">{label} <ArrowUpDown size={11} className="inline"/></th>)}</tr>
-              </thead>
-              <tbody>
-                {(showAllSupp === 'all' ? sortDashboardRows(stats.filteredSuppDebt,'suppDebt',(s,f)=>f==='name'?s.name:f==='days'?(s.createdAt?getDaysDifference(s.createdAt):0):Number(s.totalDebt)||0) : sortDashboardRows(stats.filteredSuppDebt,'suppDebt',(s,f)=>f==='name'?s.name:f==='days'?(s.createdAt?getDaysDifference(s.createdAt):0):Number(s.totalDebt)||0).slice(0, Number(showAllSupp) || 10)).map(s => {
-                  const daysAgo = s.createdAt ? getDaysDifference(s.createdAt) : 0;
-                  return (
-                    <tr key={s.id} className="border-b hover:bg-gray-50">
-                      <td className="p-2.5 font-bold text-gray-800">{s.name}<p className="text-[10px] text-gray-400 font-normal">{s.phone || 'Không có SĐT'}</p></td>
-                      <td className="p-2.5 font-semibold text-orange-600">{daysAgo} ngày trước</td>
-                      <td className="p-2.5 text-right font-bold text-orange-600">{formatCurrency(s.totalDebt)}</td>
-                    </tr>
-                  );
-                })}
-                {stats.filteredSuppDebt.length === 0 && ( <tr><td colSpan="3" className="p-4 text-center text-gray-400">Không có nhà cung cấp nợ trong kỳ này</td></tr> )}
-              </tbody>
-            </table>
-          </div>
-          <div className="mt-3 flex items-center justify-end gap-2 text-xs text-gray-500">Hiển thị <select value={showAllSupp} onChange={e=>setShowAllSupp(e.target.value)} className="border rounded-lg px-2 py-1 bg-white font-bold"><option value="10">10</option><option value="20">20</option><option value="50">50</option><option value="all">Tất cả</option></select></div>
-        </div>
-      </div>
+        );
+      })()}
 
       <section className="bg-white p-5 rounded-2xl shadow-sm border border-gray-200 space-y-4">
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
@@ -1497,6 +1442,22 @@ function StaffManagerView({ db, showToast }) {
   }, []);
 
 
+  const handleUndoDebtPayment = async (payment) => {
+    if (!detailTarget?.id || !payment?.id || savingDebtPayment) return;
+    if (!window.confirm(`Hoàn tác giao dịch ${formatCurrency(payment.amount)}? Số tiền sẽ được cộng trở lại công nợ.`)) return;
+    setSavingDebtPayment(true);
+    try {
+      const contactRef = doc(db, 'stores', storeId, type, detailTarget.id);
+      const paymentRef = doc(db, 'stores', storeId, type, detailTarget.id, 'debtPayments', payment.id);
+      await updateDoc(contactRef, { totalDebt: Math.max(0, Number(detailTarget.totalDebt || 0) + Number(payment.amount || 0)) });
+      await deleteDoc(paymentRef);
+      setDetailTarget(prev => prev ? { ...prev, totalDebt: Math.max(0, Number(prev.totalDebt || 0) + Number(payment.amount || 0)) } : prev);
+      if (editingDebtPayment?.id === payment.id) setEditingDebtPayment(null);
+      showToast('Đã hoàn tác giao dịch công nợ');
+    } catch (err) { showToast('Không thể hoàn tác giao dịch công nợ', 'error'); }
+    finally { setSavingDebtPayment(false); }
+  };
+
   const handleSave = async (e) => {
     e.preventDefault();
     if (form.password && form.password !== form.confirmPassword) { showToast("Mật khẩu và Xác nhận mật khẩu không khớp!", "error"); return; }
@@ -1675,6 +1636,58 @@ function ContactManager({ type, data, orders, navigationTarget, storeConfig, db,
   };
 
 
+  const getOrderRemainingDebt = (ord) => {
+    const total = Math.max(0, Number(ord.total) || 0);
+    if (Number.isFinite(Number(ord.remainingDebt))) return Math.max(0, Math.min(total, Number(ord.remainingDebt)));
+    return ord.status === 'DEBT' ? total : 0;
+  };
+
+  const updateTransactionDebt = async (ord, nextRemainingDebt, successMessage) => {
+    if (!ord?.id || savingDebtPayment) return;
+    const total = Math.max(0, Number(ord.total) || 0);
+    const nextRemaining = Math.max(0, Math.min(total, Number(nextRemainingDebt) || 0));
+    const oldRemaining = getOrderRemainingDebt(ord);
+    const delta = nextRemaining - oldRemaining;
+    const collectionName = isCus ? 'orders' : 'imports';
+    setSavingDebtPayment(true);
+    try {
+      const batch = writeBatch(db);
+      batch.update(doc(db, 'stores', storeId, collectionName, ord.id), {
+        remainingDebt: nextRemaining,
+        paidAmount: Math.max(0, total - nextRemaining),
+        status: nextRemaining > 0 ? 'DEBT' : 'PAID',
+        debtUpdatedAt: new Date().toISOString()
+      });
+      if (delta !== 0) batch.update(doc(db, 'stores', storeId, type, detailTarget.id), {
+        totalDebt: Math.max(0, (Number(detailTarget.totalDebt) || 0) + delta)
+      });
+      await batch.commit();
+      setDetailTarget(prev => prev ? { ...prev, totalDebt: Math.max(0, (Number(prev.totalDebt) || 0) + delta) } : prev);
+      showToast(successMessage || 'Đã cập nhật công nợ');
+    } catch (err) {
+      showToast('Không thể cập nhật công nợ: ' + (err?.message || ''), 'error');
+    } finally { setSavingDebtPayment(false); }
+  };
+
+  const handlePartialTransactionPayment = async (ord) => {
+    const remaining = getOrderRemainingDebt(ord);
+    if (remaining <= 0) { showToast('Giao dịch này đã thanh toán đủ'); return; }
+    const raw = window.prompt(`Còn nợ ${formatCurrency(remaining)}. Nhập số tiền thanh toán lần này (VNĐ):`, String(remaining));
+    if (raw === null) return;
+    const amount = Number(String(raw).replace(/[,\s]/g, ''));
+    if (!Number.isFinite(amount) || amount <= 0 || amount > remaining) { showToast('Số tiền thanh toán không hợp lệ', 'error'); return; }
+    await updateTransactionDebt(ord, remaining - amount, amount >= remaining ? 'Đã thanh toán hết giao dịch' : 'Đã ghi nhận thanh toán một phần');
+  };
+
+  const handleChangeTransactionStatus = async (ord) => {
+    const remaining = getOrderRemainingDebt(ord);
+    const currentlyDebt = remaining > 0;
+    const nextRemaining = currentlyDebt ? 0 : Math.max(0, Number(ord.total) || 0);
+    const nextLabel = currentlyDebt ? 'Đã thanh toán' : 'Đang nợ';
+    if (!window.confirm(`Đổi trạng thái giao dịch này thành “${nextLabel}”? Công nợ ${isCus ? 'khách hàng' : 'nhà cung cấp'} sẽ được điều chỉnh tương ứng.`)) return;
+    await updateTransactionDebt(ord, nextRemaining, `Đã đổi trạng thái thành ${nextLabel}`);
+  };
+
   const handleSave = async (e) => {
     e.preventDefault();
     try {
@@ -1767,8 +1780,8 @@ function ContactManager({ type, data, orders, navigationTarget, storeConfig, db,
       return matchTime;
     }).sort((a,b) => new Date(b.date) - new Date(a.date));
     let totalAmount = matched.reduce((s, o) => s + (Number(o.total) || 0), 0);
-    let totalPaid = matched.filter(o => o.status === 'PAID').reduce((s, o) => s + (Number(o.total) || 0), 0);
-    let totalDebtRemain = matched.filter(o => o.status === 'DEBT').reduce((s, o) => s + (Number(o.total) || 0), 0);
+    let totalPaid = matched.reduce((s, o) => s + (Number(o.paidAmount) || (o.status === 'PAID' ? (Number(o.total) || 0) : 0)), 0);
+    let totalDebtRemain = matched.reduce((s, o) => s + getOrderRemainingDebt(o), 0);
     return { list: matched, totalAmount, totalPaid, totalDebtRemain };
   }, [detailTarget, orders, filterYear, isCus]);
   const detailPageList = detailRowsPerPage === 'all' ? detailData.list : detailData.list.slice((detailCurrentPage - 1) * Number(detailRowsPerPage), detailCurrentPage * Number(detailRowsPerPage));
@@ -1855,7 +1868,7 @@ function ContactManager({ type, data, orders, navigationTarget, storeConfig, db,
               </form>
               {editingDebtPayment && <button type="button" onClick={()=>{setEditingDebtPayment(null);setDebtPaymentAmount('');setDebtPaymentMode('partial');setDebtPaymentMethod('cash');}} className="text-xs text-gray-600 underline">Hủy chỉnh sửa</button>}
               <div className="border rounded-lg overflow-x-auto"><table className="w-full text-xs text-left"><thead className="bg-gray-100"><tr><th className="p-2">Thời gian</th><th className="p-2">Số tiền</th><th className="p-2">Cách trừ</th><th className="p-2">Phương thức</th><th className="p-2">Thao tác</th></tr></thead><tbody>
-                {debtPayments.map(payment => <tr key={payment.id} className="border-t"><td className="p-2 whitespace-nowrap">{formatDate(payment.date)}</td><td className="p-2 font-bold">{formatCurrency(payment.amount)}</td><td className="p-2">{payment.mode==='all'?'Trừ trên tổng nợ':'Trừ từng phần'}</td><td className="p-2">{payment.method==='transfer'?'Chuyển khoản':'Tiền mặt'}</td><td className="p-2"><button type="button" onClick={()=>{setEditingDebtPayment(payment);setDebtPaymentMode(payment.mode==='all'?'all':'partial');setDebtPaymentAmount(String(payment.amount||''));setDebtPaymentMethod(payment.method||'cash');}} className="text-blue-600 underline font-semibold">Chỉnh sửa</button></td></tr>)}
+                {debtPayments.map(payment => <tr key={payment.id} className="border-t"><td className="p-2 whitespace-nowrap">{formatDate(payment.date)}</td><td className="p-2 font-bold">{formatCurrency(payment.amount)}</td><td className="p-2">{payment.mode==='all'?'Trừ trên tổng nợ':'Trừ từng phần'}</td><td className="p-2">{payment.method==='transfer'?'Chuyển khoản':'Tiền mặt'}</td><td className="p-2"><div className="flex flex-wrap gap-2"><button type="button" onClick={()=>{setEditingDebtPayment(payment);setDebtPaymentMode(payment.mode==='all'?'all':'partial');setDebtPaymentAmount(String(payment.amount||''));setDebtPaymentMethod(payment.method||'cash');}} className="text-blue-600 underline font-semibold">Chỉnh sửa</button><button type="button" disabled={savingDebtPayment} onClick={()=>handleUndoDebtPayment(payment)} className="text-red-600 underline font-semibold disabled:opacity-50">Hoàn tác</button></div></td></tr>)}
                 {debtPayments.length===0 && <tr><td colSpan="5" className="p-3 text-center text-gray-400">Chưa có giao dịch trừ công nợ</td></tr>}
               </tbody></table></div>
             </section>
@@ -1887,7 +1900,14 @@ function ContactManager({ type, data, orders, navigationTarget, storeConfig, db,
                           <td className="p-2.5 align-top">{(ord.items || []).map((it, idx) => <div key={idx} className="mb-1 whitespace-nowrap">{formatCurrency(Number(it.importCost ?? it.cost) || 0)}</div>)}</td>
                           <td className="p-2.5 align-top">{(ord.items || []).map((it, idx) => <div key={idx} className="mb-1 whitespace-nowrap">{formatCurrency(Number(it.price) || 0)}</div>)}</td>
                           <td className="p-2.5 font-bold text-gray-800 align-top">{formatCurrency(ord.total)}</td>
-                          <td className="p-2.5 align-top"><span className={"px-2 py-0.5 rounded text-[10px] font-bold " + statusClass}>{ord.status === 'PAID' ? 'Đã trả' : 'Đang nợ'}</span></td>
+                          <td className="p-2.5 align-top">
+                            <div className="flex flex-col items-start gap-1.5">
+                              <span className={"px-2 py-0.5 rounded text-[10px] font-bold " + (getOrderRemainingDebt(ord) > 0 ? 'bg-orange-100 text-orange-700' : 'bg-green-100 text-green-700')}>{getOrderRemainingDebt(ord) > 0 ? 'Đang nợ' : 'Đã thanh toán'}</span>
+                              {getOrderRemainingDebt(ord) > 0 && <span className="font-semibold text-orange-700">Còn: {formatCurrency(getOrderRemainingDebt(ord))}</span>}
+                              <button type="button" disabled={savingDebtPayment || getOrderRemainingDebt(ord) <= 0} onClick={() => handlePartialTransactionPayment(ord)} className="text-blue-700 underline font-semibold disabled:opacity-40">Thanh toán một phần</button>
+                              <button type="button" disabled={savingDebtPayment} onClick={() => handleChangeTransactionStatus(ord)} className="text-red-600 underline font-semibold disabled:opacity-40">Sửa trạng thái</button>
+                            </div>
+                          </td>
                         </tr>
                       );
                     })}
@@ -3030,6 +3050,7 @@ function SettingsView({ db, storeId, showToast, storeConfig }) {
   const [deletePassword, setDeletePassword] = useState('');
   const [deletePasswordConfirm, setDeletePasswordConfirm] = useState('');
   const [deletingData, setDeletingData] = useState(false);
+  const [deleteProgress, setDeleteProgress] = useState('');
 
   useEffect(() => {
     if (storeConfig) {
@@ -3102,309 +3123,298 @@ function SettingsView({ db, storeId, showToast, storeConfig }) {
   const handleImport = async (e, type) => {
     const file = e.target.files?.[0];
     if (!file) return;
-    const inputElement = e.target;
+    if (!window.XLSX) {
+      showToast('Thư viện Excel chưa tải xong. Hãy tải lại trang rồi thử lại.', 'error');
+      e.target.value = '';
+      return;
+    }
+    if (file.size > 25 * 1024 * 1024) {
+      showToast('File Excel lớn hơn 25 MB. Vui lòng tách file thành các phần nhỏ rồi nhập lại.', 'error');
+      e.target.value = '';
+      return;
+    }
     setLoadingFile(true);
     try {
-      // Đảm bảo thư viện XLSX đã tải xong trước khi bắt đầu đọc file.
-      if (!window.XLSX) {
-        await new Promise((resolve, reject) => {
-          const existingScript = Array.from(document.scripts).find(script => script.src.includes('xlsx.full.min.js'));
-          const script = existingScript || document.createElement('script');
-          const onLoad = () => window.XLSX ? resolve() : reject(new Error('Không tải được thư viện đọc Excel.'));
-          const onError = () => reject(new Error('Không tải được thư viện đọc Excel. Vui lòng kiểm tra kết nối mạng.'));
-          script.addEventListener('load', onLoad, { once: true });
-          script.addEventListener('error', onError, { once: true });
-          if (!existingScript) {
-            script.src = 'https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js';
-            document.body.appendChild(script);
-          }
-        });
-      }
-      if (!window.XLSX) throw new Error('Thư viện Excel chưa sẵn sàng. Vui lòng thử lại.');
       const reader = new FileReader();
-      reader.onerror = () => {
-        setLoadingFile(false);
-        showToast('Không đọc được file Excel. Bạn kiểm tra file rồi thử lại nhé.', 'error');
-        inputElement.value = '';
-      };
-      reader.onabort = () => {
-        setLoadingFile(false);
-        showToast('Đã hủy đọc file Excel.', 'error');
-        inputElement.value = '';
-      };
       reader.onload = async (evt) => {
         try {
-          const wb = window.XLSX.read(evt.target.result, { type: 'array' });
-          const data = window.XLSX.utils.sheet_to_json(wb.Sheets[wb.SheetNames[0]]);
-          let batch = writeBatch(db); 
-          let count = 0; 
+          const wb = window.XLSX.read(evt.target.result, { type: 'binary', cellDates: true });
+          const sheet = wb.Sheets[wb.SheetNames[0]];
+          const data = window.XLSX.utils.sheet_to_json(sheet, { defval: '' });
+          const textVal = v => String(v ?? '').trim();
+          const norm = v => textVal(v).toLocaleLowerCase('vi');
+          const numberVal = v => {
+            if (typeof v === 'number') return Number.isFinite(v) ? v : 0;
+            let x = textVal(v).replace(/\s/g, '').replace(/[^0-9,.-]/g, '');
+            if (!x) return 0;
+            if (x.includes('.') && x.includes(',')) x = x.lastIndexOf(',') > x.lastIndexOf('.') ? x.replace(/\./g, '').replace(',', '.') : x.replace(/,/g, '');
+            else if (x.includes(',')) x = /,\d{1,2}$/.test(x) ? x.replace(',', '.') : x.replace(/,/g, '');
+            else if ((x.match(/\./g) || []).length > 1 || /\.\d{3}$/.test(x)) x = x.replace(/\./g, '');
+            const n = Number(x); return Number.isFinite(n) ? n : 0;
+          };
+          const dateVal = v => {
+            if (v instanceof Date && !Number.isNaN(v.getTime())) return v.toISOString();
+            if (typeof v === 'number') return new Date(Math.round((v - 25569) * 86400 * 1000)).toISOString();
+            const raw = textVal(v); if (!raw) return new Date().toISOString();
+            const m = raw.match(/^(\d{1,2})[/-](\d{1,2})[/-](\d{4})(?:\s+(\d{1,2}):(\d{2})(?::(\d{2}))?)?$/);
+            if (m) return new Date(Number(m[3]), Number(m[2])-1, Number(m[1]), Number(m[4]||0), Number(m[5]||0), Number(m[6]||0)).toISOString();
+            const d = new Date(raw); return Number.isNaN(d.getTime()) ? new Date().toISOString() : d.toISOString();
+          };
           let success = 0;
+          let skippedDuplicates = 0;
 
-          // --- LOGIC NHẬP LỊCH SỬ NHẬP HÀNG TỪ EXCEL KIOTVIET ---
-          if (type === 'imports') {
+          // Danh mục khách hàng: chỉ lưu mã + tên; dòng đầu tiên hợp lệ được ưu tiên.
+          if (type === 'customers' || type === 'suppliers') {
+            const isCustomer = type === 'customers';
+            const codeCol = isCustomer ? 'Mã khách hàng' : 'Mã nhà cung cấp';
+            const nameCol = isCustomer ? 'Tên khách hàng' : 'Tên nhà cung cấp';
+            const snap = await getDocs(collection(db, 'stores', storeId, type));
+            const existingByKey = new Map();
+            snap.docs.forEach(d => {
+              const x = d.data();
+              if (textVal(x.code)) existingByKey.set('c:' + norm(x.code), d.id);
+              if (textVal(x.name)) existingByKey.set('n:' + norm(x.name), d.id);
+            });
+            const seen = new Set();
+            let batch = writeBatch(db), writes = 0;
+            for (const row of data) {
+              const code = textVal(row[codeCol]);
+              const name = textVal(row[nameCol]);
+              if (!code && !name) continue;
+              const keys = [code && 'c:' + norm(code), name && 'n:' + norm(name)].filter(Boolean);
+              if (keys.some(k => seen.has(k))) continue;
+              keys.forEach(k => seen.add(k));
+              const phone = textVal(row['Điện thoại'] || row['Số điện thoại'] || row['SĐT'] || row['Số ĐT']);
+              const address = textVal(row['Địa chỉ'] || row['Địa chỉ giao hàng'] || row['Địa chỉ khách hàng']);
+              const debtRaw = isCustomer
+                ? (row['Tổng nợ'] ?? row['Tổng Nợ'] ?? row['Nợ phải thu'] ?? row['Nợ cần thu hiện tại'] ?? 0)
+                : (row['Tổng nợ'] ?? row['Tổng Nợ'] ?? row['Nợ phải trả'] ?? row['Nợ cần trả hiện tại'] ?? 0);
+              const totalDebt = Math.max(0, numberVal(debtRaw));
+              const contactPayload = { code, name, phone, address, totalDebt };
+              const matchedId = keys.map(k => existingByKey.get(k)).find(Boolean);
+              if (matchedId) {
+                batch.update(doc(db, 'stores', storeId, type, matchedId), contactPayload); writes++; success++;
+              } else {
+                const ref = doc(collection(db, 'stores', storeId, type));
+                batch.set(ref, contactPayload); writes++; success++;
+                keys.forEach(k => existingByKey.set(k, ref.id));
+              }
+              if (writes >= 300) { await batch.commit(); batch = writeBatch(db); writes = 0; }
+            }
+            if (writes) await batch.commit();
+          }
+          // Sản phẩm: chỉ đọc Mã hàng, Tên hàng, Giá bán, Giá vốn, Tồn kho.
+          // Tồn kho trong file là số chuẩn thay thế tồn cũ, không cộng dồn.
+          else if (type === 'products') {
+            const snap = await getDocs(collection(db, 'stores', storeId, 'products'));
+            const existing = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+            const byCode = new Map(), byName = new Map();
+            existing.forEach(p => { if (textVal(p.code)) byCode.set(norm(p.code), p); if (textVal(p.name)) byName.set(norm(p.name), p); });
+            // Xóa số tồn cũ của các sản phẩm đang có; các dòng trong file sẽ thiết lập lại tồn chính xác.
+            let batch = writeBatch(db), writes = 0;
+            for (const p of existing) {
+              batch.update(doc(db, 'stores', storeId, 'products', p.id), { stock: 0 }); writes++;
+              if (writes >= 300) { await batch.commit(); batch = writeBatch(db); writes = 0; }
+            }
+            if (writes) { await batch.commit(); batch = writeBatch(db); writes = 0; }
+            const seen = new Set();
+            for (const row of data) {
+              const code = textVal(row['Mã hàng'] || row['Mã sản phẩm']);
+              const name = textVal(row['Tên hàng'] || row['Tên sản phẩm']);
+              if (!code && !name) continue;
+              const keys = [code && 'c:' + norm(code), name && 'n:' + norm(name)].filter(Boolean);
+              if (keys.some(key => seen.has(key))) continue;
+              keys.forEach(key => seen.add(key));
+              const current = (code && byCode.get(norm(code))) || byName.get(norm(name));
+              const productData = {
+                code, name,
+                price: numberVal(row['Giá bán']),
+                cost: numberVal(row['Giá vốn']),
+                stock: Math.max(0, numberVal(row['Tồn kho']))
+              };
+              if (current) {
+                batch.update(doc(db, 'stores', storeId, 'products', current.id), productData);
+                current.stock = productData.stock; current.code = code; current.name = name;
+                if (code) byCode.set(norm(code), current); if (name) byName.set(norm(name), current);
+              } else {
+                const ref = doc(collection(db, 'stores', storeId, 'products'));
+                batch.set(ref, productData);
+                const added = { id: ref.id, ...productData };
+                if (code) byCode.set(norm(code), added); if (name) byName.set(norm(name), added);
+              }
+              writes++; success++;
+              if (writes >= 300) { await batch.commit(); batch = writeBatch(db); writes = 0; }
+            }
+            if (writes) await batch.commit();
+          }
+          // Hóa đơn: chỉ lấy đúng các cột người dùng chỉ định; gom các dòng theo Mã hóa đơn.
+          else if (type === 'orders') {
+            const ordersMap = new Map();
+            const [customerSnap, productSnap, existingOrderSnap] = await Promise.all([
+              getDocs(collection(db, 'stores', storeId, 'customers')),
+              getDocs(collection(db, 'stores', storeId, 'products')),
+              getDocs(collection(db, 'stores', storeId, 'orders'))
+            ]);
+            const customerByCode = new Map(customerSnap.docs.map(d => [norm(d.data().code), { id: d.id, ...d.data() }]).filter(([k]) => k));
+            const customerByName = new Map(customerSnap.docs.map(d => [norm(d.data().name), { id: d.id, ...d.data() }]));
+            const productByCode = new Map(productSnap.docs.map(d => [norm(d.data().code), { id: d.id, ...d.data() }]).filter(([k]) => k));
+            const productByName = new Map(productSnap.docs.map(d => [norm(d.data().name), { id: d.id, ...d.data() }]));
+            const existingOrderByCode = new Map(existingOrderSnap.docs.map(d => [textVal(d.data().invoiceCode || d.data().id), d.id]).filter(([k]) => k));
+            for (const row of data) {
+              const invoiceCode = textVal(row['Mã hóa đơn']);
+              const itemName = textVal(row['Tên hàng']);
+              if (!invoiceCode) continue;
+              if (!ordersMap.has(invoiceCode)) {
+                const customerCode = textVal(row['Mã khách hàng']);
+                const customerName = textVal(row['Tên khách hàng']) || 'Khách lẻ';
+                const matchedCustomer = (customerCode && customerByCode.get(norm(customerCode))) || customerByName.get(norm(customerName));
+                ordersMap.set(invoiceCode, {
+                  id: invoiceCode, invoiceCode,
+                  date: dateVal(row['Thời gian']),
+                  customerCode,
+                  customerId: matchedCustomer?.id || null,
+                  customerName,
+                  sellerName: textVal(row['Người bán']),
+                  total: numberVal(row['Tổng tiền hàng']),
+                  paidAmount: numberVal(row['Khách đã trả']),
+                  status: numberVal(row['Khách đã trả']) >= numberVal(row['Tổng tiền hàng']) ? 'PAID' : 'DEBT',
+                  totalCost: 0, items: []
+                });
+              }
+              const order = ordersMap.get(invoiceCode);
+              if (itemName) {
+                const qty = numberVal(row['Số lượng']);
+                const unitPrice = numberVal(row['Giá bán']) || numberVal(row['Đơn giá']);
+                const itemCode = textVal(row['Mã hàng']);
+                const matchedProduct = (itemCode && productByCode.get(norm(itemCode))) || productByName.get(norm(itemName));
+                order.items.push({
+                  id: matchedProduct?.id || '', productId: matchedProduct?.id || '',
+                  code: itemCode, name: itemName,
+                  category: textVal(row['Nhóm hàng']) || textVal(matchedProduct?.category), unit: textVal(row['ĐVT']),
+                  quantity: qty, price: unitPrice, salePrice: numberVal(row['Giá bán']),
+                  lineTotal: numberVal(row['Thành tiền']), cost: 0,
+                  warrantyValue: '', warrantyUnit: 'tháng'
+                });
+              }
+            }
+            let batch = writeBatch(db), writes = 0;
+            for (const order of ordersMap.values()) {
+              // So khớp mã hóa đơn với dữ liệu hiện có; nếu đã tồn tại thì cập nhật thay vì tạo trùng.
+              const existingId = existingOrderByCode.get(order.invoiceCode);
+              const orderRef = existingId ? doc(db, 'stores', storeId, 'orders', existingId) : doc(collection(db, 'stores', storeId, 'orders'));
+              batch.set(orderRef, order, { merge: true }); writes++; success++;
+              if (writes >= 300) { await batch.commit(); batch = writeBatch(db); writes = 0; }
+            }
+            if (writes) await batch.commit();
+          }
+          // Nhập hàng: chỉ dùng các cột nhập hàng đã chỉ định và so khớp mã hàng/tên hàng với danh mục.
+          else if (type === 'imports') {
             const productSnap = await getDocs(collection(db, 'stores', storeId, 'products'));
             const supplierSnap = await getDocs(collection(db, 'stores', storeId, 'suppliers'));
             const productDocs = productSnap.docs.map(d => ({ id: d.id, ...d.data() }));
-            const productByName = new Map(productDocs.map(p => [String(p.name || '').trim().toLowerCase(), p]));
-            const supplierByName = new Map(supplierSnap.docs.map(d => [String(d.data().name || '').trim().toLowerCase(), { id: d.id, ...d.data() }]));
-            const receipts = {};
-            const parseExcelDate = (value) => {
-              if (!value) return new Date().toISOString();
-              if (typeof value === 'number') return new Date(Math.round((value - 25569) * 86400 * 1000)).toISOString();
-              const parsed = new Date(value);
-              return Number.isNaN(parsed.getTime()) ? new Date().toISOString() : parsed.toISOString();
-            };
-            data.forEach(row => {
-              const productName = String(row['Tên hàng'] || row['Tên sản phẩm'] || '').trim();
-              const qty = Number(row['Số lượng'] || row['SL nhập'] || row['Số lượng nhập']) || 0;
-              if (!productName || qty <= 0) return;
-              const supplierName = String(row['Tên nhà cung cấp'] || row['Nhà cung cấp'] || '').trim() || 'Nhà cung cấp Excel';
-              const receiptCode = String(row['Mã phiếu nhập'] || row['Mã nhập hàng'] || row['Mã chứng từ'] || '').trim();
-              const date = parseExcelDate(row['Thời gian'] || row['Ngày nhập'] || row['Ngày tạo']);
-              const groupKey = receiptCode || `${supplierName}|${date.slice(0, 10)}`;
-              if (!receipts[groupKey]) receipts[groupKey] = { receiptCode, supplierName, date, items: [], total: 0, source: 'KiotViet Excel' };
-              const product = productByName.get(productName.toLowerCase());
-              const unitCost = Number(row['Giá nhập'] || row['Đơn giá nhập'] || row['Giá vốn'] || row['Đơn giá']) || 0;
-              const lineTotal = Number(row['Thành tiền'] || row['Tổng tiền hàng']) || qty * unitCost;
-              receipts[groupKey].items.push({ id: product?.id || '', name: productName, category: product?.category || String(row['Nhóm hàng'] || ''), qty, importCost: unitCost, price: Number(product?.price) || Number(row['Giá bán']) || 0 });
-              receipts[groupKey].total += lineTotal;
-            });
-            const receiptEntries = Object.values(receipts);
-            if (!receiptEntries.length) throw new Error('Không tìm thấy dòng nhập hàng hợp lệ. Cần có cột Tên hàng và Số lượng.');
+            const productByCode = new Map(productDocs.filter(p => textVal(p.code)).map(p => [norm(p.code), p]));
+            const productByName = new Map(productDocs.map(p => [norm(p.name), p]));
+            const supplierByCode = new Map(supplierSnap.docs.map(d => [norm(d.data().code), { id: d.id, ...d.data() }]).filter(([k]) => k));
+            const supplierByName = new Map(supplierSnap.docs.map(d => [norm(d.data().name), { id: d.id, ...d.data() }]));
             const existingImportSnap = await getDocs(collection(db, 'stores', storeId, 'imports'));
-            const existingReceiptCodes = new Set(existingImportSnap.docs.map(d => String(d.data().receiptCode || d.data().invoiceCode || '').trim()).filter(Boolean));
-            let importBatch = writeBatch(db);
-            let writes = 0;
-            for (const receipt of receiptEntries) {
-              if (receipt.receiptCode && existingReceiptCodes.has(receipt.receiptCode)) continue;
-              let supplier = supplierByName.get(receipt.supplierName.toLowerCase());
+            const existingReceiptCodes = new Set(existingImportSnap.docs.map(d => norm(d.data().receiptCode || d.data().invoiceCode)).filter(Boolean));
+            const fingerprint = (supplier, date, items) => `${norm(supplier)}|${getVietnamDateKey(new Date(date))}|${(items || []).map(it => `${norm(it.code || it.name)}:${numberVal(it.qty ?? it.quantity)}:${numberVal(it.importCost ?? it.cost)}`).sort().join(';')}`;
+            const existingImportFingerprints = new Set(existingImportSnap.docs.filter(d => !d.data().receiptCode && !d.data().invoiceCode).map(d => fingerprint(d.data().supplierCode || d.data().supplierName, d.data().date, d.data().items)));
+            const receipts = new Map();
+            for (const row of data) {
+              const itemName = textVal(row['Tên hàng']);
+              const qty = numberVal(row['Số lượng']);
+              if (!itemName || qty <= 0) continue;
+              const supplierCode = textVal(row['Mã nhà cung cấp']);
+              const supplierName = textVal(row['Tên nhà cung cấp']) || 'Nhà cung cấp';
+              const date = dateVal(row['Thời gian']);
+              const receiptCode = textVal(row['Mã phiếu nhập'] || row['Mã phiếu nhập hàng'] || row['Mã chứng từ'] || row['Mã phiếu'] || row['Số phiếu'] || row['Mã nhập hàng']);
+              const groupKey = receiptCode ? `code:${norm(receiptCode)}` : `${supplierCode || norm(supplierName)}|${date.slice(0, 16)}|${norm(textVal(row['Người nhập']))}|${norm(textVal(row['Ghi chú']))}|${numberVal(row['Tổng tiền hàng'])}|${numberVal(row['Cần trả NCC'])}`;
+              if (!receipts.has(groupKey)) receipts.set(groupKey, {
+                receiptCode, date, supplierCode, supplierName, phone: textVal(row['Điện thoại']),
+                createdByName: textVal(row['Người nhập']), note: textVal(row['Ghi chú']),
+                total: numberVal(row['Tổng tiền hàng']), payable: numberVal(row['Cần trả NCC']),
+                totalQty: numberVal(row['Tổng số lượng']), totalItems: numberVal(row['Tổng số mặt hàng']), items: []
+              });
+              const receipt = receipts.get(groupKey);
+              const productCode = textVal(row['Mã hàng']);
+              const product = (productCode && productByCode.get(norm(productCode))) || productByName.get(norm(itemName));
+              const unitCost = numberVal(row['Giá nhập']) || numberVal(row['Đơn giá']);
+              receipt.items.push({
+                id: product?.id || '', productId: product?.id || '', code: productCode || textVal(product?.code),
+                name: itemName, unit: textVal(row['ĐVT']), qty, quantity: qty,
+                price: numberVal(row['Đơn giá']), importCost: unitCost,
+                lineTotal: numberVal(row['Thành tiền']) || qty * unitCost,
+                category: textVal(product?.category)
+              });
+            }
+            let batch = writeBatch(db), writes = 0;
+            const flushImportBatch = async () => { if (writes) { await batch.commit(); batch = writeBatch(db); writes = 0; } };
+            for (const receipt of receipts.values()) {
+              const receiptFingerprint = fingerprint(receipt.supplierCode || receipt.supplierName, receipt.date, receipt.items);
+              if ((receipt.receiptCode && existingReceiptCodes.has(norm(receipt.receiptCode))) || (!receipt.receiptCode && existingImportFingerprints.has(receiptFingerprint))) {
+                skippedDuplicates++;
+                continue;
+              }
+              let supplier = (receipt.supplierCode && supplierByCode.get(norm(receipt.supplierCode))) || supplierByName.get(norm(receipt.supplierName));
               if (!supplier) {
-                const supplierRef = doc(collection(db, 'stores', storeId, 'suppliers'));
-                supplier = { id: supplierRef.id, name: receipt.supplierName, phone: '', address: '', totalDebt: 0, createdAt: new Date().toISOString() };
-                supplierByName.set(receipt.supplierName.toLowerCase(), supplier);
-                importBatch.set(supplierRef, supplier); writes++;
+                const ref = doc(collection(db, 'stores', storeId, 'suppliers'));
+                supplier = { id: ref.id, code: receipt.supplierCode, name: receipt.supplierName };
+                batch.set(ref, supplier); writes++;
+                if (receipt.supplierCode) supplierByCode.set(norm(receipt.supplierCode), supplier);
+                supplierByName.set(norm(receipt.supplierName), supplier);
               }
-              const validItems = receipt.items.filter(item => item.id && productDocs.some(p => p.id === item.id));
-              const total = receipt.total || receipt.items.reduce((sum, item) => sum + Number(item.qty || 0) * Number(item.importCost || 0), 0);
-              const importRef = doc(collection(db, 'stores', storeId, 'imports'));
-              importBatch.set(importRef, { invoiceCode: receipt.receiptCode || '', receiptCode: receipt.receiptCode || '', supplierId: supplier.id, supplierName: receipt.supplierName, createdByUid: '', createdByName: 'Excel KiotViet', items: receipt.items, total, status: 'PAID', date: receipt.date, source: 'KiotViet Excel' }); writes++;
-              if (receipt.receiptCode) existingReceiptCodes.add(receipt.receiptCode);
-              for (const item of validItems) {
-                const product = productDocs.find(p => p.id === item.id);
-                const currentStock = Number(product.stock) || 0;
-                const oldCost = Number(product.cost) || 0;
-                let newCost = Number(item.importCost) || oldCost;
-                const method = storeConfig?.costCalcMethod || 'LATEST';
-                if (method === 'AVERAGE' && currentStock + item.qty > 0) newCost = Math.round(((currentStock * oldCost) + (item.qty * newCost)) / (currentStock + item.qty));
-                else if (method === 'HIGHEST') newCost = Math.max(oldCost, newCost);
-                else if (method === 'LOWEST') newCost = oldCost === 0 ? newCost : Math.min(oldCost, newCost);
-                importBatch.update(doc(db, 'stores', storeId, 'products', product.id), { stock: currentStock + item.qty, cost: newCost, lastSupplierId: supplier.id, lastSupplierName: receipt.supplierName });
-                product.stock = currentStock + item.qty; product.cost = newCost; writes++;
-                if (writes >= 400) { await importBatch.commit(); importBatch = writeBatch(db); writes = 0; }
+              const total = receipt.total || receipt.items.reduce((sum, it) => sum + numberVal(it.lineTotal), 0);
+              const ref = doc(collection(db, 'stores', storeId, 'imports'));
+              batch.set(ref, {
+                date: receipt.date, receiptCode: receipt.receiptCode || '', supplierId: supplier.id, supplierCode: receipt.supplierCode,
+                supplierName: receipt.supplierName, supplierPhone: receipt.phone,
+                createdByName: receipt.createdByName, total, payable: receipt.payable,
+                note: receipt.note, totalQty: receipt.totalQty || receipt.items.reduce((sum, it) => sum + it.qty, 0),
+                totalItems: receipt.totalItems || receipt.items.length, items: receipt.items,
+                status: 'PAID', source: 'Excel'
+              }); writes++; success++;
+              // Nhập hàng là lịch sử nhập, vì vậy tăng tồn đúng theo số lượng đã nhập.
+              for (const it of receipt.items) {
+                const product = it.productId && productDocs.find(p => p.id === it.productId);
+                if (!product) continue;
+                const nextStock = numberVal(product.stock) + it.qty;
+                batch.update(doc(db, 'stores', storeId, 'products', product.id), { stock: nextStock, cost: it.importCost || numberVal(product.cost), lastSupplierId: supplier.id, lastSupplierName: receipt.supplierName });
+                product.stock = nextStock; writes++;
+                if (writes >= 300) await flushImportBatch();
               }
-              if (writes >= 400) { await importBatch.commit(); importBatch = writeBatch(db); writes = 0; }
-              success++;
+              if (writes >= 300) await flushImportBatch();
+              if (receipt.receiptCode) existingReceiptCodes.add(norm(receipt.receiptCode));
+              else existingImportFingerprints.add(receiptFingerprint);
             }
-            if (writes > 0) await importBatch.commit();
+            if (writes) await batch.commit();
           }
-          // --- LOGIC GOM NHÓM ĐƠN HÀNG KIOTVIET ---
-          else if (type === 'orders') {
-            const existingOrdersSnap = await getDocs(collection(db, 'stores', storeId, 'orders'));
-            const existingInvoiceCodes = new Set(existingOrdersSnap.docs.map(d => String(d.data().invoiceCode || '').trim()).filter(Boolean));
-            const ordersMap = {};
-            
-            data.forEach(row => {
-              const orderId = row['Mã hóa đơn'];
-              if (!orderId) return;
-
-              // Nếu mã hóa đơn chưa có trong map, khởi tạo
-              if (!ordersMap[orderId]) {
-                // Xử lý ngày tháng từ Excel serial number
-                let orderDate = new Date().toISOString();
-                if (row['Thời gian']) {
-                  if (typeof row['Thời gian'] === 'number') {
-                     orderDate = new Date(Math.round((row['Thời gian'] - 25569) * 86400 * 1000)).toISOString();
-                  } else {
-                     orderDate = new Date(row['Thời gian']).toISOString();
-                  }
-                }
-
-                ordersMap[orderId] = {
-                  id: orderId,
-                  invoiceCode: orderId,
-                  customerName: row['Tên khách hàng'] || 'Khách lẻ',
-                  customerId: row['Mã khách hàng'] || null, // Lưu thêm mã KH nếu cần map sau này
-                  sellerName: row['Người tạo'] || row['Người bán'] || 'Hệ thống',
-                  date: orderDate,
-                  status: row['Trạng thái'] === 'Hoàn thành' ? 'PAID' : 'DEBT',
-                  total: Number(row['Khách cần trả']) || Number(row['Tổng tiền hàng']) || 0,
-                  totalCost: 0, // Sẽ cộng dồn ở phần items (nếu Kiotviet có xuất giá vốn trong file đơn hàng)
-                  note: row['Ghi chú'] || '',
-                  items: []
-                };
-              }
-
-              // Thêm sản phẩm vào mảng items của hóa đơn đó
-              if (row['Tên hàng']) {
-                const qty = Number(row['Số lượng']) || 1;
-                // Kiotviet xuất 'Giá bán' (đơn giá) và 'Thành tiền' (giá bán * sl)
-                const price = Number(row['Giá bán']) || Number(row['Đơn giá']) || 0; 
-                
-                ordersMap[orderId].items.push({
-                  name: String(row['Tên hàng']),
-                  quantity: qty,
-                  price: price,
-                  cost: 0, // Kiotviet mặc định không xuất giá vốn trong bảng chi tiết đơn hàng
-                  warrantyValue: '',
-                  warrantyUnit: 'tháng',
-                  note: row['Ghi chú hàng hóa'] || row['Mã hàng'] || ''
-                });
-              }
-            });
-            
-            // Ghi dữ liệu đã gom nhóm vào Firestore
-            for (const key in ordersMap) {
-              if (existingInvoiceCodes.has(String(key).trim())) continue;
-              batch.set(doc(collection(db, 'stores', storeId, 'orders')), ordersMap[key]);
-              existingInvoiceCodes.add(String(key).trim());
-              count++; 
-              success++;
-              if (count >= 400) { 
-                await batch.commit(); 
-                batch = writeBatch(db); 
-                count = 0; 
-              }
+          else if (type === 'expenses') {
+            let batch = writeBatch(db), writes = 0;
+            for (const row of data) {
+              const amount = numberVal(row['Giá trị'] !== '' ? row['Giá trị'] : row['Số tiền']);
+              const typeText = textVal(row['Loại thu chi']);
+              const voucher = textVal(row['Mã phiếu']);
+              if (row['Giá trị'] !== undefined && !typeText.toLowerCase().includes('chi') && amount >= 0) continue;
+              if (!voucher && !textVal(row['Nội dung']) && !textVal(row['Ghi chú'])) continue;
+              batch.set(doc(collection(db, 'stores', storeId, 'expenses')), {
+                amount: Math.abs(amount), note: textVal(row['Nội dung'] || row['Ghi chú'] || [typeText, textVal(row['Người nộp/nhận']), voucher].filter(Boolean).join(' - ')),
+                date: dateVal(row['Thời gian'] || row['Ngày'] || row['Ngày tạo'])
+              }); writes++; success++;
+              if (writes >= 300) { await batch.commit(); batch = writeBatch(db); writes = 0; }
             }
-            if (count > 0) await batch.commit();
-          } 
-          // --- LOGIC NHẬP CÁC DANH MỤC KHÁC ---
-          else {
-            for (let i = 0; i < data.length; i++) {
-              let p = null; 
-              const row = data[i]; 
-              let nowIso = new Date().toISOString();
-              
-              // Xử lý ngày tạo chung nếu có
-              if (row['Ngày tạo'] || row['Thời gian tạo']) {
-                 const t = row['Ngày tạo'] || row['Thời gian tạo'];
-                 if (typeof t === 'number') nowIso = new Date(Math.round((t - 25569) * 86400 * 1000)).toISOString();
-                 else nowIso = new Date(t).toISOString();
-              }
-              
-              if (type === 'products' && row['Tên hàng']) {
-                p = { 
-                  name: String(row['Tên hàng']), 
-                  category: row['Nhóm hàng(3 Cấp)'] || row['Nhóm hàng'] || '', 
-                  price: Number(row['Giá bán']) || 0, 
-                  cost: Number(row['Giá vốn']) || 0, 
-                  stock: Number(row['Tồn kho']) || 0, 
-                  createdAt: nowIso 
-                };
-              }
-              else if (type === 'customers' && row['Tên khách hàng']) { 
-                const rawPhone = row['Điện thoại'] ? String(row['Điện thoại']) : ''; 
-                p = { 
-                  name: String(row['Tên khách hàng']), 
-                  phone: rawPhone.replace('.0', ''), 
-                  address: row['Địa chỉ'] || row['Phường/Xã'] || '',
-                  totalDebt: Number(row['Nợ cần thu hiện tại']) || 0, 
-                  createdAt: nowIso 
-                }; 
-              } 
-              else if (type === 'suppliers' && row['Tên nhà cung cấp']) { 
-                const rawPhone = row['Điện thoại'] ? String(row['Điện thoại']) : ''; 
-                p = { 
-                  name: String(row['Tên nhà cung cấp']), 
-                  phone: rawPhone.replace('.0', ''), 
-                  address: row['Địa chỉ'] || row['Phường/Xã'] || '',
-                  totalDebt: Number(row['Nợ cần trả hiện tại']) || 0, 
-                  createdAt: nowIso 
-                }; 
-              } 
-              else if (type === 'expenses') {
-                // Hỗ trợ file chi phí thường và file Sổ Quỹ KiotViet.
-                // Bỏ qua dòng tổng kết/lũy kế không phải giao dịch.
-                const hasExpenseData = row['Mã phiếu'] !== undefined || row['Số tiền'] !== undefined || row['Nội dung'] !== undefined || row['Giá trị'] !== undefined;
-                if (hasExpenseData) {
-                let expenseDate = nowIso;
-                const rawDate = row['Thời gian'] || row['Ngày'] || row['Ngày tạo'] || row['Thời gian tạo'];
-                if (rawDate !== undefined && rawDate !== null && rawDate !== '') {
-                  let parsedDate;
-                  if (typeof rawDate === 'number') {
-                    parsedDate = new Date(Math.round((rawDate - 25569) * 86400 * 1000));
-                  } else {
-                    parsedDate = new Date(rawDate);
-                  }
-                  if (!Number.isNaN(parsedDate.getTime())) expenseDate = parsedDate.toISOString();
-                }
-
-                // File Sổ Quỹ KiotViet: Mã phiếu, Thời gian, Loại thu chi,
-                // Người nộp/nhận, Giá trị. Chỉ nhập phiếu chi.
-                if (row['Giá trị'] !== undefined || row['Mã phiếu'] !== undefined || row['Loại thu chi'] !== undefined) {
-                  const rawValue = row['Giá trị'];
-                  const value = typeof rawValue === 'number'
-                    ? rawValue
-                    : Number(String(rawValue ?? '0').replace(/[^0-9,.-]/g, '').replace(/,(?=\d{3}(?:\D|$))/g, '')) || 0;
-                  const expenseType = String(row['Loại thu chi'] || '').trim();
-                  const person = String(row['Người nộp/nhận'] || '').trim();
-                  const voucherCode = String(row['Mã phiếu'] || '').trim();
-                  const isExpense = value < 0 || expenseType.toLowerCase().includes('chi');
-
-                  // Các dòng tổng kết thường không có mã phiếu; không nhập chúng.
-                  if (isExpense && voucherCode) {
-                    const noteParts = [];
-                    if (expenseType) noteParts.push(expenseType);
-                    if (person) noteParts.push(person);
-                    noteParts.push(`(${voucherCode})`);
-                    p = { amount: Math.abs(value), note: noteParts.join(' - ') || 'Phiếu chi KiotViet', date: expenseDate };
-                  }
-                } else if (row['Số tiền'] !== undefined && row['Số tiền'] !== '') {
-                  const rawAmount = row['Số tiền'];
-                  const amount = typeof rawAmount === 'number'
-                    ? rawAmount
-                    : Number(String(rawAmount).replace(/[^0-9,.-]/g, '').replace(/,(?=\d{3}(?:\D|$))/g, '')) || 0;
-                  p = {
-                    amount: Math.abs(amount),
-                    note: String(row['Nội dung'] || row['Ghi chú'] || 'Chi phí'),
-                    date: expenseDate
-                  };
-                }
-                }
-              }
-
-              if (p) { 
-                batch.set(doc(collection(db, 'stores', storeId, type)), p); 
-                count++; 
-                success++; 
-              }
-              
-              if (count >= 400 || i === data.length - 1) { 
-                if (count > 0) { 
-                  await batch.commit(); 
-                  batch = writeBatch(db); 
-                  count = 0; 
-                } 
-              }
-            }
+            if (writes) await batch.commit();
           }
-          
-          showToast("Đã NHẬP thành công " + success + " dòng (đã gộp các mục nếu là Hóa Đơn).");
+          showToast(`Đã nhập ${success} dòng/mục. Bỏ qua ${skippedDuplicates} phiếu trùng. Các cột ngoài danh sách quy định đã được bỏ qua.`);
+          setLoadingFile(false); e.target.value = '';
+        } catch (err) {
+          console.error(err);
+          showToast('Lỗi định dạng dữ liệu Excel: ' + (err?.message || ''), 'error');
           setLoadingFile(false);
-          inputElement.value = '';
-        } catch(err) {
-          console.error('Lỗi nhập Excel:', err);
-          showToast(err?.message || 'Lỗi khi xử lý hoặc lưu dữ liệu Excel. Vui lòng kiểm tra kết nối và thử lại.', 'error');
-          setLoadingFile(false);
-          inputElement.value = '';
         }
       };
-      reader.readAsArrayBuffer(file);
-    } catch(err) {
-      console.error('Lỗi khởi tạo nhập Excel:', err);
-      showToast(err?.message || 'Không thể bắt đầu đọc file Excel.', 'error');
-      setLoadingFile(false);
-      inputElement.value = '';
-    }
+      reader.readAsBinaryString(file);
+    } catch (err) { setLoadingFile(false); }
   };
   const handleExport = async (type) => {
     if (!window.XLSX) return showToast("Hệ thống chưa sẵn sàng", "error");
@@ -3414,12 +3424,12 @@ function SettingsView({ db, storeId, showToast, storeConfig }) {
       let exportData = [];
       snap.docs.forEach(d => {
         const item = d.data();
-        if (type === 'products') exportData.push({ 'Tên hàng': item.name, 'Nhóm hàng': item.category || '', 'Giá bán': item.price, 'Giá vốn': item.cost, 'Tồn kho': item.stock });
-        if (type === 'customers') exportData.push({ 'Tên khách hàng': item.name, 'Điện thoại': item.phone, 'Nợ cần thu hiện tại': item.totalDebt });
-        if (type === 'suppliers') exportData.push({ 'Tên nhà cung cấp': item.name, 'Điện thoại': item.phone, 'Nợ cần trả hiện tại': item.totalDebt });
+        if (type === 'products') exportData.push({ 'Mã hàng': item.code || '', 'Tên hàng': item.name || '', 'Giá bán': Number(item.price) || 0, 'Giá vốn': Number(item.cost) || 0, 'Tồn kho': Number(item.stock) || 0 });
+        if (type === 'customers') exportData.push({ 'Mã khách hàng': item.code || '', 'Tên khách hàng': item.name || '', 'Tổng nợ': Number(item.totalDebt) || 0, 'Địa chỉ': item.address || '', 'Điện thoại': item.phone || '' });
+        if (type === 'suppliers') exportData.push({ 'Mã nhà cung cấp': item.code || '', 'Tên nhà cung cấp': item.name || '', 'Tổng nợ': Number(item.totalDebt) || 0, 'Địa chỉ': item.address || '', 'Điện thoại': item.phone || '' });
         if (type === 'expenses') exportData.push({ 'Ngày': formatDate(item.date), 'Nội dung': item.note, 'Số tiền': item.amount });
-        if (type === 'orders') exportData.push({ 'Mã hóa đơn': item.invoiceCode || '', 'Ngày giờ': item.date || '', 'Mã khách hàng': item.customerId || '', 'Khách hàng': item.customerName || 'Khách lẻ', 'Mã nhân viên': item.sellerUid || '', 'Nhân viên': item.sellerName || '', 'Trạng thái': item.status || 'PAID', 'Ghi chú': item.note || '', 'Tổng tiền': Number(item.total) || 0, 'Tổng giá vốn': Number(item.totalCost) || 0, 'Chi tiết hàng hóa (JSON)': JSON.stringify(item.items || []) });
-        if (type === 'imports') (item.items || []).forEach(it => exportData.push({ 'Mã phiếu nhập': item.receiptCode || item.invoiceCode || '', 'Thời gian': item.date || '', 'Tên nhà cung cấp': item.supplierName || '', 'Tên hàng': it.name || '', 'Số lượng': Number(it.qty ?? it.quantity) || 0, 'Giá nhập': Number(it.importCost) || 0, 'Thành tiền': (Number(it.qty ?? it.quantity) || 0) * (Number(it.importCost) || 0), 'Trạng thái': item.status || 'PAID' }));
+        if (type === 'orders') (item.items || []).forEach(it => exportData.push({ 'Mã hóa đơn': item.invoiceCode || '', 'Thời gian': item.date || '', 'Mã khách hàng': item.customerId || '', 'Tên khách hàng': item.customerName || 'Khách lẻ', 'Người bán': item.sellerName || '', 'Tổng tiền hàng': Number(item.total) || 0, 'Khách đã trả': Number(item.paidAmount) || 0, 'Nhóm hàng': it.category || '', 'Tên hàng': it.name || '', 'ĐVT': it.unit || '', 'Số lượng': Number(it.quantity ?? it.qty) || 0, 'Đơn giá': Number(it.price) || 0, 'Giá bán': Number(it.salePrice ?? it.price) || 0, 'Thành tiền': Number(it.lineTotal) || (Number(it.quantity ?? it.qty) || 0) * (Number(it.salePrice ?? it.price) || 0) }));
+        if (type === 'imports') (item.items || []).forEach(it => exportData.push({ 'Thời gian': item.date || '', 'Mã nhà cung cấp': item.supplierCode || '', 'Tên nhà cung cấp': item.supplierName || '', 'Điện thoại': item.supplierPhone || '', 'Người nhập': item.createdByName || '', 'Tổng tiền hàng': Number(item.total) || 0, 'Cần trả NCC': Number(item.payable) || 0, 'Ghi chú': item.note || '', 'Tổng số lượng': Number(item.totalQty) || 0, 'Tổng số mặt hàng': Number(item.totalItems) || (item.items || []).length, 'Mã hàng': it.code || '', 'Tên hàng': it.name || '', 'ĐVT': it.unit || '', 'Đơn giá': Number(it.price) || 0, 'Giá nhập': Number(it.importCost) || 0, 'Thành tiền': Number(it.lineTotal) || (Number(it.qty ?? it.quantity) || 0) * (Number(it.importCost) || 0), 'Số lượng': Number(it.qty ?? it.quantity) || 0 }));
       });
       const ws = window.XLSX.utils.json_to_sheet(exportData); const wb = window.XLSX.utils.book_new();
       window.XLSX.utils.book_append_sheet(wb, ws, "Data"); window.XLSX.writeFile(wb, "Xuat_Du_Lieu_" + type + ".xlsx");
@@ -3428,11 +3438,11 @@ function SettingsView({ db, storeId, showToast, storeConfig }) {
   };
 
   const menuItems = [
-    { id: 'customers', label: 'Khách hàng (Nợ phải thu)' }, 
-    { id: 'suppliers', label: 'Nhà cung cấp (Nợ phải trả)' }, 
+    { id: 'customers', label: 'Khách hàng' }, 
+    { id: 'suppliers', label: 'Nhà cung cấp' }, 
     { id: 'products', label: 'Sản phẩm' }, 
-    { id: 'orders', label: 'Hóa đơn (Bán hàng)' },
-    { id: 'imports', label: 'Nhập hàng (Excel KiotViet)' },
+    { id: 'orders', label: 'Hóa đơn' },
+    { id: 'imports', label: 'Nhập hàng' },
     { id: 'expenses', label: 'Lịch sử Chi phí' }
   ];
 
@@ -3465,16 +3475,26 @@ function SettingsView({ db, storeId, showToast, storeConfig }) {
       await reauthenticateWithCredential(currentUser, credential);
 
       const collectionsToDelete = deleteTarget === 'all'
-        ? ['products', 'orders', 'imports', 'customers', 'suppliers', 'expenses']
+        ? ['products', 'orders', 'imports', 'customers', 'suppliers', 'expenses', 'warrantyRequests']
         : [deleteTarget];
 
-      for (const collectionName of collectionsToDelete) {
-        const snapshot = await getDocs(collection(db, 'stores', storeId, collectionName));
-        const docs = snapshot.docs;
-        for (let i = 0; i < docs.length; i += 400) {
+      // Delete in small pages instead of loading an entire collection into memory.
+      // Re-query the first page after each batch so large stores don't stall the UI.
+      let totalDeleted = 0;
+      for (let collectionIndex = 0; collectionIndex < collectionsToDelete.length; collectionIndex++) {
+        const collectionName = collectionsToDelete[collectionIndex];
+        setDeleteProgress(`Đang xóa nhóm ${collectionIndex + 1}/${collectionsToDelete.length}: ${collectionName} (đã xóa ${totalDeleted} bản ghi)`);
+        const collectionRef = collection(db, 'stores', storeId, collectionName);
+        while (true) {
+          const snapshot = await getDocs(query(collectionRef, limit(300)));
+          if (snapshot.empty) break;
           const batch = writeBatch(db);
-          docs.slice(i, i + 400).forEach((item) => batch.delete(item.ref));
+          snapshot.docs.forEach((item) => batch.delete(item.ref));
           await batch.commit();
+          totalDeleted += snapshot.size;
+          setDeleteProgress(`Đang xóa nhóm ${collectionIndex + 1}/${collectionsToDelete.length}: ${collectionName} (đã xóa ${totalDeleted} bản ghi)`);
+          // Yield to the browser between batches so the page can repaint.
+          await new Promise(resolve => setTimeout(resolve, 0));
         }
       }
       const deletedLabel = deleteTarget === 'all' ? 'toàn bộ dữ liệu' : ({ orders: 'đơn hàng', customers: 'khách hàng', suppliers: 'nhà cung cấp' }[deleteTarget] || deleteTarget);
@@ -3482,6 +3502,7 @@ function SettingsView({ db, storeId, showToast, storeConfig }) {
       setDeleteTarget(null);
       setDeletePassword('');
       setDeletePasswordConfirm('');
+      setDeleteProgress('');
     } catch (err) {
       console.error('Delete data failed:', err);
       if (err?.code === 'auth/invalid-credential' || err?.code === 'auth/wrong-password' || err?.code === 'auth/invalid-login-credentials') {
@@ -3493,6 +3514,7 @@ function SettingsView({ db, storeId, showToast, storeConfig }) {
       }
     } finally {
       setDeletingData(false);
+      setDeleteProgress('');
     }
   };
 
@@ -3734,6 +3756,7 @@ function SettingsView({ db, storeId, showToast, storeConfig }) {
                     <input type="password" autoComplete="current-password" value={deletePasswordConfirm} onChange={e => setDeletePasswordConfirm(e.target.value)} required className="w-full border border-gray-300 rounded-xl p-3 outline-none focus:ring-2 focus:ring-blue-500" placeholder="Nhập lại mật khẩu" />
                   </div>
                   <p className="text-xs text-gray-500">Mật khẩu sẽ được xác thực với Firebase Authentication trước khi xóa. Mật khẩu không được lưu vào cơ sở dữ liệu.</p>
+                  {deletingData && <div className="rounded-xl border border-blue-200 bg-blue-50 p-3 text-sm text-blue-800" role="status"><div className="font-bold">Đang xử lý, vui lòng không đóng trang...</div><div className="mt-1">{deleteProgress || 'Đang xác thực và chuẩn bị xóa dữ liệu.'}</div></div>}
                   <div className="flex gap-3 pt-1">
                     <button type="button" disabled={deletingData} onClick={() => setDeleteTarget(null)} className="flex-1 border border-gray-300 text-gray-700 font-bold py-3 rounded-xl hover:bg-gray-50 disabled:opacity-50">Hủy</button>
                     <button type="submit" disabled={deletingData} className="flex-1 bg-blue-600 hover:bg-blue-700 text-white font-bold py-3 rounded-xl disabled:opacity-50">{deletingData ? 'Đang xóa...' : 'Xác nhận xóa'}</button>
