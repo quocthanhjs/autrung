@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useMemo } from 'react';
-import { LayoutDashboard, ShoppingCart, Package, Users, Truck, Plus, Edit, Trash2, Check, X, Image as ImageIcon, ShoppingBag, TrendingUp, AlertCircle, ArrowDownToLine, Phone, DollarSign, CheckCircle2, Printer, FileText, CreditCard, Lock, LogOut, ShieldAlert, User as UserIcon, Database, UserCog, KeyRound, MonitorSmartphone, Mail, Download, Upload, ArrowUpDown, Search, Eye, EyeOff, Bell, Award, BarChart3, Receipt, ChevronDown, ChevronUp, Image, Store, Sliders, HardDrive, ChevronLeft, ChevronRight } from 'lucide-react';
+import { LayoutDashboard, ShoppingCart, Package, Users, Truck, Plus, Edit, Trash2, Check, X, Image as ImageIcon, ShoppingBag, TrendingUp, AlertCircle, ArrowDownToLine, Phone, DollarSign, CheckCircle2, Printer, FileText, CreditCard, Lock, LogOut, ShieldAlert, User as UserIcon, Database, UserCog, KeyRound, MonitorSmartphone, Mail, Download, Upload, ArrowUpDown, Search, Eye, EyeOff, Bell, Award, BarChart3, Receipt, ChevronDown, ChevronUp, Image, Store, Sliders, HardDrive, ChevronLeft, ChevronRight, Menu } from 'lucide-react';
 import { initializeApp } from 'firebase/app';
 import { getAuth, signInWithEmailAndPassword, signOut, onAuthStateChanged, sendPasswordResetEmail, EmailAuthProvider, reauthenticateWithCredential } from 'firebase/auth';
 import { getFirestore, doc, setDoc, getDoc, getDocs, addDoc, updateDoc, deleteDoc, onSnapshot, collection, writeBatch, query, orderBy, where, limit } from 'firebase/firestore';
@@ -360,6 +360,8 @@ export default function App() {
   const [user, setUser] = useState(null);
   const [userData, setUserData] = useState({ role: null, name: '', perms: {} });
   const [activeTab, setActiveTab] = useState('pos');
+  const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
+  const [debtPaymentReports, setDebtPaymentReports] = useState([]);
   const [navigationTarget, setNavigationTarget] = useState(null);
   useEffect(() => { const handlePopupNavigate = (event) => { const tab = event?.detail?.tab; if (['products','customers','suppliers','warranty','sales_history','imports'].includes(tab)) { setNavigationTarget({ tab, id: event?.detail?.entity?.id || event?.detail?.recordId || '', name: event?.detail?.entity?.name || event?.detail?.recordName || '', nonce: Date.now() }); setActiveTab(tab); } }; const handleBrowserBack = (event) => { const nav = event.state?.appPopupNavigation; if (nav?.tab) { const detail = { tab: nav.tab, entity: nav.entity || null, recordId: nav.entity?.id || '', recordName: nav.entity?.name || '' }; window.dispatchEvent(new CustomEvent('app:navigate-tab', { detail })); } else { window.dispatchEvent(new CustomEvent('app:close-popups')); } }; window.addEventListener('app:navigate-tab', handlePopupNavigate); window.addEventListener('popstate', handleBrowserBack); return () => { window.removeEventListener('app:navigate-tab', handlePopupNavigate); window.removeEventListener('popstate', handleBrowserBack); }; }, []);
   const [storeConfig, setStoreConfig] = useState({
@@ -423,8 +425,9 @@ export default function App() {
     const unsubSuppliers = fetchCol('suppliers', setSuppliers);
     const unsubExpenses = fetchCol('expenses', setExpenses);
     const unsubWarranty = fetchCol('warrantyRequests', setWarrantyRequests);
+    const unsubDebtPaymentReports = fetchCol('debtPaymentReports', setDebtPaymentReports);
 
-    return () => { unsubStore(); unsubProducts(); unsubOrders(); unsubImports(); unsubCustomers(); unsubSuppliers(); unsubExpenses(); unsubWarranty(); };
+    return () => { unsubStore(); unsubProducts(); unsubOrders(); unsubImports(); unsubCustomers(); unsubSuppliers(); unsubExpenses(); unsubWarranty(); unsubDebtPaymentReports(); };
   }, [user]);
 
   const [toast, setToast] = useState(null);
@@ -456,26 +459,26 @@ export default function App() {
   return (
     <div className="min-h-screen bg-[#f3f5f7] flex flex-col font-sans text-sm md:text-base selection:bg-blue-200">
       <header className="h-[58px] bg-white border-b border-gray-200 flex items-center justify-between px-4 md:px-6 shrink-0 z-30 shadow-sm">
-        <div className="flex items-center gap-3 min-w-0">
-          {storeConfig.logo ? <img src={storeConfig.logo} alt="Logo công ty" className="w-10 h-10 object-contain rounded bg-white" /> : <div className="bg-blue-600 text-white p-2 rounded-lg"><ShoppingBag size={25} /></div>}
-          <div className="min-w-0"><h1 className="text-lg md:text-xl font-extrabold tracking-tight text-[#1769c2] truncate">{storeConfig.name || 'QUẢN LÝ BÁN HÀNG'}</h1><p className="hidden sm:block text-[10px] uppercase tracking-[0.18em] text-gray-400 font-bold">Hệ thống quản lý cửa hàng</p></div>
+        <div className="flex items-center gap-2 md:gap-3 min-w-0">
+          <button type="button" aria-label="Mở menu chính" title="Menu" onClick={() => setMobileMenuOpen(v => !v)} className="md:hidden p-2 rounded-lg border border-gray-200 text-gray-700 hover:bg-gray-100 shrink-0"><Menu size={22}/></button>
+          {storeConfig.logo ? <img src={storeConfig.logo} alt="Logo công ty" className="w-8 h-8 md:w-10 md:h-10 object-contain rounded bg-white" /> : <div className="bg-blue-600 text-white p-1.5 md:p-2 rounded-lg"><ShoppingBag size={21} /></div>}
+          <div className="min-w-0"><h1 className="text-base md:text-xl font-extrabold tracking-tight text-[#1769c2] truncate">{storeConfig.name || 'QUẢN LÝ BÁN HÀNG'}</h1><p className="hidden sm:block text-[10px] uppercase tracking-[0.18em] text-gray-400 font-bold">Hệ thống quản lý cửa hàng</p></div>
         </div>
         <div className="flex items-center gap-2 md:gap-4">
           <div className="hidden md:flex items-center gap-2 text-gray-500 text-xs"><span className="inline-flex items-center justify-center w-8 h-8 rounded-full bg-gray-100"><Users size={16}/></span><span className="max-w-36 truncate font-semibold">{userData.name}</span><span className="text-gray-300">|</span><span>{userData.role === 'admin' ? 'Quản trị viên' : 'Nhân viên'}</span></div>
           <button title="Đăng xuất" onClick={() => { signOut(auth); setUser(null); }} className="p-2 rounded-full text-gray-500 hover:text-blue-600 hover:bg-blue-50 transition-colors"><LogOut size={19}/></button>
         </div>
       </header>
-      <nav className="bg-white text-gray-700 px-2 md:px-4 flex items-stretch gap-0.5 overflow-x-auto scrollbar-hide shadow-sm shrink-0">
+      <nav className={`${mobileMenuOpen ? 'flex' : 'hidden'} md:flex bg-white text-gray-700 px-2 md:px-3 py-2 md:py-1 items-stretch md:items-center flex-col md:flex-row gap-1 md:gap-1 overflow-x-visible md:overflow-x-auto scrollbar-hide shadow-sm shrink-0`}>
         {visibleTabs.map(tab => {
-          const activeClass = activeTab === tab.id ? 'bg-blue-800 text-white shadow-lg ring-2 ring-blue-300 -translate-y-0.5' : 'bg-blue-600 text-white hover:bg-blue-700 shadow-md';
-          return <button key={tab.id} onClick={() => setActiveTab(tab.id)} className={'flex items-center justify-center gap-2 px-3 md:px-4 py-3 min-h-[46px] rounded-xl whitespace-nowrap font-semibold text-xs md:text-sm transition-all duration-150 border border-white/40 ' + activeClass}><tab.icon size={17}/><span>{tab.label}</span></button>;
+          const activeClass = activeTab === tab.id ? 'bg-blue-800 text-white shadow ring-1 ring-blue-300' : 'bg-blue-600 text-white hover:bg-blue-700 shadow-sm';
+          return <button key={tab.id} onClick={() => { setActiveTab(tab.id); setMobileMenuOpen(false); }} className={'flex items-center justify-start md:justify-center gap-2 px-2.5 md:px-3 py-2 md:py-2 min-h-[38px] rounded-lg whitespace-nowrap font-semibold text-xs transition-all duration-150 border border-white/40 ' + activeClass}><tab.icon size={15}/><span>{tab.label}</span></button>;
         })}
-        <div className="flex-1 min-w-2" />
-        <button onClick={() => setActiveTab('pos')} className="my-1.5 mr-1 flex items-center gap-2 px-4 py-2 rounded-xl bg-yellow-400 text-yellow-950 hover:bg-yellow-300 font-extrabold whitespace-nowrap shadow-lg border border-yellow-200 ring-1 ring-yellow-500/40"><ShoppingCart size={17}/> Bán hàng</button>
+        <button onClick={() => { setActiveTab('pos'); setMobileMenuOpen(false); }} className="md:ml-auto flex items-center justify-start md:justify-center gap-2 px-3 py-2 rounded-lg bg-yellow-400 text-yellow-950 hover:bg-yellow-300 font-extrabold whitespace-nowrap shadow-sm border border-yellow-200 text-xs"><ShoppingCart size={15}/> Bán hàng</button>
       </nav>
       <main className="flex-1 min-w-0 overflow-auto flex flex-col min-h-[calc(100vh-104px)] relative">
         {toast && <div className={"fixed top-4 right-4 z-50 px-6 py-3.5 rounded-xl shadow-xl flex items-center gap-2 text-white animate-in slide-in-from-top-2 " + (toast.type === 'success' ? 'bg-emerald-600' : 'bg-blue-600')}><div className="bg-white/20 p-1 rounded-full">{toast.type === 'success' ? <Check size={16} /> : <AlertCircle size={16} />}</div><span className="font-bold text-sm tracking-wide">{toast.msg}</span></div>}
-        {activeTab === 'reports' && <ReportsView orders={orders} imports={imports} expenses={expenses} />}
+        {activeTab === 'reports' && <ReportsView orders={orders} imports={imports} expenses={expenses} debtPaymentReports={debtPaymentReports} />}
         {activeTab === 'dashboard' && <DashboardView orders={orders} imports={imports} expenses={expenses} customers={customers} suppliers={suppliers} products={products} warrantyRequests={warrantyRequests} showToast={showToast} userData={userData} />}
         {activeTab === 'pos' && <POSView products={products} orders={orders} customers={customers} db={db} storeId={storeId} user={user} storeConfig={storeConfig} showToast={showToast} userData={userData} />}
         {activeTab === 'sales_history' && <SalesHistoryView orders={orders} imports={imports} products={products} customers={customers} storeConfig={storeConfig} db={db} storeId={storeId} user={user} userData={userData} showToast={showToast} />}
@@ -1451,6 +1454,7 @@ function StaffManagerView({ db, showToast }) {
       const paymentRef = doc(db, 'stores', storeId, type, detailTarget.id, 'debtPayments', payment.id);
       await updateDoc(contactRef, { totalDebt: Math.max(0, Number(detailTarget.totalDebt || 0) + Number(payment.amount || 0)) });
       await deleteDoc(paymentRef);
+      await deleteDoc(doc(db, 'stores', storeId, 'debtPaymentReports', `${type}_${detailTarget.id}_${payment.id}`)).catch(() => {});
       setDetailTarget(prev => prev ? { ...prev, totalDebt: Math.max(0, Number(prev.totalDebt || 0) + Number(payment.amount || 0)) } : prev);
       if (editingDebtPayment?.id === payment.id) setEditingDebtPayment(null);
       showToast('Đã hoàn tác giao dịch công nợ');
@@ -1620,11 +1624,15 @@ function ContactManager({ type, data, orders, navigationTarget, storeConfig, db,
     try {
       const contactRef = doc(db, 'stores', storeId, type, detailTarget.id);
       const paymentPayload = { amount, method: debtPaymentMethod, mode: debtPaymentMode, date: editingDebtPayment?.date || new Date().toISOString(), updatedAt: new Date().toISOString(), contactId: detailTarget.id, contactName: detailTarget.name, contactType: type };
+      let paymentId = editingDebtPayment?.id || '';
       if (editingDebtPayment?.id) {
         await updateDoc(doc(db, 'stores', storeId, type, detailTarget.id, 'debtPayments', editingDebtPayment.id), paymentPayload);
       } else {
-        await addDoc(collection(db, 'stores', storeId, type, detailTarget.id, 'debtPayments'), { ...paymentPayload, createdAt: new Date().toISOString() });
+        const paymentRef = await addDoc(collection(db, 'stores', storeId, type, detailTarget.id, 'debtPayments'), { ...paymentPayload, createdAt: new Date().toISOString() });
+        paymentId = paymentRef.id;
       }
+      const reportRef = doc(db, 'stores', storeId, 'debtPaymentReports', `${type}_${detailTarget.id}_${paymentId}`);
+      await setDoc(reportRef, { ...paymentPayload, id: `${type}_${detailTarget.id}_${paymentId}`, sourcePaymentId: paymentId, source: 'contactDebt', direction: type === 'customers' ? 'Khách hàng trả nợ' : 'Trả nợ nhà cung cấp', date: paymentPayload.date || new Date().toISOString() }, { merge: true });
       const remainingDebt = Math.max(0, debtBeforeEdit - amount);
       await updateDoc(contactRef, { totalDebt: remainingDebt });
       setDetailTarget(prev => prev ? { ...prev, totalDebt: remainingDebt } : prev);
@@ -1662,6 +1670,7 @@ function ContactManager({ type, data, orders, navigationTarget, storeConfig, db,
         totalDebt: Math.max(0, (Number(detailTarget.totalDebt) || 0) + delta)
       });
       await batch.commit();
+      if (nextRemaining < oldRemaining) { const paidAmount = oldRemaining - nextRemaining; await addDoc(collection(db, 'stores', storeId, 'debtPaymentReports'), { contactId: detailTarget.id, contactName: detailTarget.name, contactType: type, direction: isCus ? 'Khách hàng trả nợ' : 'Trả nợ nhà cung cấp', amount: paidAmount, date: new Date().toISOString(), method: 'transaction', source: 'transactionDebt', transactionId: ord.id, transactionCode: ord.invoiceCode || ord.receiptCode || ord.code || ord.id, createdAt: new Date().toISOString() }); }
       setDetailTarget(prev => prev ? { ...prev, totalDebt: Math.max(0, (Number(prev.totalDebt) || 0) + delta) } : prev);
       showToast(successMessage || 'Đã cập nhật công nợ');
     } catch (err) {
@@ -2639,7 +2648,7 @@ function WarrantyView({ products = [], customers = [], suppliers = [], warrantyR
     {printTarget && <div className="fixed inset-0 z-[100] bg-black/50 flex items-center justify-center p-4"><div className="bg-white rounded-2xl shadow-xl w-full max-w-md p-5 space-y-4"><h3 className="text-lg font-black">Chọn thẻ in phiếu bảo hành</h3><p className="text-sm text-gray-600">Mã phiếu: {printTarget.warrantyCode || printTarget.id}</p><div className="space-y-2 rounded-xl border bg-gray-50 p-3"><label className="flex items-center gap-2 text-sm font-semibold"><input type="checkbox" checked={showPrintSaleDate} onChange={e=>setShowPrintSaleDate(e.target.checked)}/> Hiển thị thời gian đã bán / đã mua</label><label className="flex items-center gap-2 text-sm font-semibold"><input type="checkbox" checked={showPrintWarrantyDuration} onChange={e=>setShowPrintWarrantyDuration(e.target.checked)}/> Hiển thị thời gian bảo hành</label><label className="flex items-center gap-2 text-sm font-semibold"><input type="checkbox" checked={showPrintLogo} onChange={e=>setShowPrintLogo(e.target.checked)}/> Hiển thị logo công ty</label></div><button onClick={()=>{printRequest(printTarget,'customer',{showDate:showPrintSaleDate,showDuration:showPrintWarrantyDuration,showLogo:showPrintLogo});setPrintTarget(null);}} className="w-full p-3 rounded-xl bg-purple-600 text-white font-bold">Thẻ khách hàng<span className="block text-xs font-normal">Chỉ hiện thông tin và ghi chú của khách hàng</span></button><button onClick={()=>{printRequest(printTarget,'location',{showDate:showPrintSaleDate,showDuration:showPrintWarrantyDuration,showLogo:showPrintLogo});setPrintTarget(null);}} className="w-full p-3 rounded-xl bg-blue-600 text-white font-bold">Thẻ nơi gửi bảo hành<span className="block text-xs font-normal">Ẩn thông tin khách hàng, chỉ hiện thông tin nơi gửi</span></button><button onClick={()=>setPrintTarget(null)} className="w-full p-2 rounded-xl border font-bold">Hủy</button></div></div>}
   </div>;
 }
-function ReportsView({ orders = [], imports = [], expenses = [] }) {
+function ReportsView({ orders = [], imports = [], expenses = [], debtPaymentReports = [] }) {
   const now = getVietnamDateParts(new Date());
   const todayKey = getVietnamDateKey(new Date());
   const [periodMode, setPeriodMode] = useState('day');
@@ -2670,7 +2679,23 @@ function ReportsView({ orders = [], imports = [], expenses = [] }) {
     const total = rows.reduce((sum, row)=>sum+row.amount,0);
     return <section key={key} className="bg-white rounded-2xl border shadow-sm p-4 space-y-3"><div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2"><div><h3 className="text-lg font-bold text-gray-800">{title}</h3><p className="text-sm text-gray-500">Số tiền: <strong className="text-blue-600">{money(total)}</strong> · {rows.length} dòng</p></div><div className="flex flex-wrap items-center gap-2"><label className="text-sm">Hiển thị <select className="border rounded-lg p-2" value={rowsByReport[key]} onChange={e=>setRowsByReport(prev=>({...prev,[key]:e.target.value}))}><option value="10">10</option><option value="20">20</option><option value="50">50</option><option value="all">Tất cả</option></select></label><button onClick={()=>printReport(title, rows, total)} className="px-3 py-2 rounded-lg bg-blue-600 text-white font-bold flex items-center gap-2"><Printer size={16}/> In báo cáo</button></div></div><div className="overflow-x-auto"><table className="w-full text-sm min-w-[600px]"><thead className="bg-blue-50"><tr><th className="p-2 text-left">STT</th><th className="p-2 text-left">Ngày</th><th className="p-2 text-left">Khách hàng/Nội dung</th><th className="p-2 text-left">Chi tiết</th><th className="p-2 text-right">Số tiền</th></tr></thead><tbody>{shown.map((r,i)=><tr key={r.id||`${key}-${i}`} className="border-t"><td className="p-2">{i+1}</td><td className="p-2 whitespace-nowrap">{r.date?formatDate(r.date):'—'}</td><td className="p-2">{r.name}</td><td className="p-2">{r.detail||'—'}</td><td className="p-2 text-right font-semibold">{money(r.amount)}</td></tr>)}{shown.length===0&&<tr><td colSpan="5" className="p-5 text-center text-gray-400">Không có dữ liệu trong khoảng thời gian đã chọn.</td></tr>}</tbody></table></div></section>;
   };
-  return <div className="p-4 md:p-6 space-y-4 overflow-auto"><div><h2 className="text-2xl font-bold text-gray-800 flex items-center gap-2"><FileText className="text-blue-600"/> Báo cáo</h2><p className="text-sm text-gray-500">Báo cáo bán hàng, nhập hàng và chi phí theo khoảng thời gian.</p></div><section className="bg-white rounded-2xl border shadow-sm p-4"><div className="flex flex-wrap items-end gap-3"><label className="text-sm font-semibold">Xem theo<select value={periodMode} onChange={e=>setPeriodMode(e.target.value)} className="block mt-1 border rounded-lg p-2"><option value="day">Ngày</option><option value="month">Tháng</option><option value="year">Năm</option></select></label>{periodMode==='day'&&<label className="text-sm font-semibold">Ngày<input type="date" value={selectedDate} onChange={e=>setSelectedDate(e.target.value)} className="block mt-1 border rounded-lg p-2"/></label>}{periodMode==='month'&&<label className="text-sm font-semibold">Tháng<input type="month" value={selectedMonth} onChange={e=>setSelectedMonth(e.target.value)} className="block mt-1 border rounded-lg p-2"/></label>}{periodMode==='year'&&<label className="text-sm font-semibold">Năm<select value={selectedYear} onChange={e=>setSelectedYear(e.target.value)} className="block mt-1 border rounded-lg p-2">{Array.from({length:12},(_,i)=>now.year-i).map(y=><option key={y} value={String(y)}>{y}</option>)}</select></label>}</div></section>{renderReport('sales','Báo cáo bán hàng',salesRows)}{renderReport('imports','Báo cáo nhập hàng',importRows)}{renderReport('expenses','Báo cáo chi phí',expenseRows)}</div>;
+  return <div className="p-4 md:p-6 space-y-4 overflow-auto"><div><h2 className="text-2xl font-bold text-gray-800 flex items-center gap-2"><FileText className="text-blue-600"/> Báo cáo</h2><p className="text-sm text-gray-500">Báo cáo bán hàng, nhập hàng và chi phí theo khoảng thời gian.</p></div><section className="bg-white rounded-2xl border shadow-sm p-4"><div className="flex flex-wrap items-end gap-3"><label className="text-sm font-semibold">Xem theo<select value={periodMode} onChange={e=>setPeriodMode(e.target.value)} className="block mt-1 border rounded-lg p-2"><option value="day">Ngày</option><option value="month">Tháng</option><option value="year">Năm</option></select></label>{periodMode==='day'&&<label className="text-sm font-semibold">Ngày<input type="date" value={selectedDate} onChange={e=>setSelectedDate(e.target.value)} className="block mt-1 border rounded-lg p-2"/></label>}{periodMode==='month'&&<label className="text-sm font-semibold">Tháng<input type="month" value={selectedMonth} onChange={e=>setSelectedMonth(e.target.value)} className="block mt-1 border rounded-lg p-2"/></label>}{periodMode==='year'&&<label className="text-sm font-semibold">Năm<select value={selectedYear} onChange={e=>setSelectedYear(e.target.value)} className="block mt-1 border rounded-lg p-2">{Array.from({length:12},(_,i)=>now.year-i).map(y=><option key={y} value={String(y)}>{y}</option>)}</select></label>}</div></section>{renderReport('sales','Báo cáo bán hàng',salesRows)}{renderReport('imports','Báo cáo nhập hàng',importRows)}{renderReport('expenses','Báo cáo chi phí',expenseRows)}<DebtPaymentReportView payments={debtPaymentReports} /></div>;
+}
+
+function DebtPaymentReportView({ payments = [] }) {
+  const today = getVietnamDateKey(new Date());
+  const [fromDate, setFromDate] = useState(() => { const d = new Date(); d.setDate(d.getDate() - 6); return getVietnamDateKey(d); });
+  const [toDate, setToDate] = useState(today);
+  const [partyType, setPartyType] = useState('all');
+  const [rowsPerPage, setRowsPerPage] = useState('20');
+  const filtered = useMemo(() => (payments || []).filter(p => {
+    const key = p.date ? getVietnamDateKey(new Date(p.date)) : '';
+    const typeOk = partyType === 'all' || p.contactType === partyType;
+    return key && key >= fromDate && key <= toDate && typeOk;
+  }).sort((a,b) => new Date(b.date || 0) - new Date(a.date || 0)), [payments, fromDate, toDate, partyType]);
+  const total = filtered.reduce((sum,p) => sum + (Number(p.amount) || 0), 0);
+  const shown = rowsPerPage === 'all' ? filtered : filtered.slice(0, Number(rowsPerPage) || 20);
+  return <div className="p-3 md:p-5 space-y-4 overflow-auto"><div><h2 className="text-xl md:text-2xl font-bold text-gray-800 flex items-center gap-2"><CreditCard className="text-blue-600"/> Báo cáo thanh toán công nợ</h2><p className="text-sm text-gray-500 mt-1">Theo dõi khách hàng trả nợ và các khoản trả nhà cung cấp.</p></div><section className="bg-white border rounded-xl shadow-sm p-3 md:p-4"><div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3"><label className="text-xs font-bold text-gray-600">Từ ngày<input type="date" value={fromDate} onChange={e=>setFromDate(e.target.value)} className="mt-1 w-full border rounded-lg p-2 text-sm"/></label><label className="text-xs font-bold text-gray-600">Đến ngày<input type="date" value={toDate} onChange={e=>setToDate(e.target.value)} className="mt-1 w-full border rounded-lg p-2 text-sm"/></label><div className="flex items-end gap-2"><button type="button" onClick={()=>{const d=new Date();const day=(d.getDay()+6)%7;d.setDate(d.getDate()-day);setFromDate(getVietnamDateKey(d));const end=new Date(d);end.setDate(end.getDate()+6);setToDate(getVietnamDateKey(end));}} className="border rounded-lg px-3 py-2 text-xs font-bold hover:bg-gray-50">Tuần này</button><button type="button" onClick={()=>{const d=new Date();const day=(d.getDay()+6)%7;d.setDate(d.getDate()-day-7);setFromDate(getVietnamDateKey(d));const end=new Date(d);end.setDate(end.getDate()+6);setToDate(getVietnamDateKey(end));}} className="border rounded-lg px-3 py-2 text-xs font-bold hover:bg-gray-50">Tuần trước</button></div><label className="text-xs font-bold text-gray-600">Loại giao dịch<select value={partyType} onChange={e=>setPartyType(e.target.value)} className="mt-1 w-full border rounded-lg p-2 text-sm"><option value="all">Tất cả</option><option value="customers">Khách hàng trả nợ</option><option value="suppliers">Trả nợ nhà cung cấp</option></select></label><label className="text-xs font-bold text-gray-600">Số dòng<select value={rowsPerPage} onChange={e=>setRowsPerPage(e.target.value)} className="mt-1 w-full border rounded-lg p-2 text-sm"><option value="10">10</option><option value="20">20</option><option value="50">50</option><option value="all">Tất cả</option></select></label></div><div className="mt-4 rounded-lg bg-blue-50 p-3"><div className="text-xs text-blue-700 font-semibold">Tổng thanh toán trong khoảng ngày đã chọn</div><div className="text-xl md:text-2xl font-extrabold text-blue-800">{formatCurrency(total)}</div><div className="text-xs text-gray-500">{filtered.length} giao dịch · mặc định 7 ngày gần nhất</div></div></section><section className="bg-white border rounded-xl shadow-sm overflow-hidden"><div className="overflow-x-auto"><table className="w-full text-sm min-w-[760px]"><thead className="bg-gray-100 text-gray-600"><tr><th className="p-3 text-left">Ngày giờ</th><th className="p-3 text-left">Loại</th><th className="p-3 text-left">Khách hàng/Nhà cung cấp</th><th className="p-3 text-left">Mã giao dịch</th><th className="p-3 text-left">Phương thức</th><th className="p-3 text-right">Số tiền</th></tr></thead><tbody>{shown.map((p,i)=><tr key={p.id || `${p.contactId}-${i}`} className="border-t"><td className="p-3 whitespace-nowrap">{formatDate(p.date)}</td><td className="p-3">{p.direction || (p.contactType==='customers'?'Khách hàng trả nợ':'Trả nợ nhà cung cấp')}</td><td className="p-3">{p.contactName || '—'}</td><td className="p-3">{p.transactionCode || p.sourcePaymentId || '—'}</td><td className="p-3">{p.method==='transfer'?'Chuyển khoản':p.method==='cash'?'Tiền mặt':p.method==='transaction'?'Thanh toán trên giao dịch':'—'}</td><td className="p-3 text-right font-bold whitespace-nowrap">{formatCurrency(p.amount)}</td></tr>)}{shown.length===0&&<tr><td colSpan="6" className="p-8 text-center text-gray-400">Chưa có giao dịch thanh toán trong khoảng thời gian này.</td></tr>}</tbody></table></div></section></div>;
 }
 
 function ExpenseView({ expenses, db, storeId, showToast }) {
@@ -2922,8 +2947,8 @@ function ImportView({ products, imports = [], suppliers, db, storeId, user, user
       <div className="flex-1 p-4 md:p-6 flex flex-col overflow-hidden">
         <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center mb-4 gap-3 shrink-0">
           <div className="flex items-center gap-2"><h2 className="text-xl font-bold text-gray-800">Chọn sản phẩm nhập</h2><button type="button" onClick={() => { setShowAddProdModal(v => !v); setNewProdForm(v => ({ ...v, name: v.name || searchTerm })); }} className="bg-blue-600 hover:bg-blue-700 text-white px-3 py-1.5 rounded-lg text-xs font-bold flex items-center gap-1 shadow"><Plus size={14}/> {showAddProdModal ? 'Đóng thêm mới' : 'Sản phẩm mới'}</button></div>
-          <div className="relative w-full sm:w-64"><Search size={16} className="absolute left-3 top-3 text-gray-400"/><input placeholder="Tìm kiếm sản phẩm nhập..." value={searchTerm} onFocus={()=>setShowProductSuggestions(true)} onChange={e=>{setSearchTerm(e.target.value); setImportCurrentPage(1); setShowProductSuggestions(true);}} className="w-full pl-9 pr-3 py-2 border rounded-lg bg-white outline-none text-sm"/>
-            {showProductSuggestions && <div className="relative z-30 mt-1 max-h-56 overflow-auto bg-white border rounded-lg shadow-lg">{filteredProducts.slice(0,8).map(p=><button type="button" key={p.id} onClick={()=>{addProductToCart(p);setSearchTerm('');setShowProductSuggestions(false);}} className="block w-full text-left px-3 py-2 text-sm hover:bg-blue-50"><span className="font-semibold">{p.name}</span><span className="block text-xs text-gray-500">{p.category || 'Chưa phân nhóm'} · Tồn: {p.stock}</span></button>)}{filteredProducts.length===0 && <div className="px-3 py-2 text-sm text-gray-500">Không tìm thấy sản phẩm phù hợp.</div>}<button type="button" onClick={()=>{setShowAddProdModal(true);setShowProductSuggestions(false);setNewProdForm(v=>({...v,name:searchTerm}));}} className="w-full text-left px-3 py-2 text-sm text-blue-700 font-semibold border-t"><Plus size={14} className="inline mr-1"/>Thêm sản phẩm mới</button></div>}
+          <div className="relative z-40 w-full sm:w-64"><Search size={16} className="absolute left-3 top-3 text-gray-400"/><input placeholder="Tìm kiếm sản phẩm nhập..." value={searchTerm} onFocus={()=>setShowProductSuggestions(true)} onChange={e=>{setSearchTerm(e.target.value); setImportCurrentPage(1); setShowProductSuggestions(true);}} className="w-full pl-9 pr-3 py-2 border rounded-lg bg-white outline-none text-sm"/>
+            {showProductSuggestions && <div className="absolute left-0 right-0 top-full mt-1 z-[100] max-h-64 overflow-auto overscroll-contain bg-white border rounded-lg shadow-xl">{filteredProducts.slice(0,8).map(p=><button type="button" key={p.id} onMouseDown={e=>e.preventDefault()} onClick={()=>{addProductToCart(p);setSearchTerm('');setShowProductSuggestions(false);}} className="block w-full text-left px-3 py-2.5 text-sm hover:bg-blue-50 touch-manipulation"><span className="font-semibold">{p.name}</span><span className="block text-xs text-gray-500">{p.category || 'Chưa phân nhóm'} · Tồn: {p.stock}</span></button>)}{filteredProducts.length===0 && <div className="px-3 py-2 text-sm text-gray-500">Không tìm thấy sản phẩm phù hợp.</div>}<button type="button" onClick={()=>{setShowAddProdModal(true);setShowProductSuggestions(false);setNewProdForm(v=>({...v,name:searchTerm}));}} className="w-full text-left px-3 py-2 text-sm text-blue-700 font-semibold border-t"><Plus size={14} className="inline mr-1"/>Thêm sản phẩm mới</button></div>}
           </div>
         </div>
 
@@ -3522,7 +3547,7 @@ function SettingsView({ db, storeId, showToast, storeConfig }) {
           await new Promise(resolve => setTimeout(resolve, 0));
         }
       }
-      const deletedLabel = deleteTarget === 'all' ? 'toàn bộ dữ liệu' : ({ orders: 'đơn hàng', customers: 'khách hàng', suppliers: 'nhà cung cấp' }[deleteTarget] || deleteTarget);
+      const deletedLabel = deleteTarget === 'all' ? 'toàn bộ dữ liệu' : ({ products: 'toàn bộ sản phẩm', orders: 'hóa đơn', imports: 'lịch sử nhập hàng', expenses: 'lịch sử chi phí', customers: 'khách hàng', suppliers: 'nhà cung cấp' }[deleteTarget] || deleteTarget);
       showToast(`Đã xóa ${deletedLabel} thành công.`);
       setDeleteTarget(null);
       setDeletePassword('');
@@ -3738,8 +3763,11 @@ function SettingsView({ db, storeId, showToast, storeConfig }) {
                 <h3 className="text-lg font-black text-blue-800 mb-2 flex items-center gap-2"><ShieldAlert size={20}/> KHU VỰC NGUY HIỂM</h3>
                 <p className="text-sm text-blue-700 mb-5 font-medium max-w-lg">Mọi thao tác xóa đều yêu cầu nhập mật khẩu tài khoản đang đăng nhập và xác nhận lại mật khẩu. Dữ liệu đã xóa không thể khôi phục.</p>
                 <button type="button" onClick={() => openDeleteConfirmation('all')} className="bg-blue-600 hover:bg-blue-700 text-white font-bold py-2.5 px-6 rounded-xl shadow-md transition-colors">Xóa sạch toàn bộ dữ liệu</button>
-                <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 mt-4">
-                  <button type="button" onClick={() => openDeleteConfirmation('orders')} className="bg-white border border-blue-300 text-blue-700 hover:bg-blue-100 font-bold py-2.5 px-4 rounded-xl transition-colors">Xóa đơn hàng</button>
+                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3 mt-4">
+                  <button type="button" onClick={() => openDeleteConfirmation('products')} className="bg-white border border-blue-300 text-blue-700 hover:bg-blue-100 font-bold py-2.5 px-4 rounded-xl transition-colors">Xóa toàn bộ sản phẩm</button>
+                  <button type="button" onClick={() => openDeleteConfirmation('orders')} className="bg-white border border-blue-300 text-blue-700 hover:bg-blue-100 font-bold py-2.5 px-4 rounded-xl transition-colors">Xóa hóa đơn</button>
+                  <button type="button" onClick={() => openDeleteConfirmation('imports')} className="bg-white border border-blue-300 text-blue-700 hover:bg-blue-100 font-bold py-2.5 px-4 rounded-xl transition-colors">Xóa lịch sử nhập hàng</button>
+                  <button type="button" onClick={() => openDeleteConfirmation('expenses')} className="bg-white border border-blue-300 text-blue-700 hover:bg-blue-100 font-bold py-2.5 px-4 rounded-xl transition-colors">Xóa lịch sử chi phí</button>
                   <button type="button" onClick={() => openDeleteConfirmation('customers')} className="bg-white border border-blue-300 text-blue-700 hover:bg-blue-100 font-bold py-2.5 px-4 rounded-xl transition-colors">Xóa khách hàng</button>
                   <button type="button" onClick={() => openDeleteConfirmation('suppliers')} className="bg-white border border-blue-300 text-blue-700 hover:bg-blue-100 font-bold py-2.5 px-4 rounded-xl transition-colors">Xóa nhà cung cấp</button>
                 </div>
@@ -3769,7 +3797,7 @@ function SettingsView({ db, storeId, showToast, storeConfig }) {
                     <div className="bg-blue-100 text-blue-600 p-3 rounded-xl"><ShieldAlert size={24}/></div>
                     <div className="flex-1">
                       <h3 id="delete-confirm-title" className="text-lg font-black text-gray-900">Xác nhận xóa dữ liệu</h3>
-                      <p className="text-sm text-gray-600 mt-1">Bạn đang chọn: <strong>{({ all: 'Xóa sạch toàn bộ dữ liệu', orders: 'Xóa toàn bộ đơn hàng', customers: 'Xóa toàn bộ khách hàng', suppliers: 'Xóa toàn bộ nhà cung cấp' })[deleteTarget]}</strong>. Thao tác này không thể hoàn tác.</p>
+                      <p className="text-sm text-gray-600 mt-1">Bạn đang chọn: <strong>{({ all: 'Xóa sạch toàn bộ dữ liệu', products: 'Xóa toàn bộ sản phẩm', orders: 'Xóa hóa đơn', imports: 'Xóa lịch sử nhập hàng', expenses: 'Xóa lịch sử chi phí', customers: 'Xóa toàn bộ khách hàng', suppliers: 'Xóa toàn bộ nhà cung cấp' })[deleteTarget]}</strong>. Thao tác này không thể hoàn tác.</p>
                     </div>
                   </div>
                   <div>
