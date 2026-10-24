@@ -482,7 +482,7 @@ export default function App() {
         {activeTab === 'dashboard' && <DashboardView orders={orders} imports={imports} expenses={expenses} customers={customers} suppliers={suppliers} products={products} warrantyRequests={warrantyRequests} showToast={showToast} userData={userData} />}
         {activeTab === 'pos' && <POSView products={products} orders={orders} customers={customers} db={db} storeId={storeId} user={user} storeConfig={storeConfig} showToast={showToast} userData={userData} />}
         {activeTab === 'sales_history' && <SalesHistoryView orders={orders} imports={imports} products={products} customers={customers} storeConfig={storeConfig} db={db} storeId={storeId} user={user} userData={userData} showToast={showToast} />}
-        {activeTab === 'imports' && <ImportView products={products} imports={imports} suppliers={suppliers} db={db} storeId={storeId} user={user} userData={userData} showToast={showToast} storeConfig={storeConfig} setActiveTab={setActiveTab} />}
+        {activeTab === 'imports' && <ImportView products={products} orders={orders} imports={imports} suppliers={suppliers} db={db} storeId={storeId} user={user} userData={userData} showToast={showToast} storeConfig={storeConfig} setActiveTab={setActiveTab} />}
         {activeTab === 'products' && <InventoryView products={products} orders={orders} imports={imports} warrantyRequests={warrantyRequests} customers={customers} suppliers={suppliers} navigationTarget={navigationTarget} storeConfig={storeConfig} db={db} storeId={storeId} showToast={showToast} />}
         {activeTab === 'warranty' && <WarrantyView products={products} customers={customers} suppliers={suppliers} warrantyRequests={warrantyRequests} storeConfig={storeConfig} db={db} storeId={storeId} showToast={showToast} />}
         {activeTab === 'customers' && <ContactManager type="customers" data={customers} orders={orders} navigationTarget={navigationTarget} storeConfig={storeConfig} db={db} storeId={storeId} showToast={showToast} />}
@@ -2779,7 +2779,7 @@ function ExpenseView({ expenses, db, storeId, showToast }) {
   );
 }
 
-function ImportView({ products, imports = [], suppliers, db, storeId, user, userData, showToast, storeConfig, setActiveTab }) {
+function ImportView({ products, orders = [], imports = [], suppliers, db, storeId, user, userData, showToast, storeConfig, setActiveTab }) {
   const [activeImportTab, setActiveImportTab] = useState('history');
   const [cart, setCart] = useState([]);
   const [supplierId, setSupplierId] = useState('');
@@ -2794,12 +2794,16 @@ function ImportView({ products, imports = [], suppliers, db, storeId, user, user
   const [showProductSuggestions, setShowProductSuggestions] = useState(false);
   const [bulkImportFile, setBulkImportFile] = useState(null);
   const [bulkImportRows, setBulkImportRows] = useState([]);
+  const [bulkImportSelected, setBulkImportSelected] = useState([]);
+  const [bulkImportSort, setBulkImportSort] = useState({ field: 'rowNumber', direction: 'asc' });
   const [bulkImportSupplierId, setBulkImportSupplierId] = useState('');
   const [bulkImportDate, setBulkImportDate] = useState(getVietnamDateKey(new Date()));
   const [bulkImportDebt, setBulkImportDebt] = useState(false);
   const [bulkImportBusy, setBulkImportBusy] = useState(false);
   const [bulkImportProgress, setBulkImportProgress] = useState({ done: 0, total: 0 });
   const [bulkImportPreviewLimit, setBulkImportPreviewLimit] = useState(100);
+  const toggleBulkImportSort = (field) => setBulkImportSort(prev => ({ field, direction: prev.field === field && prev.direction === 'asc' ? 'desc' : 'asc' }));
+  const sortedBulkImportRows = useMemo(() => [...bulkImportRows].sort((a,b) => { const f=bulkImportSort.field; let av=f==='rowNumber'?a.rowNumber:f==='productName'?(a.matchedName||a.productName||''):f==='qty'?Number(a.qty)||0:f==='importCost'?Number(a.importCost)||0:f==='total'?(Number(a.qty)||0)*(Number(a.importCost)||0):f==='supplierName'?(a.supplierName||''):f==='date'?(new Date(a.date||0).getTime()||0):f==='receiptCode'?(a.receiptCode||''):f==='match'?(a.valid?1:0):''; let bv=f==='rowNumber'?b.rowNumber:f==='productName'?(b.matchedName||b.productName||''):f==='qty'?Number(b.qty)||0:f==='importCost'?Number(b.importCost)||0:f==='total'?(Number(b.qty)||0)*(Number(b.importCost)||0):f==='supplierName'?(b.supplierName||''):f==='date'?(new Date(b.date||0).getTime()||0):f==='receiptCode'?(b.receiptCode||''):f==='match'?(b.valid?1:0):''; const cmp=typeof av==='number'&&typeof bv==='number'?av-bv:String(av).localeCompare(String(bv),'vi',{numeric:true,sensitivity:'base'}); return bulkImportSort.direction==='asc'?cmp:-cmp; }), [bulkImportRows, bulkImportSort]);
   const [supplierSearch, setSupplierSearch] = useState('');
   const [showSupplierSuggestions, setShowSupplierSuggestions] = useState(false);
   const [groupSearch, setGroupSearch] = useState('');
@@ -2926,7 +2930,7 @@ function ImportView({ products, imports = [], suppliers, db, storeId, user, user
   };
   const handleBulkExcelSelect = async (event) => {
     const file = event.target.files?.[0]; if (!file) return;
-    setBulkImportFile(file); setBulkImportRows([]);
+    setBulkImportFile(file); setBulkImportRows([]); setBulkImportSelected([]);
     try {
       const XLSX = await loadXlsxLibrary(); const workbook = XLSX.read(await file.arrayBuffer(), { type: 'array', cellDates: true });
       const rawRows = XLSX.utils.sheet_to_json(workbook.Sheets[workbook.SheetNames[0]], { defval: '', raw: false });
@@ -2935,40 +2939,90 @@ function ImportView({ products, imports = [], suppliers, db, storeId, user, user
         const productName = String(findColumnValue(row, ['tenhang','tensanpham','sanpham','productname','hanghoa','tenhanghoa']) || '').trim();
         const productCode = String(findColumnValue(row, ['mahang','masanpham','barcode','sku','productcode']) || '').trim();
         const receiptCode = String(findColumnValue(row, ['maphieunhap','sophieu','mavoucher','receiptcode','invoicecode','mahoadon']) || '').trim();
-        const qtyRaw = findColumnValue(row, ['soluongnhap','soluong','quantity','qty']); const costRaw = findColumnValue(row, ['gianhap','dongianhap','giavon','cost','importprice','unitprice']);
-        const qty = Number(String(qtyRaw).replace(/[,\s]/g, '').replace(/đ/gi, '')); const importCost = Number(String(costRaw).replace(/[,\s]/g, '').replace(/đ/gi, ''));
+        const supplierName = String(findColumnValue(row, ['nhacungcap','tennhacungcap','supplier','suppliername','nhaphangtu']) || '').trim();
+        const rawDate = findColumnValue(row, ['thoigiannhap','ngaynhap','thoigian','ngaytao','date','createdat']);
+        let date = '';
+        if (rawDate instanceof Date && !Number.isNaN(rawDate.getTime())) date = rawDate.toISOString();
+        else if (typeof rawDate === 'number' && rawDate > 20000 && rawDate < 80000) date = new Date(Math.round((rawDate - 25569) * 86400000)).toISOString();
+        else if (String(rawDate || '').trim()) {
+          const rawText=String(rawDate).trim();
+          const dm=rawText.match(/^(\d{1,2})[\/-](\d{1,2})[\/-](\d{4})(?:[ T](\d{1,2}):(\d{2})(?::(\d{2}))?)?$/);
+          const parsed=dm?new Date(Number(dm[3]),Number(dm[2])-1,Number(dm[1]),Number(dm[4]||0),Number(dm[5]||0),Number(dm[6]||0)):new Date(rawText);
+          if(!Number.isNaN(parsed.getTime())) date=parsed.toISOString();
+        }
+        const qtyRaw = findColumnValue(row, ['soluongnhap','soluong','quantity','qty']);
+        const costRaw = findColumnValue(row, ['gianhap','dongianhap','giavon','cost','importprice','unitprice']);
+        const parseNumber = value => {
+          if(typeof value==='number') return value;
+          let t=String(value??'').trim().replace(/[^0-9,.-]/g,'');
+          if(t.includes(',')&&t.includes('.')) t=t.lastIndexOf(',')>t.lastIndexOf('.')?t.replace(/\./g,'').replace(',','.'):t.replace(/,/g,'');
+          else if(t.includes(',') && !/,[0-9]{1,2}$/.test(t)) t=t.replace(/,/g,'');
+          else t=t.replace(',','.');
+          return Number(t);
+        };
+        const qty = parseNumber(qtyRaw); const importCost = parseNumber(costRaw);
         const product = (products || []).find(p => (productCode && [p.code,p.barcode,p.sku,p.productCode].some(v => String(v || '').trim().toLowerCase() === productCode.toLowerCase())) || (productName && normalizeImportSearch(p.name) === normalizeImportSearch(productName)));
-        return { rowNumber:index+2, productName, productCode, receiptCode, qty, importCost, productId:product?.id || '', matchedName:product?.name || '', valid:!!product && Number.isFinite(qty) && qty>0 && Number.isFinite(importCost) && importCost>=0 };
+        const supplierMatch=(suppliers||[]).find(s=>supplierName&&normalizeImportSearch(s.name)===normalizeImportSearch(supplierName));
+        return { rowNumber:index+2, productName, productCode, receiptCode, supplierName, supplierId:supplierMatch?.id||'', date:date||new Date(`${bulkImportDate||getVietnamDateKey(new Date())}T12:00:00+07:00`).toISOString(), qty, importCost, productId:product?.id || '', matchedName:product?.name || '', valid:!!product && Number.isFinite(qty) && qty>0 && Number.isFinite(importCost) && importCost>=0 };
       }).filter(row => row.productName || row.productCode);
       if (!parsed.length) throw new Error('Không tìm thấy dòng hàng hóa. File cần có cột Tên sản phẩm, Số lượng và Giá nhập.');
-      setBulkImportRows(parsed); showToast(`Đã đọc ${parsed.length} dòng hàng. Mỗi đợt ghi xử lý tối đa 100 dòng.`);
+      setBulkImportRows(parsed); setBulkImportSelected(parsed.map(row=>row.rowNumber)); showToast(`Đã đọc ${parsed.length} dòng hàng. Đã chọn tất cả; mỗi đợt ghi tối đa 50 dòng.`);
     } catch (error) { showToast(error.message || 'Không đọc được file Excel.', 'error'); setBulkImportFile(null); setBulkImportRows([]); }
     finally { event.target.value = ''; }
   };
   const handleBulkImportSubmit = async () => {
-    if (!bulkImportSupplierId) { showToast('Vui lòng chọn nhà cung cấp trước khi nhập Excel.', 'error'); return; }
-    if (!bulkImportRows.length) { showToast('Vui lòng chọn file Excel hợp lệ.', 'error'); return; }
-    const invalid = bulkImportRows.filter(row => !row.valid);
-    if (invalid.length) { showToast(`Còn ${invalid.length} dòng chưa khớp sản phẩm hoặc số lượng/giá nhập không hợp lệ.`, 'error'); return; }
-    if (!window.confirm(`Sẽ nhập ${bulkImportRows.length} dòng, chia thành từng đợt tối đa 100 dòng và cộng tồn kho tương ứng. Không nhập lại cùng file vì sẽ cộng tồn kho lần nữa. Tiếp tục?`)) return;
-    setBulkImportBusy(true); setBulkImportProgress({done:0,total:bulkImportRows.length});
-    try {
-      const supplier = (suppliers || []).find(item => item.id === bulkImportSupplierId);
-      const accumulatedStock = new Map();
-      let accumulatedDebt = 0;
-      for (let offset=0; offset<bulkImportRows.length; offset+=100) {
-        const chunk=bulkImportRows.slice(offset,offset+100); const batch=writeBatch(db);
-        const items=chunk.map(row=>{const product=(products||[]).find(p=>p.id===row.productId);return {id:row.productId,productId:row.productId,name:row.matchedName||row.productName,qty:row.qty,quantity:row.qty,importCost:row.importCost,cost:row.importCost,price:Number(product?.price||0),category:product?.category||''};});
-        const total=items.reduce((sum,item)=>sum+item.qty*item.importCost,0); const importRef=doc(collection(db,'stores',storeId,'imports'));
-        batch.set(importRef,{invoiceCode:`EXCEL-${Date.now()}-${Math.floor(offset/100)+1}`,receiptCode:chunk.find(row=>row.receiptCode)?.receiptCode||'',supplierId:bulkImportSupplierId,supplierName:supplier?.name||'Nhà cung cấp',createdByUid:user?.uid||'',createdByName:userData?.name||user?.displayName||user?.email||'Nhân viên',items,total,status:bulkImportDebt?'DEBT':'PAID',date:new Date(`${bulkImportDate||getVietnamDateKey(new Date())}T12:00:00+07:00`).toISOString(),source:'excel-bulk',sourceFileName:bulkImportFile?.name||'',sourceRows:chunk.map(row=>row.rowNumber),bulkImportChunk:Math.floor(offset/100)+1});
-        const qtyByProduct=new Map(); items.forEach(item=>qtyByProduct.set(item.id,(qtyByProduct.get(item.id)||0)+Number(item.qty||0)));
-        for (const [productId,qty] of qtyByProduct.entries()) { const product=(products||[]).find(p=>p.id===productId); if(!product) continue; const lastItem=[...items].reverse().find(item=>item.id===productId); const cumulativeQty=(accumulatedStock.get(productId)||0)+qty; accumulatedStock.set(productId,cumulativeQty); batch.update(doc(db,'stores',storeId,'products',productId),{stock:Number(product.stock||0)+cumulativeQty,cost:lastItem?.importCost??Number(product.cost||0),lastSupplierId:bulkImportSupplierId,lastSupplierName:supplier?.name||''}); }
-        if(bulkImportDebt&&supplier) { accumulatedDebt += total; batch.update(doc(db,'stores',storeId,'suppliers',bulkImportSupplierId),{totalDebt:Number(supplier.totalDebt||0)+accumulatedDebt}); }
-        await batch.commit(); setBulkImportProgress({done:Math.min(offset+chunk.length,bulkImportRows.length),total:bulkImportRows.length});
+    if (!bulkImportSelected.length) { showToast('Hãy đánh dấu ít nhất một dòng cần nhập.', 'error'); return; }
+    const selectedRows=bulkImportRows.filter(row=>bulkImportSelected.includes(row.rowNumber));
+    const invalid=selectedRows.filter(row=>!row.valid);
+    if(invalid.length){showToast(`Có ${invalid.length} dòng đã chọn chưa khớp sản phẩm hoặc số lượng/giá không hợp lệ.`, 'error');return;}
+    const unresolvedSuppliers=selectedRows.filter(row=>row.supplierName&&!row.supplierId&&!bulkImportSupplierId);
+    if(unresolvedSuppliers.length){showToast('Một số dòng có tên nhà cung cấp chưa khớp dữ liệu. Hãy chọn nhà cung cấp mặc định hoặc sửa tên nhà cung cấp trong từng dòng.', 'error');return;}
+    // Duplicate guards: imported file + receipt/product/date/qty/cost signature.
+    const existingSignatures=new Set();
+    const existingFileRows=new Set();
+    (imports||[]).forEach(im=>{
+      if(im.sourceFileName && im.sourceFileName===bulkImportFile?.name) (im.sourceRows||[]).forEach(n=>existingFileRows.add(Number(n)));
+      if(im.receiptCode) (im.items||[]).forEach(it=>existingSignatures.add([String(it.id||it.productId||''),Number(it.qty??it.quantity??0),Number(it.importCost??it.cost??0),String(im.receiptCode||''),String(im.date||'').slice(0,10)].join('|')));
+    });
+    const duplicates=[];
+    for(const row of selectedRows){const signature=[row.productId,Number(row.qty),Number(row.importCost),String(row.receiptCode||''),String(row.date||'').slice(0,10)].join('|');if(existingFileRows.has(Number(row.rowNumber))||(row.receiptCode&&existingSignatures.has(signature)))duplicates.push(row.rowNumber);}
+    if(duplicates.length){showToast(`Phát hiện ${duplicates.length} dòng có khả năng trùng phiếu nhập/dữ liệu đã có (dòng Excel: ${duplicates.slice(0,12).join(', ')}). Bỏ chọn hoặc kiểm tra lịch sử trước khi nhập.`, 'error');return;}
+    const rows=[...selectedRows].sort((a,b)=>new Date(a.date)-new Date(b.date));
+    if(!window.confirm(`Sẽ xử lý ${rows.length} dòng đã chọn theo thời gian nhập tăng dần, chia đợt tối đa 50 dòng. Hệ thống sẽ đối chiếu hóa đơn bán hàng sau thời điểm nhập để tính phần hàng còn lại từ các dòng Excel này, đồng thời bỏ qua dữ liệu có dấu hiệu trùng. Tiếp tục?`))return;
+    setBulkImportBusy(true);setBulkImportProgress({done:0,total:rows.length});
+    try{
+      const salesByProduct=new Map();
+      (orders||[]).forEach(order=>{const orderDate=new Date(order.date||order.createdAt||0).getTime();(order.items||[]).forEach(item=>{const pid=item.id||item.productId;if(!pid||!Number.isFinite(orderDate))return;const list=salesByProduct.get(pid)||[];list.push({date:orderDate,qty:Number(item.qty??item.quantity??1)||0});salesByProduct.set(pid,list);});});
+      salesByProduct.forEach(list=>list.sort((a,b)=>a.date-b.date));
+      // Only the remaining portion of newly reconstructed historical lots is added to current stock.
+      const remainingByRow=new Map();
+      const stockDeltasByProduct=new Map();
+      const debtDeltasBySupplier=new Map();
+      const rowsByProduct=new Map();rows.forEach(row=>{const list=rowsByProduct.get(row.productId)||[];list.push(row);rowsByProduct.set(row.productId,list);});
+      rowsByProduct.forEach((productRows,pid)=>{
+        const sales=[...(salesByProduct.get(pid)||[])];
+        productRows.sort((a,b)=>new Date(a.date)-new Date(b.date));
+        productRows.forEach(row=>{let lotQty=Number(row.qty)||0;const lotDate=new Date(row.date).getTime();for(const sale of sales){if(sale.qty<=0)continue;if(sale.date<lotDate)continue;const used=Math.min(lotQty,sale.qty);lotQty-=used;sale.qty-=used;if(lotQty<=0)break;}remainingByRow.set(row.rowNumber,lotQty);});
+      });
+      const supplierFallback=(suppliers||[]).find(item=>item.id===bulkImportSupplierId);
+      for(let offset=0;offset<rows.length;offset+=50){
+        const chunk=rows.slice(offset,offset+50);const batch=writeBatch(db);const groups=new Map();
+        chunk.forEach(row=>{const sid=row.supplierId||bulkImportSupplierId||'';const supplier=(suppliers||[]).find(x=>x.id===sid)||supplierFallback;const groupKey=[sid,row.receiptCode||'',String(row.date||'').slice(0,10)].join('|');const group=groups.get(groupKey)||{sid,supplier,receiptCode:row.receiptCode||'',date:row.date,rows:[]};group.rows.push(row);groups.set(groupKey,group);});
+        for(const group of groups.values()){
+          const items=group.rows.map(row=>{const product=(products||[]).find(p=>p.id===row.productId);return{id:row.productId,productId:row.productId,name:row.matchedName||row.productName,qty:row.qty,quantity:row.qty,importCost:row.importCost,cost:row.importCost,price:Number(product?.price||0),category:product?.category||''};});
+          const total=items.reduce((sum,item)=>sum+item.qty*item.importCost,0);const importRef=doc(collection(db,'stores',storeId,'imports'));
+          batch.set(importRef,{invoiceCode:`EXCEL-${Date.now()}-${offset}-${groups.size}`,receiptCode:group.receiptCode,supplierId:group.sid,supplierName:group.supplier?.name||group.rows[0].supplierName||'Nhà cung cấp chưa xác định',createdByUid:user?.uid||'',createdByName:userData?.name||user?.displayName||user?.email||'Nhân viên',items,total,status:bulkImportDebt?'DEBT':'PAID',date:group.date,source:'excel-bulk',sourceFileName:bulkImportFile?.name||'',sourceRows:group.rows.map(row=>row.rowNumber),bulkImportChunk:Math.floor(offset/50)+1});
+          if(bulkImportDebt&&group.sid&&group.supplier)debtDeltasBySupplier.set(group.sid,(debtDeltasBySupplier.get(group.sid)||0)+total);
+        }
+        const productDelta=new Map();chunk.forEach(row=>productDelta.set(row.productId,(productDelta.get(row.productId)||0)+(remainingByRow.get(row.rowNumber)||0)));
+        for(const [pid,delta] of productDelta){if(delta<=0)continue;const product=(products||[]).find(p=>p.id===pid);if(!product)continue;const cumulative=(stockDeltasByProduct.get(pid)||0)+delta;stockDeltasByProduct.set(pid,cumulative);const latest=[...chunk].filter(r=>r.productId===pid).sort((a,b)=>new Date(a.date)-new Date(b.date)).at(-1);batch.update(doc(db,'stores',storeId,'products',pid),{stock:Number(product.stock||0)+cumulative,cost:latest?.importCost??Number(product.cost||0),lastSupplierId:latest?.supplierId||bulkImportSupplierId||'',lastSupplierName:(suppliers||[]).find(x=>x.id===(latest?.supplierId||bulkImportSupplierId))?.name||latest?.supplierName||''});}
+        // Supplier debt is updated after all rows are processed to avoid overwriting increments within a batch.
+        await batch.commit();setBulkImportProgress({done:Math.min(offset+chunk.length,rows.length),total:rows.length});
       }
-      showToast(`Đã nhập thành công ${bulkImportRows.length} dòng Excel theo từng đợt tối đa 100 dòng.`); setBulkImportRows([]); setBulkImportFile(null); setActiveImportTab('history');
-    } catch(error) { showToast(`Nhập Excel bị gián đoạn. Không chạy lại toàn bộ file; hãy kiểm tra lịch sử nhập trước. ${error.message||''}`,'error'); }
-    finally { setBulkImportBusy(false); }
+      if(bulkImportDebt){for(const [sid,delta] of debtDeltasBySupplier){const supplier=(suppliers||[]).find(x=>x.id===sid);if(supplier&&delta>0)await updateDoc(doc(db,'stores',storeId,'suppliers',sid),{totalDebt:Number(supplier.totalDebt||0)+delta});}}
+      showToast(`Đã nhập ${rows.length} dòng đã chọn theo từng đợt 50 dòng; tồn kho được cộng phần còn lại sau khi đối chiếu các đơn bán có ngày sau ngày nhập.`);setBulkImportRows([]);setBulkImportSelected([]);setBulkImportFile(null);setActiveImportTab('history');
+    }catch(error){showToast(`Nhập Excel bị gián đoạn. Không chạy lại toàn bộ file; hãy kiểm tra lịch sử nhập trước. ${error.message||''}`,'error');}
+    finally{setBulkImportBusy(false);}
   };
 
   const addProductToCart = (p) => setCart(c => c.find(i => i.id === p.id) ? c : [...c, { id: p.id, name: p.name, category: p.category || '', qty: 1, importCost: p.cost || 0, price: p.price || 0 }]);
@@ -3015,9 +3069,9 @@ function ImportView({ products, imports = [], suppliers, db, storeId, user, user
           <div className="grid grid-cols-1 md:grid-cols-3 gap-3"><label className="block text-sm font-semibold">Nhà cung cấp *<select value={bulkImportSupplierId} onChange={e=>setBulkImportSupplierId(e.target.value)} className="mt-1 w-full p-3 border rounded-lg bg-white"><option value="">Chọn nhà cung cấp</option>{(suppliers||[]).map(s=><option key={s.id} value={s.id}>{s.name}</option>)}</select></label><label className="block text-sm font-semibold">Ngày nhập<input type="date" value={bulkImportDate} onChange={e=>setBulkImportDate(e.target.value)} className="mt-1 w-full p-3 border rounded-lg bg-white"/></label><label className="block text-sm font-semibold">Chọn file Excel<input type="file" accept=".xlsx,.xls" onChange={handleBulkExcelSelect} className="mt-1 block w-full p-2 border rounded-lg bg-white text-sm"/></label></div>
           <label className="flex items-center gap-2 text-sm"><input type="checkbox" checked={bulkImportDebt} onChange={e=>setBulkImportDebt(e.target.checked)}/> Ghi nợ nhà cung cấp</label><p className="text-xs text-gray-500">Cột cần có: Tên hàng/Tên sản phẩm, Số lượng, Giá nhập/Đơn giá nhập. Có thể có cột Mã hàng.</p>
           {bulkImportFile&&<div className="rounded-lg border bg-gray-50 p-3 text-sm"><b>{bulkImportFile.name}</b> · {bulkImportRows.length} dòng hàng đọc được</div>}
-          {bulkImportRows.length>0&&<><div className="flex flex-wrap justify-between items-center gap-2"><b className="text-sm">Xem trước dữ liệu</b><label className="text-xs">Hiển thị <select value={bulkImportPreviewLimit} onChange={e=>setBulkImportPreviewLimit(Number(e.target.value))} className="border rounded p-1"><option value={100}>100 dòng</option><option value={300}>300 dòng</option><option value={1000}>1000 dòng</option></select></label></div><div className="overflow-auto border rounded-lg max-h-[50vh]"><table className="w-full min-w-[700px] text-sm"><thead className="sticky top-0 bg-gray-100"><tr><th className="p-2 text-left">Dòng</th><th className="p-2 text-left">Sản phẩm</th><th className="p-2 text-right">Số lượng</th><th className="p-2 text-right">Giá nhập</th><th className="p-2 text-right">Thành tiền</th><th className="p-2 text-left">Đối chiếu</th></tr></thead><tbody>{bulkImportRows.slice(0,bulkImportPreviewLimit).map((row,i)=><tr key={`${row.rowNumber}-${i}`} className="border-t"><td className="p-2">{row.rowNumber}</td><td className="p-2">{row.productName||row.productCode}</td><td className="p-2 text-right">{Number.isFinite(row.qty)?row.qty:'—'}</td><td className="p-2 text-right">{Number.isFinite(row.importCost)?formatCurrency(row.importCost):'—'}</td><td className="p-2 text-right">{Number.isFinite(row.qty)&&Number.isFinite(row.importCost)?formatCurrency(row.qty*row.importCost):'—'}</td><td className={`p-2 font-semibold ${row.valid?'text-green-700':'text-red-700'}`}>{row.valid?`Khớp: ${row.matchedName}`:'Không khớp / dữ liệu lỗi'}</td></tr>)}</tbody></table></div><div className="text-sm">Tổng dòng: <b>{bulkImportRows.length}</b> · Hợp lệ: <b className="text-green-700">{bulkImportRows.filter(r=>r.valid).length}</b> · Cần sửa: <b className="text-red-700">{bulkImportRows.filter(r=>!r.valid).length}</b> · Số đợt: <b>{Math.ceil(bulkImportRows.length/100)}</b></div>
+          {bulkImportRows.length>0&&<><div className="flex flex-wrap justify-between items-center gap-2"><b className="text-sm">Xem trước dữ liệu</b><div className="flex items-center gap-2 text-xs"><button type="button" onClick={()=>setBulkImportSelected(bulkImportRows.map(r=>r.rowNumber))} className="px-3 py-2 rounded border bg-white">Chọn tất cả</button><button type="button" onClick={()=>setBulkImportSelected([])} className="px-3 py-2 rounded border bg-white">Bỏ chọn</button><label>Hiển thị <select value={bulkImportPreviewLimit} onChange={e=>setBulkImportPreviewLimit(Number(e.target.value))} className="border rounded p-1"><option value={100}>100 dòng</option><option value={300}>300 dòng</option><option value={1000}>1000 dòng</option></select></label></div></div><div className="overflow-auto border rounded-lg max-h-[50vh]"><table className="w-full min-w-[1250px] text-sm"><thead className="sticky top-0 bg-gray-100"><tr><th className="p-2"><input aria-label="Chọn tất cả dòng đang hiển thị" type="checkbox" checked={sortedBulkImportRows.slice(0,bulkImportPreviewLimit).length>0&&sortedBulkImportRows.slice(0,bulkImportPreviewLimit).every(r=>bulkImportSelected.includes(r.rowNumber))} onChange={e=>setBulkImportSelected(prev=>e.target.checked?[...new Set([...prev,...sortedBulkImportRows.slice(0,bulkImportPreviewLimit).map(r=>r.rowNumber)])]:prev.filter(id=>!sortedBulkImportRows.slice(0,bulkImportPreviewLimit).some(r=>r.rowNumber===id)))} /></th>{[['rowNumber','Dòng'],['productName','Sản phẩm'],['qty','Số lượng'],['importCost','Giá nhập'],['total','Thành tiền'],['supplierName','Nhà cung cấp'],['date','Thời gian nhập'],['receiptCode','Mã phiếu'],['match','Đối chiếu']].map(([field,label])=><th key={field} onClick={()=>toggleBulkImportSort(field)} className="p-2 text-left cursor-pointer select-none whitespace-nowrap hover:bg-gray-200">{label} <span>{bulkImportSort.field===field?(bulkImportSort.direction==='asc'?'↑':'↓'):'↕'}</span></th>)}</tr></thead><tbody>{sortedBulkImportRows.slice(0,bulkImportPreviewLimit).map((row,i)=><tr key={`${row.rowNumber}-${i}`} className="border-t"><td className="p-2"><input aria-label={`Chọn dòng ${row.rowNumber}`} type="checkbox" checked={bulkImportSelected.includes(row.rowNumber)} onChange={e=>setBulkImportSelected(prev=>e.target.checked?[...prev,row.rowNumber]:prev.filter(id=>id!==row.rowNumber))}/></td><td className="p-2">{row.rowNumber}</td><td className="p-2 min-w-[190px]">{row.matchedName||row.productName||row.productCode}</td><td className="p-2"><input type="number" min="0.0001" step="any" value={row.qty} onChange={e=>setBulkImportRows(prev=>prev.map(r=>r.rowNumber===row.rowNumber?{...r,qty:Number(e.target.value),valid:!!r.productId&&Number(e.target.value)>0&&Number.isFinite(Number(e.target.value))&&Number.isFinite(Number(r.importCost))&&Number(r.importCost)>=0}:r))} className="w-24 border rounded p-1"/></td><td className="p-2"><input type="number" min="0" step="any" value={row.importCost} onChange={e=>setBulkImportRows(prev=>prev.map(r=>r.rowNumber===row.rowNumber?{...r,importCost:Number(e.target.value),valid:!!r.productId&&Number(r.qty)>0&&Number.isFinite(Number(r.qty))&&Number.isFinite(Number(e.target.value))&&Number(e.target.value)>=0}:r))} className="w-28 border rounded p-1"/></td><td className="p-2 text-right whitespace-nowrap">{Number.isFinite(row.qty)&&Number.isFinite(row.importCost)?formatCurrency(row.qty*row.importCost):'—'}</td><td className="p-2 min-w-[170px]"><input value={row.supplierName||''} onChange={e=>{const value=e.target.value;const matched=(suppliers||[]).find(s=>normalizeImportSearch(s.name)===normalizeImportSearch(value));setBulkImportRows(prev=>prev.map(r=>r.rowNumber===row.rowNumber?{...r,supplierName:value,supplierId:matched?.id||''}:r));}} className="w-40 border rounded p-1" list="bulk-import-suppliers" placeholder="Tên nhà cung cấp"/><datalist id="bulk-import-suppliers">{(suppliers||[]).map(s=><option key={s.id} value={s.name}/>)}</datalist></td><td className="p-2"><input type="datetime-local" value={row.date?(()=>{const d=new Date(row.date);return Number.isNaN(d.getTime())?'':new Date(d.getTime()-d.getTimezoneOffset()*60000).toISOString().slice(0,16)})():''} onChange={e=>{const d=new Date(e.target.value);if(!Number.isNaN(d.getTime()))setBulkImportRows(prev=>prev.map(r=>r.rowNumber===row.rowNumber?{...r,date:d.toISOString()}:r));}} className="min-w-[190px] border rounded p-1"/></td><td className="p-2"><input value={row.receiptCode||''} onChange={e=>setBulkImportRows(prev=>prev.map(r=>r.rowNumber===row.rowNumber?{...r,receiptCode:e.target.value}:r))} className="w-32 border rounded p-1"/></td><td className={`p-2 font-semibold ${row.valid?'text-green-700':'text-red-700'}`}>{row.valid?`Khớp: ${row.matchedName}`:'Không khớp / dữ liệu lỗi'}</td></tr>)}</tbody></table></div><div className="text-sm">Tổng dòng: <b>{bulkImportRows.length}</b> · Đã chọn: <b>{bulkImportSelected.length}</b> · Hợp lệ đã chọn: <b className="text-green-700">{bulkImportRows.filter(r=>bulkImportSelected.includes(r.rowNumber)&&r.valid).length}</b> · Cần sửa đã chọn: <b className="text-red-700">{bulkImportRows.filter(r=>bulkImportSelected.includes(r.rowNumber)&&!r.valid).length}</b> · Số đợt: <b>{Math.ceil(bulkImportSelected.length/50)}</b></div>
           {bulkImportBusy&&<div><div className="text-sm font-semibold mb-1">Đã xử lý {bulkImportProgress.done}/{bulkImportProgress.total} dòng</div><div className="h-2 rounded-full bg-gray-200 overflow-hidden"><div className="h-full bg-blue-600" style={{width:`${bulkImportProgress.total?bulkImportProgress.done/bulkImportProgress.total*100:0}%`}}/></div></div>}
-          <button type="button" disabled={bulkImportBusy||bulkImportRows.some(r=>!r.valid)||!bulkImportSupplierId} onClick={handleBulkImportSubmit} className="w-full md:w-auto px-5 py-3 rounded-xl bg-blue-600 text-white font-bold disabled:bg-gray-300">{bulkImportBusy?'Đang nhập Excel…':'Xác nhận nhập hàng loạt'}</button></>}
+          <button type="button" disabled={bulkImportBusy||bulkImportSelected.length===0||bulkImportRows.some(r=>bulkImportSelected.includes(r.rowNumber)&&!r.valid)} onClick={handleBulkImportSubmit} className="w-full md:w-auto px-5 py-3 rounded-xl bg-blue-600 text-white font-bold disabled:bg-gray-300">{bulkImportBusy?'Đang nhập Excel…':`Xác nhận nhập ${bulkImportSelected.length} dòng đã chọn`}</button></>}
         </div></div>
       ) : (
       <Modal isOpen={activeImportTab === 'create'} onClose={() => setActiveImportTab('history')} title={editingImport ? 'Sửa phiếu nhập hàng' : 'Tạo phiếu nhập hàng'} maxWidth="max-w-6xl">
