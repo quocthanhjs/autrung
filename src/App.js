@@ -3113,7 +3113,17 @@ function SettingsView({ db, storeId, showToast, storeConfig }) {
 
   const handleImport = async (e, type) => {
     const file = e.target.files?.[0];
-    if (!file || !window.XLSX) return;
+    if (!file) return;
+    if (!window.XLSX) {
+      showToast('Thư viện Excel chưa tải xong. Hãy tải lại trang rồi thử lại.', 'error');
+      e.target.value = '';
+      return;
+    }
+    if (file.size > 25 * 1024 * 1024) {
+      showToast('File Excel lớn hơn 25 MB. Vui lòng tách file thành các phần nhỏ rồi nhập lại.', 'error');
+      e.target.value = '';
+      return;
+    }
     setLoadingFile(true);
     try {
       const reader = new FileReader();
@@ -3179,7 +3189,7 @@ function SettingsView({ db, storeId, showToast, storeConfig }) {
                 batch.set(ref, contactPayload); writes++; success++;
                 keys.forEach(k => existingByKey.set(k, ref.id));
               }
-              if (writes >= 400) { await batch.commit(); batch = writeBatch(db); writes = 0; }
+              if (writes >= 300) { await batch.commit(); batch = writeBatch(db); writes = 0; }
             }
             if (writes) await batch.commit();
           }
@@ -3194,7 +3204,7 @@ function SettingsView({ db, storeId, showToast, storeConfig }) {
             let batch = writeBatch(db), writes = 0;
             for (const p of existing) {
               batch.update(doc(db, 'stores', storeId, 'products', p.id), { stock: 0 }); writes++;
-              if (writes >= 400) { await batch.commit(); batch = writeBatch(db); writes = 0; }
+              if (writes >= 300) { await batch.commit(); batch = writeBatch(db); writes = 0; }
             }
             if (writes) { await batch.commit(); batch = writeBatch(db); writes = 0; }
             const seen = new Set();
@@ -3223,7 +3233,7 @@ function SettingsView({ db, storeId, showToast, storeConfig }) {
                 if (code) byCode.set(norm(code), added); if (name) byName.set(norm(name), added);
               }
               writes++; success++;
-              if (writes >= 400) { await batch.commit(); batch = writeBatch(db); writes = 0; }
+              if (writes >= 300) { await batch.commit(); batch = writeBatch(db); writes = 0; }
             }
             if (writes) await batch.commit();
           }
@@ -3283,7 +3293,7 @@ function SettingsView({ db, storeId, showToast, storeConfig }) {
               const existingId = existingOrderByCode.get(order.invoiceCode);
               const orderRef = existingId ? doc(db, 'stores', storeId, 'orders', existingId) : doc(collection(db, 'stores', storeId, 'orders'));
               batch.set(orderRef, order, { merge: true }); writes++; success++;
-              if (writes >= 400) { await batch.commit(); batch = writeBatch(db); writes = 0; }
+              if (writes >= 300) { await batch.commit(); batch = writeBatch(db); writes = 0; }
             }
             if (writes) await batch.commit();
           }
@@ -3351,7 +3361,7 @@ function SettingsView({ db, storeId, showToast, storeConfig }) {
                 batch.update(doc(db, 'stores', storeId, 'products', product.id), { stock: nextStock, cost: it.importCost || numberVal(product.cost), lastSupplierId: supplier.id, lastSupplierName: receipt.supplierName });
                 product.stock = nextStock; writes++;
               }
-              if (writes >= 350) { await batch.commit(); batch = writeBatch(db); writes = 0; }
+              if (writes >= 300) { await batch.commit(); batch = writeBatch(db); writes = 0; }
             }
             if (writes) await batch.commit();
           }
@@ -3367,7 +3377,7 @@ function SettingsView({ db, storeId, showToast, storeConfig }) {
                 amount: Math.abs(amount), note: textVal(row['Nội dung'] || row['Ghi chú'] || [typeText, textVal(row['Người nộp/nhận']), voucher].filter(Boolean).join(' - ')),
                 date: dateVal(row['Thời gian'] || row['Ngày'] || row['Ngày tạo'])
               }); writes++; success++;
-              if (writes >= 400) { await batch.commit(); batch = writeBatch(db); writes = 0; }
+              if (writes >= 300) { await batch.commit(); batch = writeBatch(db); writes = 0; }
             }
             if (writes) await batch.commit();
           }
