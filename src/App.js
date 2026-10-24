@@ -1627,6 +1627,58 @@ function ContactManager({ type, data, orders, navigationTarget, storeConfig, db,
   };
 
 
+  const getOrderRemainingDebt = (ord) => {
+    const total = Math.max(0, Number(ord.total) || 0);
+    if (Number.isFinite(Number(ord.remainingDebt))) return Math.max(0, Math.min(total, Number(ord.remainingDebt)));
+    return ord.status === 'DEBT' ? total : 0;
+  };
+
+  const updateTransactionDebt = async (ord, nextRemainingDebt, successMessage) => {
+    if (!ord?.id || savingDebtPayment) return;
+    const total = Math.max(0, Number(ord.total) || 0);
+    const nextRemaining = Math.max(0, Math.min(total, Number(nextRemainingDebt) || 0));
+    const oldRemaining = getOrderRemainingDebt(ord);
+    const delta = nextRemaining - oldRemaining;
+    const collectionName = isCus ? 'orders' : 'imports';
+    setSavingDebtPayment(true);
+    try {
+      const batch = writeBatch(db);
+      batch.update(doc(db, 'stores', storeId, collectionName, ord.id), {
+        remainingDebt: nextRemaining,
+        paidAmount: Math.max(0, total - nextRemaining),
+        status: nextRemaining > 0 ? 'DEBT' : 'PAID',
+        debtUpdatedAt: new Date().toISOString()
+      });
+      if (delta !== 0) batch.update(doc(db, 'stores', storeId, type, detailTarget.id), {
+        totalDebt: Math.max(0, (Number(detailTarget.totalDebt) || 0) + delta)
+      });
+      await batch.commit();
+      setDetailTarget(prev => prev ? { ...prev, totalDebt: Math.max(0, (Number(prev.totalDebt) || 0) + delta) } : prev);
+      showToast(successMessage || 'Đã cập nhật công nợ');
+    } catch (err) {
+      showToast('Không thể cập nhật công nợ: ' + (err?.message || ''), 'error');
+    } finally { setSavingDebtPayment(false); }
+  };
+
+  const handlePartialTransactionPayment = async (ord) => {
+    const remaining = getOrderRemainingDebt(ord);
+    if (remaining <= 0) { showToast('Giao dịch này đã thanh toán đủ'); return; }
+    const raw = window.prompt(`Còn nợ ${formatCurrency(remaining)}. Nhập số tiền thanh toán lần này (VNĐ):`, String(remaining));
+    if (raw === null) return;
+    const amount = Number(String(raw).replace(/[,\s]/g, ''));
+    if (!Number.isFinite(amount) || amount <= 0 || amount > remaining) { showToast('Số tiền thanh toán không hợp lệ', 'error'); return; }
+    await updateTransactionDebt(ord, remaining - amount, amount >= remaining ? 'Đã thanh toán hết giao dịch' : 'Đã ghi nhận thanh toán một phần');
+  };
+
+  const handleChangeTransactionStatus = async (ord) => {
+    const remaining = getOrderRemainingDebt(ord);
+    const currentlyDebt = remaining > 0;
+    const nextRemaining = currentlyDebt ? 0 : Math.max(0, Number(ord.total) || 0);
+    const nextLabel = currentlyDebt ? 'Đã thanh toán' : 'Đang nợ';
+    if (!window.confirm(`Đổi trạng thái giao dịch này thành “${nextLabel}”? Công nợ ${isCus ? 'khách hàng' : 'nhà cung cấp'} sẽ được điều chỉnh tương ứng.`)) return;
+    await updateTransactionDebt(ord, nextRemaining, `Đã đổi trạng thái thành ${nextLabel}`);
+  };
+
   const handleSave = async (e) => {
     e.preventDefault();
     try {
@@ -1719,8 +1771,8 @@ function ContactManager({ type, data, orders, navigationTarget, storeConfig, db,
       return matchTime;
     }).sort((a,b) => new Date(b.date) - new Date(a.date));
     let totalAmount = matched.reduce((s, o) => s + (Number(o.total) || 0), 0);
-    let totalPaid = matched.filter(o => o.status === 'PAID').reduce((s, o) => s + (Number(o.total) || 0), 0);
-    let totalDebtRemain = matched.filter(o => o.status === 'DEBT').reduce((s, o) => s + (Number(o.total) || 0), 0);
+    let totalPaid = matched.reduce((s, o) => s + (Number(o.paidAmount) || (o.status === 'PAID' ? (Number(o.total) || 0) : 0)), 0);
+    let totalDebtRemain = matched.reduce((s, o) => s + getOrderRemainingDebt(o), 0);
     return { list: matched, totalAmount, totalPaid, totalDebtRemain };
   }, [detailTarget, orders, filterYear, isCus]);
   const detailPageList = detailRowsPerPage === 'all' ? detailData.list : detailData.list.slice((detailCurrentPage - 1) * Number(detailRowsPerPage), detailCurrentPage * Number(detailRowsPerPage));
@@ -1839,7 +1891,14 @@ function ContactManager({ type, data, orders, navigationTarget, storeConfig, db,
                           <td className="p-2.5 align-top">{(ord.items || []).map((it, idx) => <div key={idx} className="mb-1 whitespace-nowrap">{formatCurrency(Number(it.importCost ?? it.cost) || 0)}</div>)}</td>
                           <td className="p-2.5 align-top">{(ord.items || []).map((it, idx) => <div key={idx} className="mb-1 whitespace-nowrap">{formatCurrency(Number(it.price) || 0)}</div>)}</td>
                           <td className="p-2.5 font-bold text-gray-800 align-top">{formatCurrency(ord.total)}</td>
-                          <td className="p-2.5 align-top"><span className={"px-2 py-0.5 rounded text-[10px] font-bold " + statusClass}>{ord.status === 'PAID' ? 'Đã trả' : 'Đang nợ'}</span></td>
+                          <td className="p-2.5 align-top">
+                            <div className="flex flex-col items-start gap-1.5">
+                              <span className={"px-2 py-0.5 rounded text-[10px] font-bold " + (getOrderRemainingDebt(ord) > 0 ? 'bg-orange-100 text-orange-700' : 'bg-green-100 text-green-700')}>{getOrderRemainingDebt(ord) > 0 ? 'Đang nợ' : 'Đã thanh toán'}</span>
+                              {getOrderRemainingDebt(ord) > 0 && <span className="font-semibold text-orange-700">Còn: {formatCurrency(getOrderRemainingDebt(ord))}</span>}
+                              <button type="button" disabled={savingDebtPayment || getOrderRemainingDebt(ord) <= 0} onClick={() => handlePartialTransactionPayment(ord)} className="text-blue-700 underline font-semibold disabled:opacity-40">Thanh toán một phần</button>
+                              <button type="button" disabled={savingDebtPayment} onClick={() => handleChangeTransactionStatus(ord)} className="text-red-600 underline font-semibold disabled:opacity-40">Sửa trạng thái</button>
+                            </div>
+                          </td>
                         </tr>
                       );
                     })}
