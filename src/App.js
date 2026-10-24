@@ -3309,14 +3309,22 @@ function SettingsView({ db, storeId, showToast, storeConfig }) {
           }
           // Nhập hàng: chỉ dùng các cột nhập hàng đã chỉ định và so khớp mã hàng/tên hàng với danh mục.
           else if (type === 'imports') {
-            const productSnap = await getDocs(collection(db, 'stores', storeId, 'products'));
-            const supplierSnap = await getDocs(collection(db, 'stores', storeId, 'suppliers'));
+            // Đọc danh mục song song và giới hạn thời gian chờ trước khi bắt đầu ghi.
+            // Nếu Firestore đang chậm/hết hạn mức, báo lỗi rõ ràng thay vì quay vô hạn.
+            const readTimeout = (promise, label, timeoutMs = 60000) => Promise.race([
+              promise,
+              new Promise((_, reject) => setTimeout(() => reject(new Error(`${label} quá 60 giây. Kiểm tra kết nối hoặc hạn mức Firestore rồi thử lại.`)), timeoutMs))
+            ]);
+            const [productSnap, supplierSnap, existingImportSnap] = await Promise.all([
+              readTimeout(getDocs(collection(db, 'stores', storeId, 'products')), 'Đọc danh mục sản phẩm'),
+              readTimeout(getDocs(collection(db, 'stores', storeId, 'suppliers')), 'Đọc danh mục nhà cung cấp'),
+              readTimeout(getDocs(collection(db, 'stores', storeId, 'imports')), 'Đọc lịch sử nhập hàng')
+            ]);
             const productDocs = productSnap.docs.map(d => ({ id: d.id, ...d.data() }));
             const productByCode = new Map(productDocs.filter(p => textVal(p.code)).map(p => [norm(p.code), p]));
             const productByName = new Map(productDocs.map(p => [norm(p.name), p]));
             const supplierByCode = new Map(supplierSnap.docs.map(d => [norm(d.data().code), { id: d.id, ...d.data() }]).filter(([k]) => k));
             const supplierByName = new Map(supplierSnap.docs.map(d => [norm(d.data().name), { id: d.id, ...d.data() }]));
-            const existingImportSnap = await getDocs(collection(db, 'stores', storeId, 'imports'));
             const existingReceiptCodes = new Set(existingImportSnap.docs.map(d => norm(d.data().receiptCode || d.data().invoiceCode)).filter(Boolean));
             const fingerprint = (supplier, date, items) => `${norm(supplier)}|${getVietnamDateKey(new Date(date))}|${(items || []).map(it => `${norm(it.code || it.name)}:${numberVal(it.qty ?? it.quantity)}:${numberVal(it.importCost ?? it.cost)}`).sort().join(';')}`;
             const existingImportFingerprints = new Set(existingImportSnap.docs.filter(d => !d.data().receiptCode && !d.data().invoiceCode).map(d => fingerprint(d.data().supplierCode || d.data().supplierName, d.data().date, d.data().items)));
@@ -3409,12 +3417,29 @@ function SettingsView({ db, storeId, showToast, storeConfig }) {
           setLoadingFile(false); e.target.value = '';
         } catch (err) {
           console.error(err);
-          showToast('Lỗi định dạng dữ liệu Excel: ' + (err?.message || ''), 'error');
+          showToast('Nhập Excel chưa hoàn tất: ' + (err?.message || 'Kiểm tra kết nối và hạn mức Firestore.'), 'error');
           setLoadingFile(false);
+          e.target.value = '';
         }
       };
+      reader.onerror = () => {
+        console.error('Excel FileReader error:', reader.error);
+        showToast('Không đọc được file Excel. Hãy thử lưu lại file .xlsx rồi nhập lại.', 'error');
+        setLoadingFile(false);
+        e.target.value = '';
+      };
+      reader.onabort = () => {
+        showToast('Đã hủy đọc file Excel.', 'error');
+        setLoadingFile(false);
+        e.target.value = '';
+      };
       reader.readAsBinaryString(file);
-    } catch (err) { setLoadingFile(false); }
+    } catch (err) {
+      console.error('Excel import setup error:', err);
+      showToast('Không thể bắt đầu nhập Excel: ' + (err?.message || 'Lỗi không xác định'), 'error');
+      setLoadingFile(false);
+      if (e?.target) e.target.value = '';
+    }
   };
   const handleExport = async (type) => {
     if (!window.XLSX) return showToast("Hệ thống chưa sẵn sàng", "error");
