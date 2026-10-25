@@ -1616,10 +1616,17 @@ function ContactManager({ type, data, orders, navigationTarget, storeConfig, db,
   const getContactTransactionsForDebt = () => {
     const idField = isCus ? 'customerId' : 'supplierId';
     const nameField = isCus ? 'customerName' : 'supplierName';
-    const sameName = value => String(value || '').trim().toLocaleLowerCase('vi') === String(detailTarget?.name || '').trim().toLocaleLowerCase('vi');
-    const idMatches = detailTarget?.id ? (orders || []).filter(o => o[idField] && o[idField] === detailTarget.id) : [];
-    const matches = idMatches.length ? idMatches : (orders || []).filter(o => sameName(o[nameField]));
-    return matches.filter(o => getOrderRemainingDebt(o) > 0).sort((a,b) => new Date(a.date || 0) - new Date(b.date || 0));
+    const normalizeName = value => String(value || '').trim().toLocaleLowerCase('vi');
+    const targetName = normalizeName(detailTarget?.name);
+    // Kết hợp cả liên kết bằng ID và tên để không bỏ sót giao dịch cũ/import Excel
+    // vốn thiếu ID hoặc dùng ID khác với hồ sơ hiện tại.
+    const matches = (orders || []).filter(transaction =>
+      (detailTarget?.id && transaction[idField] && transaction[idField] === detailTarget.id) ||
+      (targetName && normalizeName(transaction[nameField]) === targetName)
+    );
+    const unique = Array.from(new Map(matches.map(transaction => [transaction.id, transaction])).values());
+    return unique.filter(transaction => getOrderRemainingDebt(transaction) > 0)
+      .sort((a,b) => new Date(a.date || 0) - new Date(b.date || 0));
   };
 
   const applyDebtAllocations = async (allocations, direction = 'reverse') => {
@@ -1663,62 +1670,83 @@ function ContactManager({ type, data, orders, navigationTarget, storeConfig, db,
 
   const handleDebtPaymentSave = async (e) => {
     e.preventDefault();
-    if (!detailTarget?.id || savingDebtPayment) return;
-
-    const collectionName = isCus ? 'orders' : 'imports';
-    const allTransactions = (isCus ? (orders || []) : (imports || []));
-    const oldAllocations = editingDebtPayment?.allocations || [];
-    const oldAmount = editingDebtPayment ? Math.max(0, Number(editingDebtPayment.amount) || 0) : 0;
-    const currentTransactionDebt = getContactTransactionsForDebt().reduce((sum, transaction) => sum + getOrderRemainingDebt(transaction), 0);
-    const currentDebt = Math.max(0, Number(detailTarget.totalDebt) || 0, currentTransactionDebt);
-    const debtBeforeEdit = currentDebt + oldAmount;
-    const amount = debtPaymentMode === 'all' ? debtBeforeEdit : Number(debtPaymentAmount);
-    if (!Number.isFinite(amount) || amount <= 0 || amount > debtBeforeEdit) {
-      showToast('Số tiền trừ công nợ không hợp lệ', 'error');
+    if (!detailTarget?.id || savingDebtPayment) {
+      if (!detailTarget?.id) showToast('Chưa chọn hồ sơ khách hàng/nhà cung cấp để trừ công nợ.', 'error');
       return;
     }
 
+    // Tính số nợ ngay trong try để mọi lỗi khi đọc/tính dữ liệu đều được báo,
+    // kể cả trường hợp tổng nợ trên hồ sơ khác 0 nhưng các đơn/phiếu đều đã PAID.
     setSavingDebtPayment(true);
     try {
-      // Chuẩn bị toàn bộ số dư trong bộ nhớ trước khi ghi Firebase, tránh ghi dở dang.
-      // Khi sửa một giao dịch cũ, hoàn lại phần đã phân bổ trước đó rồi phân bổ lại từ giao dịch cũ nhất.
-      const oldAllocationMap = new Map();
-      oldAllocations.forEach(a => oldAllocationMap.set(a.transactionId, (oldAllocationMap.get(a.transactionId) || 0) + Math.max(0, Number(a.amount) || 0)));
-      const candidatesById = new Map();
-      getContactTransactionsForDebt().forEach(t => candidatesById.set(t.id, t));
-      oldAllocationMap.forEach((_, id) => {
-        const found = allTransactions.find(t => t.id === id);
-        if (found) candidatesById.set(found.id, found);
-      });
-      const candidates = [...candidatesById.values()].sort((a, b) => new Date(a.date || 0) - new Date(b.date || 0));
-      const plannedRemaining = new Map();
-      for (const transaction of candidates) {
-        const total = Math.max(0, Number(transaction.total) || 0);
-        const restored = Math.min(total, getOrderRemainingDebt(transaction) + (oldAllocationMap.get(transaction.id) || 0));
-        plannedRemaining.set(transaction.id, restored);
+      const transactionDebt = getContactTransactionsForDebt().reduce((sum, transaction) => sum + getOrderRemainingDebt(transaction), 0);
+      const contactDebt = Math.max(0, Number(detailTarget.totalDebt) || 0);
+      const currentDebt = Math.max(contactDebt, transactionDebt);
+      const oldAmount = editingDebtPayment ? Math.max(0, Number(editingDebtPayment.amount) || 0) : 0;
+      const debtBeforeEdit = currentDebt + oldAmount;
+      // Khi chọn “Trừ trên tổng nợ”, tất toán theo số dư trên hồ sơ hoặc
+      // số dư giao dịch còn mở — không phụ thuộc trạng thái đơn/phiếu cũ.
+      const amount = debtPaymentMode === 'all' ? debtBeforeEdit : Number(debtPaymentAmount);
+      if (!Number.isFinite(amount) || amount <= 0 || amount > debtBeforeEdit) {
+        showToast(`Số tiền trừ công nợ không hợp lệ. Số nợ hiện tại: ${formatCurrency(debtBeforeEdit)}.`, 'error');
+        return;
       }
 
+      const now = new Date();
+      const nowIso = now.toISOString();
+      const paymentDateText = now.toLocaleString('vi-VN', { timeZone: 'Asia/Ho_Chi_Minh' });
+      const userNote = String(debtPaymentNote || '').trim();
+      const collectionName = isCus ? 'orders' : 'imports';
+      const oldAllocations = Array.isArray(editingDebtPayment?.allocations) ? editingDebtPayment.allocations : [];
+      const restoredByTransaction = new Map();
+      oldAllocations.forEach((allocation) => {
+        restoredByTransaction.set(allocation.transactionId, (restoredByTransaction.get(allocation.transactionId) || 0) + Math.max(0, Number(allocation.amount) || 0));
+      });
+
+      // Prepare every transaction update in memory first, then commit all Firestore
+      // writes atomically so a quota/permission error cannot leave half a payment saved.
+      const transactionsById = new Map((orders || []).map(transaction => [transaction.id, transaction]));
+      const transactionUpdates = new Map();
+      for (const transactionId of restoredByTransaction.keys()) {
+        const transaction = transactionsById.get(transactionId);
+        if (!transaction) continue;
+        const total = Math.max(0, Number(transaction.total) || 0);
+        const restoredRemaining = Math.min(total, getOrderRemainingDebt(transaction) + restoredByTransaction.get(transactionId));
+        transactionUpdates.set(transactionId, { transaction, total, remaining: restoredRemaining, note: transaction.debtPaymentNote || '' });
+      }
+
+      const debtTransactionMap = new Map((getContactTransactionsForDebt() || []).map(transaction => [transaction.id, transaction]));
+      // Include transactions restored by an edited payment even if their current
+      // remaining debt is zero; they may need to be allocated again in this save.
+      for (const transactionId of restoredByTransaction.keys()) {
+        const transaction = transactionsById.get(transactionId);
+        if (transaction) debtTransactionMap.set(transactionId, transaction);
+      }
+      const debtTransactions = Array.from(debtTransactionMap.values()).map(transaction => {
+        const existing = transactionUpdates.get(transaction.id);
+        const total = Math.max(0, Number(transaction.total) || 0);
+        const remaining = existing ? existing.remaining : getOrderRemainingDebt(transaction);
+        return { ...transaction, total, _baseRemaining: Math.min(total, remaining) };
+      }).filter(transaction => transaction._baseRemaining > 0)
+        .sort((a, b) => new Date(a.date || 0) - new Date(b.date || 0));
+
       const allocations = [];
-      let amountToAllocate = debtPaymentMode === 'partial' ? amount : 0;
-      const paymentDate = new Date();
-      const paymentDateText = paymentDate.toLocaleString('vi-VN', { timeZone: 'Asia/Ho_Chi_Minh' });
-      const userNote = debtPaymentNote.trim();
+      let amountToAllocate = amount;
       if (debtPaymentMode === 'partial') {
-        for (const transaction of candidates) {
+        for (const transaction of debtTransactions) {
           if (amountToAllocate <= 0) break;
-          const remaining = plannedRemaining.get(transaction.id) || 0;
+          const remaining = Math.max(0, Number(transaction._baseRemaining) || 0);
           const applied = Math.min(remaining, amountToAllocate);
           if (applied <= 0) continue;
           const nextRemaining = Math.max(0, remaining - applied);
-          plannedRemaining.set(transaction.id, nextRemaining);
           const transactionCode = transaction.invoiceCode || transaction.receiptCode || transaction.code || transaction.id;
           const allocationNote = `Đã trừ ${formatCurrency(applied)} vào ${isCus ? 'đơn hàng' : 'phiếu nhập'} ${transactionCode} ngày ${paymentDateText}${userNote ? `; Ghi chú: ${userNote}` : ''}`;
+          transactionUpdates.set(transaction.id, { transaction, total: transaction.total, remaining: nextRemaining, note: allocationNote });
           allocations.push({ transactionId: transaction.id, transactionCode, transactionDate: transaction.date || '', amount: applied, note: allocationNote });
           amountToAllocate = Math.max(0, amountToAllocate - applied);
         }
       }
 
-      const nowIso = new Date().toISOString();
       const outsideDebtNote = debtPaymentMode === 'partial' && amountToAllocate > 0
         ? `; Nợ khác không có trong chi tiết ${formatCurrency(amountToAllocate)} đã được trừ vào tổng công nợ, không phân bổ vào đơn/phiếu nào`
         : '';
@@ -1727,68 +1755,87 @@ function ContactManager({ type, data, orders, navigationTarget, storeConfig, db,
         : '';
       const note = `${userNote || (debtPaymentMode === 'all' ? 'Trừ tổng nợ' : 'Trừ công nợ theo giao dịch cũ nhất')} ${formatCurrency(amount)} ngày ${paymentDateText}${allocationSummary}${outsideDebtNote}`;
       const paymentPayload = {
-        amount, method: debtPaymentMethod, mode: debtPaymentMode, note,
+        amount,
+        method: debtPaymentMethod,
+        mode: debtPaymentMode,
+        note,
         allocations: debtPaymentMode === 'partial' ? allocations : [],
-        date: editingDebtPayment?.date || nowIso, updatedAt: nowIso,
-        contactId: detailTarget.id, contactName: detailTarget.name, contactType: type
+        date: editingDebtPayment?.date || nowIso,
+        updatedAt: nowIso,
+        contactId: detailTarget.id,
+        contactName: detailTarget.name,
+        contactType: type
       };
+
       const paymentRef = editingDebtPayment?.id
         ? doc(db, 'stores', storeId, type, detailTarget.id, 'debtPayments', editingDebtPayment.id)
         : doc(collection(db, 'stores', storeId, type, detailTarget.id, 'debtPayments'));
-      const reportRef = doc(db, 'stores', storeId, 'debtPaymentReports', `${type}_${detailTarget.id}_${paymentRef.id}`);
+      const paymentId = paymentRef.id;
+      const reportId = `${type}_${detailTarget.id}_${paymentId}`;
+      const reportRef = doc(db, 'stores', storeId, 'debtPaymentReports', reportId);
+      const contactRef = doc(db, 'stores', storeId, type, detailTarget.id);
+      const remainingDebt = Math.max(0, debtBeforeEdit - amount);
       const batch = writeBatch(db);
 
-      // Ghi đồng bộ các giao dịch bị thay đổi, lịch sử thanh toán, báo cáo và tổng công nợ.
-      if (debtPaymentMode === 'partial') {
-        const affectedIds = new Set([...oldAllocationMap.keys(), ...allocations.map(a => a.transactionId)]);
-        for (const id of affectedIds) {
-          const transaction = candidatesById.get(id);
-          if (!transaction) continue;
-          const total = Math.max(0, Number(transaction.total) || 0);
-          const nextRemaining = Math.max(0, Math.min(total, plannedRemaining.get(id) ?? getOrderRemainingDebt(transaction)));
-          const allocation = allocations.find(a => a.transactionId === id);
-          const generatedNote = allocation?.note || `Đã hoàn phân bổ khoản thanh toán trước vào ${isCus ? 'đơn hàng' : 'phiếu nhập'} ${transaction.invoiceCode || transaction.receiptCode || transaction.code || transaction.id} ngày ${paymentDateText}${userNote ? `; Ghi chú: ${userNote}` : ''}`;
-          batch.update(doc(db, 'stores', storeId, collectionName, id), {
-            remainingDebt: nextRemaining,
-            paidAmount: Math.max(0, total - nextRemaining),
-            status: nextRemaining > 0 ? 'DEBT' : 'PAID',
-            debtUpdatedAt: nowIso,
-            debtPaymentNote: generatedNote
-          });
-        }
+      if (transactionUpdates.size > 495) {
+        throw new Error('Giao dịch liên quan quá nhiều đơn/phiếu để lưu an toàn cùng lúc. Vui lòng liên hệ quản trị viên; chưa có thay đổi nào được ghi.');
       }
-      batch.set(paymentRef, editingDebtPayment?.id ? paymentPayload : { ...paymentPayload, createdAt: nowIso }, { merge: true });
+      for (const [transactionId, update] of transactionUpdates) {
+        batch.update(doc(db, 'stores', storeId, collectionName, transactionId), {
+          remainingDebt: update.remaining,
+          paidAmount: Math.max(0, update.total - update.remaining),
+          status: update.remaining > 0 ? 'DEBT' : 'PAID',
+          debtUpdatedAt: nowIso,
+          debtPaymentNote: update.note
+        });
+      }
+      batch.set(paymentRef, { ...paymentPayload, ...(editingDebtPayment?.id ? {} : { createdAt: nowIso }) }, { merge: true });
       batch.set(reportRef, {
         ...paymentPayload,
-        id: `${type}_${detailTarget.id}_${paymentRef.id}`,
-        sourcePaymentId: paymentRef.id,
+        id: reportId,
+        sourcePaymentId: paymentId,
         source: 'contactDebt',
         direction: type === 'customers' ? 'Khách hàng trả nợ' : 'Trả nợ nhà cung cấp',
         date: paymentPayload.date || nowIso
       }, { merge: true });
-      const remainingDebt = Math.max(0, debtBeforeEdit - amount);
-      batch.update(doc(db, 'stores', storeId, type, detailTarget.id), {
-        totalDebt: remainingDebt,
-        debtNote: note,
-        debtUpdatedAt: nowIso
-      });
+      batch.update(contactRef, { totalDebt: remainingDebt, debtNote: note, debtUpdatedAt: nowIso });
       await batch.commit();
 
       setDetailTarget(prev => prev ? { ...prev, totalDebt: remainingDebt } : prev);
-      setDebtPaymentAmount(''); setDebtPaymentMode('partial'); setDebtPaymentMethod('cash'); setDebtPaymentNote(''); setEditingDebtPayment(null);
+      setDebtPaymentAmount('');
+      setDebtPaymentMode('partial');
+      setDebtPaymentMethod('cash');
+      setDebtPaymentNote('');
+      setEditingDebtPayment(null);
       showToast(editingDebtPayment ? 'Đã cập nhật giao dịch công nợ' : 'Đã ghi nhận trừ công nợ');
     } catch (err) {
-      console.error('handleDebtPaymentSave failed:', err);
-      showToast('Không thể lưu giao dịch công nợ: ' + (err?.message || 'Vui lòng kiểm tra kết nối và quyền Firebase'), 'error');
+      const code = err?.code ? ` (${err.code})` : '';
+      const rawMessage = err?.message || 'Lỗi không xác định';
+      const message = err?.code === 'permission-denied'
+        ? 'Không đủ quyền ghi dữ liệu. Kiểm tra đăng nhập và Firestore Rules.'
+        : err?.code === 'resource-exhausted'
+          ? 'Firestore đã vượt hạn mức đọc/ghi hiện tại. Chưa ghi nhận thanh toán; thử lại khi hạn mức được khôi phục.'
+          : err?.code === 'not-found'
+            ? 'Không tìm thấy hồ sơ hoặc đơn/phiếu liên quan. Hãy tải lại trang và thử lại.'
+            : rawMessage;
+      showToast(`Không thể lưu giao dịch công nợ${code}: ${message}`, 'error');
     } finally {
       setSavingDebtPayment(false);
     }
   };
 
   const getOrderRemainingDebt = (ord) => {
-    const total = Math.max(0, Number(ord.total) || 0);
-    if (Number.isFinite(Number(ord.remainingDebt))) return Math.max(0, Math.min(total, Number(ord.remainingDebt)));
-    return ord.status === 'DEBT' ? total : 0;
+    if (!ord) return 0;
+    // Hỗ trợ cả dữ liệu mới và phiếu cũ/Excel có tên trường tổng tiền khác nhau.
+    const rawTotal = ord.total ?? ord.totalAmount ?? ord.grandTotal ?? ord.amount ?? ord.finalTotal;
+    const total = Math.max(0, Number(rawTotal) || 0);
+    const hasRemainingDebt = ord.remainingDebt !== undefined && ord.remainingDebt !== null && ord.remainingDebt !== '' && Number.isFinite(Number(ord.remainingDebt));
+    if (hasRemainingDebt) return Math.max(0, Math.min(total > 0 ? total : Number(ord.remainingDebt), Number(ord.remainingDebt)));
+    const status = String(ord.status || '').trim().toLocaleUpperCase('vi');
+    const isDebt = ['DEBT', 'UNPAID', 'NỢ', 'NO', 'CHƯA THANH TOÁN', 'CHUA THANH TOAN'].includes(status);
+    if (!isDebt) return 0;
+    const paid = Math.max(0, Number(ord.paidAmount ?? ord.amountPaid ?? ord.paid ?? 0) || 0);
+    return Math.max(0, total - paid);
   };
 
   const updateTransactionDebt = async (ord, nextRemainingDebt, successMessage) => {
@@ -2011,7 +2058,7 @@ function ContactManager({ type, data, orders, navigationTarget, storeConfig, db,
               <div className="bg-orange-50 p-2.5 rounded-lg border border-orange-100"><p className="text-[10px] text-orange-600 font-bold uppercase">Đang Nợ</p><p className="text-sm font-bold text-orange-700">{formatCurrency(detailData.totalDebtRemain)}</p></div>
             </div>
             <section className="border rounded-xl bg-white p-4 space-y-3">
-              <div className="flex flex-wrap justify-between items-center gap-2"><h3 className="font-bold text-gray-800">Trừ công nợ</h3><span className="text-sm font-bold text-blue-600">Còn nợ: {formatCurrency(detailTarget.totalDebt)}</span></div>
+              <div className="flex flex-wrap justify-between items-center gap-2"><h3 className="font-bold text-gray-800">Trừ công nợ</h3><span className="text-sm font-bold text-blue-600">Còn nợ: {formatCurrency(Math.max(Number(detailTarget.totalDebt)||0, getContactTransactionsForDebt().reduce((sum, transaction) => sum + getOrderRemainingDebt(transaction), 0)))}</span></div>
               <form onSubmit={handleDebtPaymentSave} className="grid grid-cols-1 md:grid-cols-4 gap-3 items-end">
                 <label className="text-xs font-semibold text-gray-600">Cách trừ công nợ<select value={debtPaymentMode} onChange={e=>{setDebtPaymentMode(e.target.value); if(e.target.value==='all') setDebtPaymentAmount('');}} className="mt-1 w-full border rounded-lg p-2 bg-white text-sm"><option value="partial">Trừ từng phần</option><option value="all">Trừ trên tổng nợ</option></select></label>
                 <label className="text-xs font-semibold text-gray-600">Số tiền (VNĐ)<input type="number" min="1" step="any" value={debtPaymentMode==='all' ? Math.max(0, Number(detailTarget.totalDebt)||0, getContactTransactionsForDebt().reduce((sum, transaction) => sum + getOrderRemainingDebt(transaction), 0)) : debtPaymentAmount} onChange={e=>setDebtPaymentAmount(e.target.value)} disabled={debtPaymentMode==='all'} required={debtPaymentMode==='partial'} className="mt-1 w-full border rounded-lg p-2 text-sm disabled:bg-gray-100" placeholder="Nhập số tiền" /></label>
@@ -3374,6 +3421,9 @@ function SettingsView({ db, storeId, showToast, storeConfig }) {
   const [deletePasswordConfirm, setDeletePasswordConfirm] = useState('');
   const [deletingData, setDeletingData] = useState(false);
   const [deleteProgress, setDeleteProgress] = useState('');
+  const [stockFileBusy, setStockFileBusy] = useState(false);
+  const [stockPreview, setStockPreview] = useState(null);
+  const [stockImportProgress, setStockImportProgress] = useState('');
 
   useEffect(() => {
     if (storeConfig) {
@@ -3777,6 +3827,129 @@ function SettingsView({ db, storeId, showToast, storeConfig }) {
       if (e?.target) e.target.value = '';
     }
   };
+  const normalizeStockHeader = value => String(value ?? '').trim().toLocaleLowerCase('vi').normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/đ/g, 'd').replace(/[^a-z0-9]/g, '');
+  const handleStockExcelSelect = async (e) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    if (!window.XLSX) { showToast('Thư viện Excel chưa tải xong. Tải lại trang rồi thử lại.', 'error'); e.target.value = ''; return; }
+    if (file.size > 25 * 1024 * 1024) { showToast('File vượt quá 25 MB. Hãy chia nhỏ file.', 'error'); e.target.value = ''; return; }
+    setStockFileBusy(true); setStockImportProgress('Đang đọc file Excel...');
+    try {
+      const buffer = await file.arrayBuffer();
+      const wb = window.XLSX.read(buffer, { type: 'array', cellDates: true });
+      const sheet = wb.Sheets[wb.SheetNames[0]];
+      const rows = window.XLSX.utils.sheet_to_json(sheet, { defval: '', blankrows: false });
+      if (!rows.length) throw new Error('File không có dòng dữ liệu.');
+      const first = rows[0];
+      const keys = Object.keys(first);
+      const findKey = patterns => keys.find(k => patterns.includes(normalizeStockHeader(k)));
+      const codeKey = findKey(['masanpham','mahang','masp','productcode','code']);
+      const nameKey = findKey(['tensanpham','tenhang','tensp','productname','name']);
+      const qtyKey = findKey(['tonkho','soluongton','tonhientai','stock','quantity','soluong']);
+      if (!nameKey || !qtyKey) throw new Error('Không nhận diện được cột Tên sản phẩm hoặc Tồn kho. Cần các cột: Mã sản phẩm, Tên sản phẩm, Tồn kho.');
+      const parsed = [];
+      const seenCodes = new Set();
+      const seenNames = new Set();
+      let invalid = 0, duplicates = 0;
+      for (let i = 0; i < rows.length; i++) {
+        const row = rows[i];
+        const code = codeKey ? String(row[codeKey] ?? '').trim() : '';
+        const name = String(row[nameKey] ?? '').trim();
+        const rawQty = row[qtyKey];
+        if (!code && !name && (rawQty === '' || rawQty == null)) continue;
+        const qty = typeof rawQty === 'number' ? rawQty : Number(String(rawQty ?? '').trim().replace(/\s/g,'').replace(/,(?=\d{1,2}$)/,'.').replace(/\.(?=\d{3}(\D|$))/g,''));
+        if (!name || rawQty === '' || rawQty == null || !Number.isFinite(qty) || qty < 0) { invalid++; continue; }
+        const ckey = code.toLocaleLowerCase('vi');
+        const nkey = name.toLocaleLowerCase('vi');
+        if ((code && seenCodes.has(ckey)) || (!code && seenNames.has(nkey))) { duplicates++; continue; }
+        if (code) seenCodes.add(ckey); else seenNames.add(nkey);
+        parsed.push({ code, name, stock: qty, sourceRow: i + 2 });
+      }
+      if (!parsed.length) throw new Error('Không có dòng tồn kho hợp lệ để đối chiếu.');
+      setStockPreview({ fileName: file.name, rows: parsed, invalid, duplicates });
+      setStockImportProgress(`Đã đọc ${parsed.length} dòng hợp lệ; ${invalid} dòng lỗi; ${duplicates} dòng trùng trong file.`);
+    } catch (err) {
+      showToast('Không đọc được file tồn kho: ' + (err?.message || 'Lỗi không xác định'), 'error');
+      setStockPreview(null);
+    } finally { setStockFileBusy(false); e.target.value = ''; }
+  };
+
+  const handleApplyStockExcel = async () => {
+    if (!stockPreview?.rows?.length || stockFileBusy) return;
+    const confirmed = window.confirm(`Bạn sắp cập nhật số tồn hiện tại của sản phẩm theo file ${stockPreview.fileName}.\n\n${stockPreview.rows.length} dòng sẽ được đối chiếu. Chỉ cập nhật trường tồn kho; không sửa đơn hàng, phiếu nhập, nhà cung cấp hay công nợ. Dòng không khớp hoặc mã trùng trong hệ thống sẽ bị bỏ qua.\n\nBạn đã sao lưu dữ liệu và muốn tiếp tục chưa?`);
+    if (!confirmed) return;
+    setStockFileBusy(true); setStockImportProgress('Đang đọc danh mục sản phẩm hiện tại...');
+    try {
+      const snap = await getDocs(collection(db, 'stores', storeId, 'products'));
+      const byCode = new Map(), byName = new Map();
+      const duplicateCodes = new Set(), duplicateNames = new Set();
+      snap.docs.forEach(d => {
+        const x = d.data();
+        const code = String(x.code ?? '').trim().toLocaleLowerCase('vi');
+        const name = String(x.name ?? '').trim().toLocaleLowerCase('vi');
+        if (code) { if (byCode.has(code)) duplicateCodes.add(code); else byCode.set(code, d); }
+        if (name) { if (byName.has(name)) duplicateNames.add(name); else byName.set(name, d); }
+      });
+      let matched = 0, missing = 0, ambiguous = 0, updated = 0;
+      const updates = [];
+      for (const row of stockPreview.rows) {
+        let productDoc = null;
+        if (row.code) {
+          const key = row.code.toLocaleLowerCase('vi');
+          if (duplicateCodes.has(key)) { ambiguous++; continue; }
+          productDoc = byCode.get(key) || null;
+        } else {
+          const key = row.name.toLocaleLowerCase('vi');
+          if (duplicateNames.has(key)) { ambiguous++; continue; }
+          productDoc = byName.get(key) || null;
+        }
+        if (!productDoc) { missing++; continue; }
+        matched++;
+        updates.push({ ref: productDoc.ref, stock: row.stock });
+      }
+      if (!updates.length) {
+        setStockImportProgress(`Không có sản phẩm nào được cập nhật. Không khớp: ${missing}; mã/tên trùng trong danh mục: ${ambiguous}.`);
+        showToast('Không tìm được sản phẩm khớp để cập nhật tồn kho.', 'error');
+        return;
+      }
+      const proceed = window.confirm(`Kết quả đối chiếu:\n- Khớp để cập nhật: ${matched}\n- Không tìm thấy: ${missing}\n- Mã/tên trùng, cần xử lý thủ công: ${ambiguous}\n\nChỉ cập nhật trường stock của ${updates.length} sản phẩm. Tiếp tục?`);
+      if (!proceed) { setStockImportProgress('Đã hủy cập nhật; dữ liệu chưa thay đổi.'); return; }
+      const chunkSize = 400;
+      for (let i = 0; i < updates.length; i += chunkSize) {
+        const batch = writeBatch(db);
+        const chunk = updates.slice(i, i + chunkSize);
+        chunk.forEach(item => batch.update(item.ref, { stock: item.stock }));
+        await batch.commit();
+        updated += chunk.length;
+        setStockImportProgress(`Đã cập nhật ${updated}/${updates.length} sản phẩm...`);
+      }
+      setStockImportProgress(`Hoàn tất: cập nhật ${updated}; không tìm thấy ${missing}; mã/tên trùng ${ambiguous}.`);
+      showToast(`Đã cập nhật tồn kho ${updated} sản phẩm. Lịch sử nhập hàng, đơn hàng và công nợ không bị sửa.`);
+      setStockPreview(null);
+    } catch (err) {
+      console.error('Stock Excel update error:', err);
+      setStockImportProgress('Có lỗi khi cập nhật. Một số lô trước đó có thể đã lưu; hãy kiểm tra tồn kho trước khi chạy lại.');
+      showToast('Cập nhật tồn kho chưa hoàn tất: ' + (err?.code || err?.message || 'Lỗi Firestore'), 'error');
+    } finally { setStockFileBusy(false); }
+  };
+
+  const handleExportCurrentStock = async () => {
+    if (!window.XLSX || stockFileBusy) { showToast('Thư viện Excel chưa sẵn sàng.', 'error'); return; }
+    setStockFileBusy(true); setStockImportProgress('Đang xuất tồn kho...');
+    try {
+      const snap = await getDocs(collection(db, 'stores', storeId, 'products'));
+      const data = snap.docs.map(d => { const p = d.data(); return { 'Mã sản phẩm': p.code || '', 'Tên sản phẩm': p.name || '', 'Tồn kho': Number(p.stock) || 0 }; });
+      const ws = window.XLSX.utils.json_to_sheet(data);
+      const wb = window.XLSX.utils.book_new();
+      window.XLSX.utils.book_append_sheet(wb, ws, 'TonKho');
+      window.XLSX.writeFile(wb, 'Ton_Kho_San_Pham.xlsx');
+      setStockImportProgress(`Đã xuất ${data.length} sản phẩm ra Excel.`);
+      showToast('Đã xuất file tồn kho Excel.');
+    } catch (err) {
+      showToast('Không xuất được tồn kho: ' + (err?.code || err?.message || 'Lỗi Firestore'), 'error');
+    } finally { setStockFileBusy(false); }
+  };
+
   const handleExport = async (type) => {
     if (!window.XLSX) return showToast("Hệ thống chưa sẵn sàng", "error");
     setLoadingFile(true);
@@ -4083,6 +4256,23 @@ function SettingsView({ db, storeId, showToast, storeConfig }) {
                   <button type="button" onClick={() => openDeleteConfirmation('suppliers')} className="bg-white border border-blue-300 text-blue-700 hover:bg-blue-100 font-bold py-2.5 px-4 rounded-xl transition-colors">Xóa nhà cung cấp</button>
                 </div>
               </div>
+            </div>
+            <div className="bg-white p-6 rounded-2xl border border-emerald-200 shadow-sm">
+              <h3 className="font-bold text-gray-800 flex items-center gap-2"><Package className="text-emerald-600"/> Đối chiếu & cập nhật tồn kho bằng Excel</h3>
+              <p className="text-sm text-gray-600 mt-2 mb-4">File cần có các cột <b>Mã sản phẩm</b>, <b>Tên sản phẩm</b>, <b>Tồn kho</b>. Hệ thống đối chiếu mã sản phẩm chính xác; chỉ khi file không có mã mới đối chiếu bằng tên duy nhất. Không tạo đơn/phiếu nhập giả và không sửa lịch sử nhà cung cấp, đơn hàng hoặc công nợ.</p>
+              <div className="flex flex-col sm:flex-row gap-3">
+                <label className="relative overflow-hidden cursor-pointer inline-flex items-center justify-center gap-2 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-bold px-4 py-3"> <Upload size={17}/> Chọn file Excel <input type="file" accept=".xls,.xlsx" onChange={handleStockExcelSelect} disabled={stockFileBusy} className="absolute inset-0 opacity-0 cursor-pointer"/> </label>
+                <button type="button" onClick={handleExportCurrentStock} disabled={stockFileBusy} className="inline-flex items-center justify-center gap-2 rounded-xl border border-emerald-300 bg-white px-4 py-3 font-bold text-emerald-700 disabled:opacity-50"><Download size={17}/> Xuất tồn kho Excel</button>
+              </div>
+              {stockImportProgress && <div className="mt-3 rounded-lg bg-gray-50 border p-3 text-sm text-gray-700" role="status">{stockImportProgress}</div>}
+              {stockPreview && <div className="mt-4 rounded-xl border border-amber-200 bg-amber-50 p-4 space-y-3">
+                <div className="font-bold text-amber-900">File: {stockPreview.fileName}</div>
+                <div className="text-sm text-amber-900">Dòng hợp lệ: {stockPreview.rows.length} · Dòng lỗi: {stockPreview.invalid} · Dòng trùng trong file đã bỏ qua: {stockPreview.duplicates}</div>
+                <div className="max-h-64 overflow-auto rounded-lg border bg-white"><table className="w-full text-sm"><thead className="sticky top-0 bg-gray-100"><tr><th className="p-2 text-left">Mã sản phẩm</th><th className="p-2 text-left">Tên sản phẩm</th><th className="p-2 text-right">Tồn kho Excel</th></tr></thead><tbody>{stockPreview.rows.slice(0,100).map((row,idx)=><tr key={`${row.code}-${row.sourceRow}`} className="border-t"><td className="p-2">{row.code || '—'}</td><td className="p-2">{row.name}</td><td className="p-2 text-right">{row.stock}</td></tr>)}</tbody></table></div>
+                {stockPreview.rows.length > 100 && <p className="text-xs text-gray-600">Đang xem trước 100 dòng đầu; khi cập nhật sẽ xử lý toàn bộ {stockPreview.rows.length} dòng hợp lệ.</p>}
+                <div className="flex flex-col sm:flex-row gap-2"><button type="button" onClick={handleApplyStockExcel} disabled={stockFileBusy} className="rounded-xl bg-amber-600 hover:bg-amber-700 text-white font-bold px-4 py-3 disabled:opacity-50">Đối chiếu và cập nhật tồn kho</button><button type="button" onClick={()=>{setStockPreview(null);setStockImportProgress('Đã hủy file xem trước; chưa thay đổi dữ liệu.');}} disabled={stockFileBusy} className="rounded-xl border bg-white px-4 py-3 font-bold text-gray-700">Hủy</button></div>
+              </div>}
+              <p className="text-xs text-gray-500 mt-3">Lưu ý: đây là cập nhật số tồn hiện tại, không tái dựng lịch sử tồn theo từng lần nhập/bán. Hãy sao lưu và kiểm tra file trước khi xác nhận. Nếu Firestore ngắt giữa các lô, kiểm tra tồn kho trước khi chạy lại.</p>
             </div>
             <div className="bg-white p-6 rounded-2xl border shadow-sm">
               <h3 className="font-bold border-b pb-3 mb-2 text-gray-800 flex items-center gap-2"><FileText className="text-green-600"/> Nhập / Xuất File Excel</h3><p className="text-xs text-gray-500 mb-5">Đọc toàn bộ dòng dữ liệu trong sheet, không giới hạn 200 dòng. Khi nhập sẽ hỏi xác nhận số dòng trước khi ghi. Đơn hàng đối chiếu theo mã hóa đơn; chi phí chỉ chống trùng khi có mã phiếu, không tự bỏ giao dịch chỉ vì trùng ngày hoặc số tiền.</p>
