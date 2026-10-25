@@ -1696,11 +1696,15 @@ function ContactManager({ type, data, orders, products = [], navigationTarget, s
         // Chủ ý không cập nhật collection products: xóa lịch sử giao dịch không được làm thay đổi tồn kho.
         batch.delete(doc(db, 'stores', storeId, isCus ? 'orders' : 'imports', transaction.id));
       }
-      batch.update(doc(db, 'stores', storeId, type, detailTarget.id), {
+      batch.set(doc(db, 'stores', storeId, type, detailTarget.id), {
         totalDebt: Math.max(0, (Number(detailTarget.totalDebt) || 0) - debtReduction),
         debtUpdatedAt: new Date().toISOString(),
-        debtNote: `Đã xóa ${chosen.length} giao dịch chi tiết; điều chỉnh công nợ ${formatCurrency(debtReduction)}`
-      });
+        debtNote: `Đã xóa ${chosen.length} giao dịch chi tiết; điều chỉnh công nợ ${formatCurrency(debtReduction)}`,
+        ...(detailTarget.name ? { name: detailTarget.name } : {}),
+        ...(detailTarget.code ? { code: detailTarget.code } : {}),
+        ...(detailTarget.phone ? { phone: detailTarget.phone } : {}),
+        ...(detailTarget.address ? { address: detailTarget.address } : {})
+      }, { merge: true });
       await batch.commit();
       // Remove matching transaction-specific payment report entries to keep reports aligned.
       const reportSnapshot = await getDocs(collection(db, 'stores', storeId, 'debtPaymentReports'));
@@ -2075,7 +2079,8 @@ function ContactManager({ type, data, orders, products = [], navigationTarget, s
     }).sort((a,b) => new Date(b.date) - new Date(a.date));
     let totalAmount = matched.reduce((s, o) => s + (Number(o.total) || 0), 0);
     let totalPaid = matched.reduce((s, o) => s + (Number(o.paidAmount) || (o.status === 'PAID' ? (Number(o.total) || 0) : 0)), 0);
-    let totalDebtRemain = matched.reduce((s, o) => s + getOrderRemainingDebt(o), 0);
+    // Số nợ hiện tại lấy từ hồ sơ khách hàng/nhà cung cấp; không cộng lại nợ từ giao dịch cũ đã thanh toán/xóa.
+    let totalDebtRemain = Math.max(0, Number(detailTarget.totalDebt) || 0);
     return { list: matched, totalAmount, totalPaid, totalDebtRemain };
   }, [detailTarget, orders, filterYear, isCus]);
   const detailPageList = detailRowsPerPage === 'all' ? detailData.list : detailData.list.slice((detailCurrentPage - 1) * Number(detailRowsPerPage), detailCurrentPage * Number(detailRowsPerPage));
@@ -2153,13 +2158,13 @@ function ContactManager({ type, data, orders, products = [], navigationTarget, s
               <div className="bg-orange-50 p-2.5 rounded-lg border border-orange-100"><p className="text-[10px] text-orange-600 font-bold uppercase">Đang Nợ</p><p className="text-sm font-bold text-orange-700">{formatCurrency(detailData.totalDebtRemain)}</p></div>
             </div>
             <section className="border rounded-xl bg-white p-4 space-y-3">
-              <div className="flex flex-wrap justify-between items-center gap-2"><h3 className="font-bold text-gray-800">Trừ công nợ</h3><span className="text-sm font-bold text-blue-600">Còn nợ: {formatCurrency(Math.max(Number(detailTarget.totalDebt)||0, getContactTransactionsForDebt().reduce((sum, transaction) => sum + getOrderRemainingDebt(transaction), 0)))}</span></div>
+              <div className="flex flex-wrap justify-between items-center gap-2"><h3 className="font-bold text-gray-800">Trừ công nợ</h3><span className="text-sm font-bold text-blue-600">Còn nợ: {formatCurrency(Math.max(0, Number(detailTarget.totalDebt) || 0))}</span></div>
               <form onSubmit={handleDebtPaymentSave} className="grid grid-cols-1 md:grid-cols-4 gap-3 items-end">
                 <label className="text-xs font-semibold text-gray-600">Cách trừ công nợ<select value={debtPaymentMode} onChange={e=>{setDebtPaymentMode(e.target.value); if(e.target.value==='all') setDebtPaymentAmount('');}} className="mt-1 w-full border rounded-lg p-2 bg-white text-sm"><option value="partial">Trừ từng phần</option><option value="all">Trừ trên tổng nợ</option></select></label>
-                <label className="text-xs font-semibold text-gray-600">Số tiền (VNĐ)<input type="number" min="1" step="any" value={debtPaymentMode==='all' ? Math.max(0, Number(detailTarget.totalDebt)||0, getContactTransactionsForDebt().reduce((sum, transaction) => sum + getOrderRemainingDebt(transaction), 0)) : debtPaymentAmount} onChange={e=>setDebtPaymentAmount(e.target.value)} disabled={debtPaymentMode==='all'} required={debtPaymentMode==='partial'} className="mt-1 w-full border rounded-lg p-2 text-sm disabled:bg-gray-100" placeholder="Nhập số tiền" /></label>
+                <label className="text-xs font-semibold text-gray-600">Số tiền (VNĐ)<input type="number" min="1" step="any" value={debtPaymentMode==='all' ? Math.max(0, Number(detailTarget.totalDebt)||0) : debtPaymentAmount} onChange={e=>setDebtPaymentAmount(e.target.value)} disabled={debtPaymentMode==='all'} required={debtPaymentMode==='partial'} className="mt-1 w-full border rounded-lg p-2 text-sm disabled:bg-gray-100" placeholder="Nhập số tiền" /></label>
                 <label className="text-xs font-semibold text-gray-600">Phương thức<select value={debtPaymentMethod} onChange={e=>setDebtPaymentMethod(e.target.value)} className="mt-1 w-full border rounded-lg p-2 bg-white text-sm"><option value="cash">Tiền mặt</option><option value="transfer">Chuyển khoản</option></select></label>
                 <label className="text-xs font-semibold text-gray-600 md:col-span-3">Ghi chú giao dịch<textarea value={debtPaymentNote} onChange={e=>setDebtPaymentNote(e.target.value)} rows={2} className="mt-1 w-full border rounded-lg p-2 text-sm" placeholder="Ví dụ: trừ từng phần / trừ tổng nợ, nội dung đối chiếu..." /></label>
-                <button type="submit" disabled={savingDebtPayment || (Math.max(Number(detailTarget.totalDebt)||0, getContactTransactionsForDebt().reduce((sum, transaction) => sum + getOrderRemainingDebt(transaction), 0))<=0 && !editingDebtPayment)} className="bg-blue-600 hover:bg-blue-700 disabled:opacity-50 text-white font-bold rounded-lg p-2.5 text-sm">{savingDebtPayment ? 'Đang lưu...' : editingDebtPayment ? 'Lưu chỉnh sửa' : 'Xác nhận trừ nợ'}</button>
+                <button type="submit" disabled={savingDebtPayment || (Math.max(0, Number(detailTarget.totalDebt) || 0)<=0 && !editingDebtPayment)} className="bg-blue-600 hover:bg-blue-700 disabled:opacity-50 text-white font-bold rounded-lg p-2.5 text-sm">{savingDebtPayment ? 'Đang lưu...' : editingDebtPayment ? 'Lưu chỉnh sửa' : 'Xác nhận trừ nợ'}</button>
               </form>
               {editingDebtPayment && <button type="button" onClick={()=>{setEditingDebtPayment(null);setDebtPaymentAmount('');setDebtPaymentMode('partial');setDebtPaymentMethod('cash');}} className="text-xs text-gray-600 underline">Hủy chỉnh sửa</button>}
               {selectedPaymentIds.length > 0 && <div className="flex items-center justify-between gap-2 bg-red-50 border border-red-200 rounded-lg p-2 text-xs"><span>Đã chọn {selectedPaymentIds.length} lần thanh toán</span><button type="button" disabled={savingDebtPayment} onClick={handleDeleteSelectedPayments} className="bg-red-600 text-white rounded px-3 py-1.5 font-bold disabled:opacity-50">Xóa lần thanh toán đã chọn</button></div>}
