@@ -482,7 +482,7 @@ export default function App() {
         {activeTab === 'dashboard' && <DashboardView orders={orders} imports={imports} expenses={expenses} customers={customers} suppliers={suppliers} products={products} warrantyRequests={warrantyRequests} showToast={showToast} userData={userData} />}
         {activeTab === 'pos' && <POSView products={products} orders={orders} customers={customers} db={db} storeId={storeId} user={user} storeConfig={storeConfig} showToast={showToast} userData={userData} />}
         {activeTab === 'sales_history' && <SalesHistoryView orders={orders} imports={imports} products={products} customers={customers} storeConfig={storeConfig} db={db} storeId={storeId} user={user} userData={userData} showToast={showToast} />}
-        {activeTab === 'imports' && <ImportView products={products} orders={orders} imports={imports} suppliers={suppliers} db={db} storeId={storeId} user={user} userData={userData} showToast={showToast} storeConfig={storeConfig} setActiveTab={setActiveTab} />}
+        {activeTab === 'imports' && <ImportView products={products} imports={imports} suppliers={suppliers} db={db} storeId={storeId} user={user} userData={userData} showToast={showToast} storeConfig={storeConfig} setActiveTab={setActiveTab} />}
         {activeTab === 'products' && <InventoryView products={products} orders={orders} imports={imports} warrantyRequests={warrantyRequests} customers={customers} suppliers={suppliers} navigationTarget={navigationTarget} storeConfig={storeConfig} db={db} storeId={storeId} showToast={showToast} />}
         {activeTab === 'warranty' && <WarrantyView products={products} customers={customers} suppliers={suppliers} warrantyRequests={warrantyRequests} storeConfig={storeConfig} db={db} storeId={storeId} showToast={showToast} />}
         {activeTab === 'customers' && <ContactManager type="customers" data={customers} orders={orders} navigationTarget={navigationTarget} storeConfig={storeConfig} db={db} storeId={storeId} showToast={showToast} />}
@@ -1584,7 +1584,6 @@ function ContactManager({ type, data, orders, navigationTarget, storeConfig, db,
   const [debtPaymentMode, setDebtPaymentMode] = useState('partial');
   const [debtPaymentAmount, setDebtPaymentAmount] = useState('');
   const [debtPaymentMethod, setDebtPaymentMethod] = useState('cash');
-  const [debtPaymentNote, setDebtPaymentNote] = useState('');
   const [editingDebtPayment, setEditingDebtPayment] = useState(null);
   const [savingDebtPayment, setSavingDebtPayment] = useState(false);
   useEffect(() => {
@@ -1613,194 +1612,37 @@ function ContactManager({ type, data, orders, navigationTarget, storeConfig, db,
   const [currentPage, setCurrentPage] = useState(1);
   useEffect(() => { if (navigationTarget?.tab === type && (navigationTarget.id || navigationTarget.name)) { const match = (data || []).find(item => navigationTarget.id && item.id === navigationTarget.id) || (data || []).find(item => navigationTarget.name && (item.name || '').trim().toLocaleLowerCase('vi') === navigationTarget.name.trim().toLocaleLowerCase('vi')); if (match) { setDetailTarget(match); setDetailRowsPerPage('5'); setDetailCurrentPage(1); setSearchTerm(''); setCurrentPage(1); } } }, [navigationTarget?.nonce, navigationTarget?.tab, navigationTarget?.id, navigationTarget?.name, type, data]);
 
-  const getContactTransactionsForDebt = () => {
-    const idField = isCus ? 'customerId' : 'supplierId';
-    const nameField = isCus ? 'customerName' : 'supplierName';
-    const sameName = value => String(value || '').trim().toLocaleLowerCase('vi') === String(detailTarget?.name || '').trim().toLocaleLowerCase('vi');
-    const idMatches = detailTarget?.id ? (orders || []).filter(o => o[idField] && o[idField] === detailTarget.id) : [];
-    const matches = idMatches.length ? idMatches : (orders || []).filter(o => sameName(o[nameField]));
-    return matches.filter(o => getOrderRemainingDebt(o) > 0).sort((a,b) => new Date(a.date || 0) - new Date(b.date || 0));
-  };
-
-  const applyDebtAllocations = async (allocations, direction = 'reverse') => {
-    // direction='reverse' returns previously allocated payments to the transaction debt;
-    // direction='apply' subtracts the allocation from the transaction debt.
-    for (const allocation of (allocations || [])) {
-      const transaction = (orders || []).find(o => o.id === allocation.transactionId);
-      if (!transaction) continue;
-      const total = Math.max(0, Number(transaction.total) || 0);
-      const currentRemaining = getOrderRemainingDebt(transaction);
-      const amount = Math.max(0, Number(allocation.amount) || 0);
-      const nextRemaining = direction === 'reverse'
-        ? Math.min(total, currentRemaining + amount)
-        : Math.max(0, currentRemaining - amount);
-      await updateDoc(doc(db, 'stores', storeId, isCus ? 'orders' : 'imports', transaction.id), {
-        remainingDebt: nextRemaining,
-        paidAmount: Math.max(0, total - nextRemaining),
-        status: nextRemaining > 0 ? 'DEBT' : 'PAID',
-        debtUpdatedAt: new Date().toISOString(),
-        debtPaymentNote: direction === 'apply' ? (allocation.note || '') : (transaction.debtPaymentNote || '')
-      });
-    }
-  };
-
-  const handleUndoDebtPayment = async (payment) => {
-    if (!detailTarget?.id || !payment?.id || savingDebtPayment) return;
-    if (!window.confirm(`Hoàn tác giao dịch ${formatCurrency(payment.amount)}? Công nợ sẽ được khôi phục và các đơn đã phân bổ sẽ trở lại trạng thái nợ tương ứng.`)) return;
-    setSavingDebtPayment(true);
-    try {
-      if (payment.allocations?.length) await applyDebtAllocations(payment.allocations, 'reverse');
-      const restoredDebt = Math.max(0, Number(detailTarget.totalDebt || 0) + Number(payment.amount || 0));
-      await updateDoc(doc(db, 'stores', storeId, type, detailTarget.id), { totalDebt: restoredDebt, debtNote: `Hoàn tác trừ công nợ ${formatCurrency(payment.amount)}: ${payment.note || ''}`, debtUpdatedAt: new Date().toISOString() });
-      await deleteDoc(doc(db, 'stores', storeId, type, detailTarget.id, 'debtPayments', payment.id));
-      await deleteDoc(doc(db, 'stores', storeId, 'debtPaymentReports', `${type}_${detailTarget.id}_${payment.id}`)).catch(() => {});
-      setDetailTarget(prev => prev ? { ...prev, totalDebt: restoredDebt } : prev);
-      if (editingDebtPayment?.id === payment.id) { setEditingDebtPayment(null); setDebtPaymentNote(''); }
-      showToast('Đã hoàn tác giao dịch công nợ');
-    } catch (err) { showToast('Không thể hoàn tác giao dịch công nợ: ' + (err?.message || ''), 'error'); }
-    finally { setSavingDebtPayment(false); }
-  };
-
   const handleDebtPaymentSave = async (e) => {
     e.preventDefault();
     if (!detailTarget?.id || savingDebtPayment) return;
-
-    const transactionDebt = getContactTransactionsForDebt().reduce((sum, transaction) => sum + getOrderRemainingDebt(transaction), 0);
-    const currentDebt = Math.max(0, Number(detailTarget.totalDebt) || 0, transactionDebt);
+    const currentDebt = Math.max(0, Number(detailTarget.totalDebt) || 0);
     const oldAmount = editingDebtPayment ? Math.max(0, Number(editingDebtPayment.amount) || 0) : 0;
     const debtBeforeEdit = currentDebt + oldAmount;
     const amount = debtPaymentMode === 'all' ? debtBeforeEdit : Number(debtPaymentAmount);
-    if (!Number.isFinite(amount) || amount <= 0 || amount > debtBeforeEdit) {
-      showToast('Số tiền trừ công nợ không hợp lệ', 'error');
-      return;
-    }
-
+    if (!Number.isFinite(amount) || amount <= 0 || amount > debtBeforeEdit) { showToast('Số tiền trừ công nợ không hợp lệ', 'error'); return; }
     setSavingDebtPayment(true);
     try {
-      const now = new Date();
-      const nowIso = now.toISOString();
-      const paymentDateText = now.toLocaleString('vi-VN', { timeZone: 'Asia/Ho_Chi_Minh' });
-      const userNote = String(debtPaymentNote || '').trim();
-      const collectionName = isCus ? 'orders' : 'imports';
-      const oldAllocations = Array.isArray(editingDebtPayment?.allocations) ? editingDebtPayment.allocations : [];
-      const restoredByTransaction = new Map();
-      oldAllocations.forEach((allocation) => {
-        restoredByTransaction.set(allocation.transactionId, (restoredByTransaction.get(allocation.transactionId) || 0) + Math.max(0, Number(allocation.amount) || 0));
-      });
-
-      // Prepare every transaction update in memory first, then commit all Firestore
-      // writes atomically so a quota/permission error cannot leave half a payment saved.
-      const transactionsById = new Map((orders || []).map(transaction => [transaction.id, transaction]));
-      const transactionUpdates = new Map();
-      for (const transactionId of restoredByTransaction.keys()) {
-        const transaction = transactionsById.get(transactionId);
-        if (!transaction) continue;
-        const total = Math.max(0, Number(transaction.total) || 0);
-        const restoredRemaining = Math.min(total, getOrderRemainingDebt(transaction) + restoredByTransaction.get(transactionId));
-        transactionUpdates.set(transactionId, { transaction, total, remaining: restoredRemaining, note: transaction.debtPaymentNote || '' });
-      }
-
-      const debtTransactionMap = new Map((getContactTransactionsForDebt() || []).map(transaction => [transaction.id, transaction]));
-      // Include transactions restored by an edited payment even if their current
-      // remaining debt is zero; they may need to be allocated again in this save.
-      for (const transactionId of restoredByTransaction.keys()) {
-        const transaction = transactionsById.get(transactionId);
-        if (transaction) debtTransactionMap.set(transactionId, transaction);
-      }
-      const debtTransactions = Array.from(debtTransactionMap.values()).map(transaction => {
-        const existing = transactionUpdates.get(transaction.id);
-        const total = Math.max(0, Number(transaction.total) || 0);
-        const remaining = existing ? existing.remaining : getOrderRemainingDebt(transaction);
-        return { ...transaction, total, _baseRemaining: Math.min(total, remaining) };
-      }).filter(transaction => transaction._baseRemaining > 0)
-        .sort((a, b) => new Date(a.date || 0) - new Date(b.date || 0));
-
-      const allocations = [];
-      let amountToAllocate = amount;
-      if (debtPaymentMode === 'partial') {
-        for (const transaction of debtTransactions) {
-          if (amountToAllocate <= 0) break;
-          const remaining = Math.max(0, Number(transaction._baseRemaining) || 0);
-          const applied = Math.min(remaining, amountToAllocate);
-          if (applied <= 0) continue;
-          const nextRemaining = Math.max(0, remaining - applied);
-          const transactionCode = transaction.invoiceCode || transaction.receiptCode || transaction.code || transaction.id;
-          const allocationNote = `Đã trừ ${formatCurrency(applied)} vào ${isCus ? 'đơn hàng' : 'phiếu nhập'} ${transactionCode} ngày ${paymentDateText}${userNote ? `; Ghi chú: ${userNote}` : ''}`;
-          transactionUpdates.set(transaction.id, { transaction, total: transaction.total, remaining: nextRemaining, note: allocationNote });
-          allocations.push({ transactionId: transaction.id, transactionCode, transactionDate: transaction.date || '', amount: applied, note: allocationNote });
-          amountToAllocate = Math.max(0, amountToAllocate - applied);
-        }
-      }
-
-      const outsideDebtNote = debtPaymentMode === 'partial' && amountToAllocate > 0
-        ? `; Nợ khác không có trong chi tiết ${formatCurrency(amountToAllocate)} đã được trừ vào tổng công nợ, không phân bổ vào đơn/phiếu nào`
-        : '';
-      const allocationSummary = allocations.length
-        ? `; Đã phân bổ: ${allocations.map(a => `${a.transactionCode}: ${formatCurrency(a.amount)}`).join('; ')}`
-        : '';
-      const note = `${userNote || (debtPaymentMode === 'all' ? 'Trừ tổng nợ' : 'Trừ công nợ theo giao dịch cũ nhất')} ${formatCurrency(amount)} ngày ${paymentDateText}${allocationSummary}${outsideDebtNote}`;
-      const paymentPayload = {
-        amount,
-        method: debtPaymentMethod,
-        mode: debtPaymentMode,
-        note,
-        allocations: debtPaymentMode === 'partial' ? allocations : [],
-        date: editingDebtPayment?.date || nowIso,
-        updatedAt: nowIso,
-        contactId: detailTarget.id,
-        contactName: detailTarget.name,
-        contactType: type
-      };
-
-      const paymentRef = editingDebtPayment?.id
-        ? doc(db, 'stores', storeId, type, detailTarget.id, 'debtPayments', editingDebtPayment.id)
-        : doc(collection(db, 'stores', storeId, type, detailTarget.id, 'debtPayments'));
-      const paymentId = paymentRef.id;
-      const reportId = `${type}_${detailTarget.id}_${paymentId}`;
-      const reportRef = doc(db, 'stores', storeId, 'debtPaymentReports', reportId);
       const contactRef = doc(db, 'stores', storeId, type, detailTarget.id);
+      const paymentPayload = { amount, method: debtPaymentMethod, mode: debtPaymentMode, date: editingDebtPayment?.date || new Date().toISOString(), updatedAt: new Date().toISOString(), contactId: detailTarget.id, contactName: detailTarget.name, contactType: type };
+      let paymentId = editingDebtPayment?.id || '';
+      if (editingDebtPayment?.id) {
+        await updateDoc(doc(db, 'stores', storeId, type, detailTarget.id, 'debtPayments', editingDebtPayment.id), paymentPayload);
+      } else {
+        const paymentRef = await addDoc(collection(db, 'stores', storeId, type, detailTarget.id, 'debtPayments'), { ...paymentPayload, createdAt: new Date().toISOString() });
+        paymentId = paymentRef.id;
+      }
+      const reportRef = doc(db, 'stores', storeId, 'debtPaymentReports', `${type}_${detailTarget.id}_${paymentId}`);
+      await setDoc(reportRef, { ...paymentPayload, id: `${type}_${detailTarget.id}_${paymentId}`, sourcePaymentId: paymentId, source: 'contactDebt', direction: type === 'customers' ? 'Khách hàng trả nợ' : 'Trả nợ nhà cung cấp', date: paymentPayload.date || new Date().toISOString() }, { merge: true });
       const remainingDebt = Math.max(0, debtBeforeEdit - amount);
-      const batch = writeBatch(db);
-
-      if (transactionUpdates.size > 495) {
-        throw new Error('Giao dịch liên quan quá nhiều đơn/phiếu để lưu an toàn cùng lúc. Vui lòng liên hệ quản trị viên; chưa có thay đổi nào được ghi.');
-      }
-      for (const [transactionId, update] of transactionUpdates) {
-        batch.update(doc(db, 'stores', storeId, collectionName, transactionId), {
-          remainingDebt: update.remaining,
-          paidAmount: Math.max(0, update.total - update.remaining),
-          status: update.remaining > 0 ? 'DEBT' : 'PAID',
-          debtUpdatedAt: nowIso,
-          debtPaymentNote: update.note
-        });
-      }
-      batch.set(paymentRef, { ...paymentPayload, ...(editingDebtPayment?.id ? {} : { createdAt: nowIso }) }, { merge: true });
-      batch.set(reportRef, {
-        ...paymentPayload,
-        id: reportId,
-        sourcePaymentId: paymentId,
-        source: 'contactDebt',
-        direction: type === 'customers' ? 'Khách hàng trả nợ' : 'Trả nợ nhà cung cấp',
-        date: paymentPayload.date || nowIso
-      }, { merge: true });
-      batch.update(contactRef, { totalDebt: remainingDebt, debtNote: note, debtUpdatedAt: nowIso });
-      await batch.commit();
-
+      await updateDoc(contactRef, { totalDebt: remainingDebt });
       setDetailTarget(prev => prev ? { ...prev, totalDebt: remainingDebt } : prev);
-      setDebtPaymentAmount('');
-      setDebtPaymentMode('partial');
-      setDebtPaymentMethod('cash');
-      setDebtPaymentNote('');
-      setEditingDebtPayment(null);
+      setDebtPaymentAmount(''); setDebtPaymentMode('partial'); setDebtPaymentMethod('cash'); setEditingDebtPayment(null);
       showToast(editingDebtPayment ? 'Đã cập nhật giao dịch công nợ' : 'Đã ghi nhận trừ công nợ');
     } catch (err) {
-      const code = err?.code ? ` (${err.code})` : '';
-      const message = err?.message || 'Lỗi không xác định';
-      showToast(`Không thể lưu giao dịch công nợ${code}: ${message}`, 'error');
-    } finally {
-      setSavingDebtPayment(false);
-    }
+      showToast('Không thể lưu giao dịch công nợ', 'error');
+    } finally { setSavingDebtPayment(false); }
   };
+
 
   const getOrderRemainingDebt = (ord) => {
     const total = Math.max(0, Number(ord.total) || 0);
@@ -1818,19 +1660,17 @@ function ContactManager({ type, data, orders, navigationTarget, storeConfig, db,
     setSavingDebtPayment(true);
     try {
       const batch = writeBatch(db);
-      const autoDebtNote = `${successMessage || 'Cập nhật công nợ'}: ${formatCurrency(Math.abs(delta))}; ${new Date().toLocaleString('vi-VN', { timeZone: 'Asia/Ho_Chi_Minh' })}`;
       batch.update(doc(db, 'stores', storeId, collectionName, ord.id), {
         remainingDebt: nextRemaining,
         paidAmount: Math.max(0, total - nextRemaining),
         status: nextRemaining > 0 ? 'DEBT' : 'PAID',
-        debtUpdatedAt: new Date().toISOString(),
-        debtPaymentNote: autoDebtNote
+        debtUpdatedAt: new Date().toISOString()
       });
       if (delta !== 0) batch.update(doc(db, 'stores', storeId, type, detailTarget.id), {
         totalDebt: Math.max(0, (Number(detailTarget.totalDebt) || 0) + delta)
       });
       await batch.commit();
-      if (nextRemaining < oldRemaining) { const paidAmount = oldRemaining - nextRemaining; await addDoc(collection(db, 'stores', storeId, 'debtPaymentReports'), { contactId: detailTarget.id, contactName: detailTarget.name, contactType: type, direction: isCus ? 'Khách hàng trả nợ' : 'Trả nợ nhà cung cấp', amount: paidAmount, date: new Date().toISOString(), method: 'transaction', source: 'transactionDebt', transactionId: ord.id, transactionCode: ord.invoiceCode || ord.receiptCode || ord.code || ord.id, note: autoDebtNote, createdAt: new Date().toISOString() }); }
+      if (nextRemaining < oldRemaining) { const paidAmount = oldRemaining - nextRemaining; await addDoc(collection(db, 'stores', storeId, 'debtPaymentReports'), { contactId: detailTarget.id, contactName: detailTarget.name, contactType: type, direction: isCus ? 'Khách hàng trả nợ' : 'Trả nợ nhà cung cấp', amount: paidAmount, date: new Date().toISOString(), method: 'transaction', source: 'transactionDebt', transactionId: ord.id, transactionCode: ord.invoiceCode || ord.receiptCode || ord.code || ord.id, createdAt: new Date().toISOString() }); }
       setDetailTarget(prev => prev ? { ...prev, totalDebt: Math.max(0, (Number(prev.totalDebt) || 0) + delta) } : prev);
       showToast(successMessage || 'Đã cập nhật công nợ');
     } catch (err) {
@@ -2031,15 +1871,14 @@ function ContactManager({ type, data, orders, navigationTarget, storeConfig, db,
               <div className="flex flex-wrap justify-between items-center gap-2"><h3 className="font-bold text-gray-800">Trừ công nợ</h3><span className="text-sm font-bold text-blue-600">Còn nợ: {formatCurrency(detailTarget.totalDebt)}</span></div>
               <form onSubmit={handleDebtPaymentSave} className="grid grid-cols-1 md:grid-cols-4 gap-3 items-end">
                 <label className="text-xs font-semibold text-gray-600">Cách trừ công nợ<select value={debtPaymentMode} onChange={e=>{setDebtPaymentMode(e.target.value); if(e.target.value==='all') setDebtPaymentAmount('');}} className="mt-1 w-full border rounded-lg p-2 bg-white text-sm"><option value="partial">Trừ từng phần</option><option value="all">Trừ trên tổng nợ</option></select></label>
-                <label className="text-xs font-semibold text-gray-600">Số tiền (VNĐ)<input type="number" min="1" step="any" value={debtPaymentMode==='all' ? Math.max(0, Number(detailTarget.totalDebt)||0, getContactTransactionsForDebt().reduce((sum, transaction) => sum + getOrderRemainingDebt(transaction), 0)) : debtPaymentAmount} onChange={e=>setDebtPaymentAmount(e.target.value)} disabled={debtPaymentMode==='all'} required={debtPaymentMode==='partial'} className="mt-1 w-full border rounded-lg p-2 text-sm disabled:bg-gray-100" placeholder="Nhập số tiền" /></label>
+                <label className="text-xs font-semibold text-gray-600">Số tiền (VNĐ)<input type="number" min="1" step="any" value={debtPaymentMode==='all' ? Math.max(0, Number(detailTarget.totalDebt)||0) : debtPaymentAmount} onChange={e=>setDebtPaymentAmount(e.target.value)} disabled={debtPaymentMode==='all'} required={debtPaymentMode==='partial'} className="mt-1 w-full border rounded-lg p-2 text-sm disabled:bg-gray-100" placeholder="Nhập số tiền" /></label>
                 <label className="text-xs font-semibold text-gray-600">Phương thức<select value={debtPaymentMethod} onChange={e=>setDebtPaymentMethod(e.target.value)} className="mt-1 w-full border rounded-lg p-2 bg-white text-sm"><option value="cash">Tiền mặt</option><option value="transfer">Chuyển khoản</option></select></label>
-                <label className="text-xs font-semibold text-gray-600 md:col-span-3">Ghi chú giao dịch<textarea value={debtPaymentNote} onChange={e=>setDebtPaymentNote(e.target.value)} rows={2} className="mt-1 w-full border rounded-lg p-2 text-sm" placeholder="Ví dụ: trừ từng phần / trừ tổng nợ, nội dung đối chiếu..." /></label>
-                <button type="submit" disabled={savingDebtPayment || (Math.max(Number(detailTarget.totalDebt)||0, getContactTransactionsForDebt().reduce((sum, transaction) => sum + getOrderRemainingDebt(transaction), 0))<=0 && !editingDebtPayment)} className="bg-blue-600 hover:bg-blue-700 disabled:opacity-50 text-white font-bold rounded-lg p-2.5 text-sm">{savingDebtPayment ? 'Đang lưu...' : editingDebtPayment ? 'Lưu chỉnh sửa' : 'Xác nhận trừ nợ'}</button>
+                <button type="submit" disabled={savingDebtPayment || ((Number(detailTarget.totalDebt)||0)<=0 && !editingDebtPayment)} className="bg-blue-600 hover:bg-blue-700 disabled:opacity-50 text-white font-bold rounded-lg p-2.5 text-sm">{savingDebtPayment ? 'Đang lưu...' : editingDebtPayment ? 'Lưu chỉnh sửa' : 'Xác nhận trừ nợ'}</button>
               </form>
               {editingDebtPayment && <button type="button" onClick={()=>{setEditingDebtPayment(null);setDebtPaymentAmount('');setDebtPaymentMode('partial');setDebtPaymentMethod('cash');}} className="text-xs text-gray-600 underline">Hủy chỉnh sửa</button>}
-              <div className="border rounded-lg overflow-x-auto"><table className="w-full text-xs text-left"><thead className="bg-gray-100"><tr><th className="p-2">Thời gian</th><th className="p-2">Số tiền</th><th className="p-2">Cách trừ</th><th className="p-2">Phương thức</th><th className="p-2">Ghi chú</th><th className="p-2">Thao tác</th></tr></thead><tbody>
-                {debtPayments.map(payment => <tr key={payment.id} className="border-t"><td className="p-2 whitespace-nowrap">{formatDate(payment.date)}</td><td className="p-2 font-bold">{formatCurrency(payment.amount)}</td><td className="p-2">{payment.mode==='all'?'Trừ trên tổng nợ':'Trừ từng phần'}</td><td className="p-2">{payment.method==='transfer'?'Chuyển khoản':'Tiền mặt'}</td><td className="p-2 min-w-[180px]">{payment.note || '—'}</td><td className="p-2"><div className="flex flex-wrap gap-2"><button type="button" onClick={()=>{setEditingDebtPayment(payment);setDebtPaymentMode(payment.mode==='all'?'all':'partial');setDebtPaymentAmount(String(payment.amount||''));setDebtPaymentMethod(payment.method||'cash');setDebtPaymentNote(payment.note||'');}} className="text-blue-600 underline font-semibold">Chỉnh sửa</button><button type="button" disabled={savingDebtPayment} onClick={()=>handleUndoDebtPayment(payment)} className="text-red-600 underline font-semibold disabled:opacity-50">Hoàn tác</button></div></td></tr>)}
-                {debtPayments.length===0 && <tr><td colSpan="6" className="p-3 text-center text-gray-400">Chưa có giao dịch trừ công nợ</td></tr>}
+              <div className="border rounded-lg overflow-x-auto"><table className="w-full text-xs text-left"><thead className="bg-gray-100"><tr><th className="p-2">Thời gian</th><th className="p-2">Số tiền</th><th className="p-2">Cách trừ</th><th className="p-2">Phương thức</th><th className="p-2">Thao tác</th></tr></thead><tbody>
+                {debtPayments.map(payment => <tr key={payment.id} className="border-t"><td className="p-2 whitespace-nowrap">{formatDate(payment.date)}</td><td className="p-2 font-bold">{formatCurrency(payment.amount)}</td><td className="p-2">{payment.mode==='all'?'Trừ trên tổng nợ':'Trừ từng phần'}</td><td className="p-2">{payment.method==='transfer'?'Chuyển khoản':'Tiền mặt'}</td><td className="p-2"><div className="flex flex-wrap gap-2"><button type="button" onClick={()=>{setEditingDebtPayment(payment);setDebtPaymentMode(payment.mode==='all'?'all':'partial');setDebtPaymentAmount(String(payment.amount||''));setDebtPaymentMethod(payment.method||'cash');}} className="text-blue-600 underline font-semibold">Chỉnh sửa</button><button type="button" disabled={savingDebtPayment} onClick={()=>handleUndoDebtPayment(payment)} className="text-red-600 underline font-semibold disabled:opacity-50">Hoàn tác</button></div></td></tr>)}
+                {debtPayments.length===0 && <tr><td colSpan="5" className="p-3 text-center text-gray-400">Chưa có giao dịch trừ công nợ</td></tr>}
               </tbody></table></div>
             </section>
             <div>
@@ -2849,25 +2688,14 @@ function DebtPaymentReportView({ payments = [] }) {
   const [toDate, setToDate] = useState(today);
   const [partyType, setPartyType] = useState('all');
   const [rowsPerPage, setRowsPerPage] = useState('20');
-  const paymentDateValue = (p) => {
-    const value = p?.date || p?.createdAt || p?.updatedAt;
-    if (!value) return null;
-    if (typeof value?.toDate === 'function') return value.toDate();
-    if (typeof value === 'object' && Number.isFinite(value.seconds)) return new Date(value.seconds * 1000);
-    const parsed = new Date(value);
-    return Number.isNaN(parsed.getTime()) ? null : parsed;
-  };
   const filtered = useMemo(() => (payments || []).filter(p => {
-    const paymentDate = paymentDateValue(p);
-    const key = paymentDate ? getVietnamDateKey(paymentDate) : '';
-    const rawType = String(p.contactType || p.type || '').toLowerCase();
-    const normalizedType = rawType.includes('supplier') || rawType.includes('nhà cung cấp') ? 'suppliers' : rawType.includes('customer') || rawType.includes('khách hàng') ? 'customers' : rawType;
-    const typeOk = partyType === 'all' || normalizedType === partyType;
+    const key = p.date ? getVietnamDateKey(new Date(p.date)) : '';
+    const typeOk = partyType === 'all' || p.contactType === partyType;
     return key && key >= fromDate && key <= toDate && typeOk;
-  }).sort((a,b) => (paymentDateValue(b)?.getTime() || 0) - (paymentDateValue(a)?.getTime() || 0)), [payments, fromDate, toDate, partyType]);
+  }).sort((a,b) => new Date(b.date || 0) - new Date(a.date || 0)), [payments, fromDate, toDate, partyType]);
   const total = filtered.reduce((sum,p) => sum + (Number(p.amount) || 0), 0);
   const shown = rowsPerPage === 'all' ? filtered : filtered.slice(0, Number(rowsPerPage) || 20);
-  return <div className="p-3 md:p-5 space-y-4 overflow-auto"><div><h2 className="text-xl md:text-2xl font-bold text-gray-800 flex items-center gap-2"><CreditCard className="text-blue-600"/> Báo cáo thanh toán công nợ</h2><p className="text-sm text-gray-500 mt-1">Theo dõi khách hàng trả nợ và các khoản trả nhà cung cấp.</p></div><section className="bg-white border rounded-xl shadow-sm p-3 md:p-4"><div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3"><label className="text-xs font-bold text-gray-600">Từ ngày<input type="date" value={fromDate} onChange={e=>setFromDate(e.target.value)} className="mt-1 w-full border rounded-lg p-2 text-sm"/></label><label className="text-xs font-bold text-gray-600">Đến ngày<input type="date" value={toDate} onChange={e=>setToDate(e.target.value)} className="mt-1 w-full border rounded-lg p-2 text-sm"/></label><div className="flex items-end gap-2"><button type="button" onClick={()=>{const d=new Date();const day=(d.getDay()+6)%7;d.setDate(d.getDate()-day);setFromDate(getVietnamDateKey(d));const end=new Date(d);end.setDate(end.getDate()+6);setToDate(getVietnamDateKey(end));}} className="border rounded-lg px-3 py-2 text-xs font-bold hover:bg-gray-50">Tuần này</button><button type="button" onClick={()=>{const d=new Date();const day=(d.getDay()+6)%7;d.setDate(d.getDate()-day-7);setFromDate(getVietnamDateKey(d));const end=new Date(d);end.setDate(end.getDate()+6);setToDate(getVietnamDateKey(end));}} className="border rounded-lg px-3 py-2 text-xs font-bold hover:bg-gray-50">Tuần trước</button></div><label className="text-xs font-bold text-gray-600">Loại giao dịch<select value={partyType} onChange={e=>setPartyType(e.target.value)} className="mt-1 w-full border rounded-lg p-2 text-sm"><option value="all">Tất cả</option><option value="customers">Khách hàng trả nợ</option><option value="suppliers">Trả nợ nhà cung cấp</option></select></label><label className="text-xs font-bold text-gray-600">Số dòng<select value={rowsPerPage} onChange={e=>setRowsPerPage(e.target.value)} className="mt-1 w-full border rounded-lg p-2 text-sm"><option value="10">10</option><option value="20">20</option><option value="50">50</option><option value="all">Tất cả</option></select></label></div><div className="mt-4 rounded-lg bg-blue-50 p-3"><div className="text-xs text-blue-700 font-semibold">Tổng thanh toán trong khoảng ngày đã chọn</div><div className="text-xl md:text-2xl font-extrabold text-blue-800">{formatCurrency(total)}</div><div className="text-xs text-gray-500">{filtered.length} giao dịch · mặc định 7 ngày gần nhất</div></div></section><section className="bg-white border rounded-xl shadow-sm overflow-hidden"><div className="overflow-x-auto"><table className="w-full text-sm min-w-[760px]"><thead className="bg-gray-100 text-gray-600"><tr><th className="p-3 text-left">Ngày giờ</th><th className="p-3 text-left">Loại</th><th className="p-3 text-left">Khách hàng/Nhà cung cấp</th><th className="p-3 text-left">Mã giao dịch</th><th className="p-3 text-left">Phương thức</th><th className="p-3 text-right">Số tiền</th></tr></thead><tbody>{shown.map((p,i)=><tr key={p.id || `${p.contactId}-${i}`} className="border-t"><td className="p-3 whitespace-nowrap">{formatDate(paymentDateValue(p))}</td><td className="p-3">{p.direction || ((p.contactType==='customers'||String(p.type||'').toLowerCase().includes('customer'))?'Khách hàng trả nợ':'Trả nợ nhà cung cấp')}</td><td className="p-3">{p.contactName || '—'}</td><td className="p-3">{p.transactionCode || p.sourcePaymentId || '—'}</td><td className="p-3">{p.method==='transfer'?'Chuyển khoản':p.method==='cash'?'Tiền mặt':p.method==='transaction'?'Thanh toán trên giao dịch':'—'}</td><td className="p-3 text-right font-bold whitespace-nowrap">{formatCurrency(p.amount)}</td></tr>)}{shown.length===0&&<tr><td colSpan="6" className="p-8 text-center text-gray-400">Chưa có giao dịch thanh toán trong khoảng thời gian này.</td></tr>}</tbody></table></div></section></div>;
+  return <div className="p-3 md:p-5 space-y-4 overflow-auto"><div><h2 className="text-xl md:text-2xl font-bold text-gray-800 flex items-center gap-2"><CreditCard className="text-blue-600"/> Báo cáo thanh toán công nợ</h2><p className="text-sm text-gray-500 mt-1">Theo dõi khách hàng trả nợ và các khoản trả nhà cung cấp.</p></div><section className="bg-white border rounded-xl shadow-sm p-3 md:p-4"><div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3"><label className="text-xs font-bold text-gray-600">Từ ngày<input type="date" value={fromDate} onChange={e=>setFromDate(e.target.value)} className="mt-1 w-full border rounded-lg p-2 text-sm"/></label><label className="text-xs font-bold text-gray-600">Đến ngày<input type="date" value={toDate} onChange={e=>setToDate(e.target.value)} className="mt-1 w-full border rounded-lg p-2 text-sm"/></label><div className="flex items-end gap-2"><button type="button" onClick={()=>{const d=new Date();const day=(d.getDay()+6)%7;d.setDate(d.getDate()-day);setFromDate(getVietnamDateKey(d));const end=new Date(d);end.setDate(end.getDate()+6);setToDate(getVietnamDateKey(end));}} className="border rounded-lg px-3 py-2 text-xs font-bold hover:bg-gray-50">Tuần này</button><button type="button" onClick={()=>{const d=new Date();const day=(d.getDay()+6)%7;d.setDate(d.getDate()-day-7);setFromDate(getVietnamDateKey(d));const end=new Date(d);end.setDate(end.getDate()+6);setToDate(getVietnamDateKey(end));}} className="border rounded-lg px-3 py-2 text-xs font-bold hover:bg-gray-50">Tuần trước</button></div><label className="text-xs font-bold text-gray-600">Loại giao dịch<select value={partyType} onChange={e=>setPartyType(e.target.value)} className="mt-1 w-full border rounded-lg p-2 text-sm"><option value="all">Tất cả</option><option value="customers">Khách hàng trả nợ</option><option value="suppliers">Trả nợ nhà cung cấp</option></select></label><label className="text-xs font-bold text-gray-600">Số dòng<select value={rowsPerPage} onChange={e=>setRowsPerPage(e.target.value)} className="mt-1 w-full border rounded-lg p-2 text-sm"><option value="10">10</option><option value="20">20</option><option value="50">50</option><option value="all">Tất cả</option></select></label></div><div className="mt-4 rounded-lg bg-blue-50 p-3"><div className="text-xs text-blue-700 font-semibold">Tổng thanh toán trong khoảng ngày đã chọn</div><div className="text-xl md:text-2xl font-extrabold text-blue-800">{formatCurrency(total)}</div><div className="text-xs text-gray-500">{filtered.length} giao dịch · mặc định 7 ngày gần nhất</div></div></section><section className="bg-white border rounded-xl shadow-sm overflow-hidden"><div className="overflow-x-auto"><table className="w-full text-sm min-w-[760px]"><thead className="bg-gray-100 text-gray-600"><tr><th className="p-3 text-left">Ngày giờ</th><th className="p-3 text-left">Loại</th><th className="p-3 text-left">Khách hàng/Nhà cung cấp</th><th className="p-3 text-left">Mã giao dịch</th><th className="p-3 text-left">Phương thức</th><th className="p-3 text-right">Số tiền</th></tr></thead><tbody>{shown.map((p,i)=><tr key={p.id || `${p.contactId}-${i}`} className="border-t"><td className="p-3 whitespace-nowrap">{formatDate(p.date)}</td><td className="p-3">{p.direction || (p.contactType==='customers'?'Khách hàng trả nợ':'Trả nợ nhà cung cấp')}</td><td className="p-3">{p.contactName || '—'}</td><td className="p-3">{p.transactionCode || p.sourcePaymentId || '—'}</td><td className="p-3">{p.method==='transfer'?'Chuyển khoản':p.method==='cash'?'Tiền mặt':p.method==='transaction'?'Thanh toán trên giao dịch':'—'}</td><td className="p-3 text-right font-bold whitespace-nowrap">{formatCurrency(p.amount)}</td></tr>)}{shown.length===0&&<tr><td colSpan="6" className="p-8 text-center text-gray-400">Chưa có giao dịch thanh toán trong khoảng thời gian này.</td></tr>}</tbody></table></div></section></div>;
 }
 
 function ExpenseView({ expenses, db, storeId, showToast }) {
@@ -2951,7 +2779,7 @@ function ExpenseView({ expenses, db, storeId, showToast }) {
   );
 }
 
-function ImportView({ products, orders = [], imports = [], suppliers, db, storeId, user, userData, showToast, storeConfig, setActiveTab }) {
+function ImportView({ products, imports = [], suppliers, db, storeId, user, userData, showToast, storeConfig, setActiveTab }) {
   const [activeImportTab, setActiveImportTab] = useState('history');
   const [cart, setCart] = useState([]);
   const [supplierId, setSupplierId] = useState('');
@@ -2966,16 +2794,12 @@ function ImportView({ products, orders = [], imports = [], suppliers, db, storeI
   const [showProductSuggestions, setShowProductSuggestions] = useState(false);
   const [bulkImportFile, setBulkImportFile] = useState(null);
   const [bulkImportRows, setBulkImportRows] = useState([]);
-  const [bulkImportSelected, setBulkImportSelected] = useState([]);
-  const [bulkImportSort, setBulkImportSort] = useState({ field: 'rowNumber', direction: 'asc' });
   const [bulkImportSupplierId, setBulkImportSupplierId] = useState('');
   const [bulkImportDate, setBulkImportDate] = useState(getVietnamDateKey(new Date()));
   const [bulkImportDebt, setBulkImportDebt] = useState(false);
   const [bulkImportBusy, setBulkImportBusy] = useState(false);
   const [bulkImportProgress, setBulkImportProgress] = useState({ done: 0, total: 0 });
   const [bulkImportPreviewLimit, setBulkImportPreviewLimit] = useState(100);
-  const toggleBulkImportSort = (field) => setBulkImportSort(prev => ({ field, direction: prev.field === field && prev.direction === 'asc' ? 'desc' : 'asc' }));
-  const sortedBulkImportRows = useMemo(() => [...bulkImportRows].sort((a,b) => { const f=bulkImportSort.field; let av=f==='rowNumber'?a.rowNumber:f==='productName'?(a.matchedName||a.productName||''):f==='qty'?Number(a.qty)||0:f==='importCost'?Number(a.importCost)||0:f==='total'?(Number(a.qty)||0)*(Number(a.importCost)||0):f==='supplierName'?(a.supplierName||''):f==='date'?(new Date(a.date||0).getTime()||0):f==='receiptCode'?(a.receiptCode||''):f==='match'?(a.valid?1:0):''; let bv=f==='rowNumber'?b.rowNumber:f==='productName'?(b.matchedName||b.productName||''):f==='qty'?Number(b.qty)||0:f==='importCost'?Number(b.importCost)||0:f==='total'?(Number(b.qty)||0)*(Number(b.importCost)||0):f==='supplierName'?(b.supplierName||''):f==='date'?(new Date(b.date||0).getTime()||0):f==='receiptCode'?(b.receiptCode||''):f==='match'?(b.valid?1:0):''; const cmp=typeof av==='number'&&typeof bv==='number'?av-bv:String(av).localeCompare(String(bv),'vi',{numeric:true,sensitivity:'base'}); return bulkImportSort.direction==='asc'?cmp:-cmp; }), [bulkImportRows, bulkImportSort]);
   const [supplierSearch, setSupplierSearch] = useState('');
   const [showSupplierSuggestions, setShowSupplierSuggestions] = useState(false);
   const [groupSearch, setGroupSearch] = useState('');
@@ -3102,7 +2926,7 @@ function ImportView({ products, orders = [], imports = [], suppliers, db, storeI
   };
   const handleBulkExcelSelect = async (event) => {
     const file = event.target.files?.[0]; if (!file) return;
-    setBulkImportFile(file); setBulkImportRows([]); setBulkImportSelected([]);
+    setBulkImportFile(file); setBulkImportRows([]);
     try {
       const XLSX = await loadXlsxLibrary(); const workbook = XLSX.read(await file.arrayBuffer(), { type: 'array', cellDates: true });
       const rawRows = XLSX.utils.sheet_to_json(workbook.Sheets[workbook.SheetNames[0]], { defval: '', raw: false });
@@ -3111,101 +2935,40 @@ function ImportView({ products, orders = [], imports = [], suppliers, db, storeI
         const productName = String(findColumnValue(row, ['tenhang','tensanpham','sanpham','productname','hanghoa','tenhanghoa']) || '').trim();
         const productCode = String(findColumnValue(row, ['mahang','masanpham','barcode','sku','productcode']) || '').trim();
         const receiptCode = String(findColumnValue(row, ['maphieunhap','sophieu','mavoucher','receiptcode','invoicecode','mahoadon']) || '').trim();
-        const supplierName = String(findColumnValue(row, ['nhacungcap','tennhacungcap','supplier','suppliername','nhaphangtu']) || '').trim();
-        const rawDate = findColumnValue(row, ['thoigiannhap','ngaynhap','thoigian','ngaytao','date','createdat']);
-        let date = '';
-        if (rawDate instanceof Date && !Number.isNaN(rawDate.getTime())) date = rawDate.toISOString();
-        else if (typeof rawDate === 'number' && rawDate > 20000 && rawDate < 80000) date = new Date(Math.round((rawDate - 25569) * 86400000)).toISOString();
-        else if (String(rawDate || '').trim()) {
-          const rawText=String(rawDate).trim();
-          const dm=rawText.match(/^(\d{1,2})[\/-](\d{1,2})[\/-](\d{4})(?:[ T](\d{1,2}):(\d{2})(?::(\d{2}))?)?$/);
-          const parsed=dm?new Date(Number(dm[3]),Number(dm[2])-1,Number(dm[1]),Number(dm[4]||0),Number(dm[5]||0),Number(dm[6]||0)):new Date(rawText);
-          if(!Number.isNaN(parsed.getTime())) date=parsed.toISOString();
-        }
-        const qtyRaw = findColumnValue(row, ['soluongnhap','soluong','quantity','qty']);
-        const costRaw = findColumnValue(row, ['gianhap','dongianhap','giavon','cost','importprice','unitprice']);
-        const parseNumber = value => {
-          if(typeof value==='number') return value;
-          let t=String(value??'').trim().replace(/[^0-9,.-]/g,'');
-          if(t.includes(',')&&t.includes('.')) t=t.lastIndexOf(',')>t.lastIndexOf('.')?t.replace(/\./g,'').replace(',','.'):t.replace(/,/g,'');
-          else if(t.includes(',') && !/,[0-9]{1,2}$/.test(t)) t=t.replace(/,/g,'');
-          else t=t.replace(',','.');
-          return Number(t);
-        };
-        const qty = parseNumber(qtyRaw); const importCost = parseNumber(costRaw);
+        const qtyRaw = findColumnValue(row, ['soluongnhap','soluong','quantity','qty']); const costRaw = findColumnValue(row, ['gianhap','dongianhap','giavon','cost','importprice','unitprice']);
+        const qty = Number(String(qtyRaw).replace(/[,\s]/g, '').replace(/đ/gi, '')); const importCost = Number(String(costRaw).replace(/[,\s]/g, '').replace(/đ/gi, ''));
         const product = (products || []).find(p => (productCode && [p.code,p.barcode,p.sku,p.productCode].some(v => String(v || '').trim().toLowerCase() === productCode.toLowerCase())) || (productName && normalizeImportSearch(p.name) === normalizeImportSearch(productName)));
-        const supplierMatch=(suppliers||[]).find(s=>supplierName&&normalizeImportSearch(s.name)===normalizeImportSearch(supplierName));
-        return { rowNumber:index+2, productName, productCode, receiptCode, supplierName, supplierId:supplierMatch?.id||'', date:date||new Date(`${bulkImportDate||getVietnamDateKey(new Date())}T12:00:00+07:00`).toISOString(), qty, importCost, productId:product?.id || '', matchedName:product?.name || '', valid:!!product && Number.isFinite(qty) && qty>0 && Number.isFinite(importCost) && importCost>=0 };
+        return { rowNumber:index+2, productName, productCode, receiptCode, qty, importCost, productId:product?.id || '', matchedName:product?.name || '', valid:!!product && Number.isFinite(qty) && qty>0 && Number.isFinite(importCost) && importCost>=0 };
       }).filter(row => row.productName || row.productCode);
       if (!parsed.length) throw new Error('Không tìm thấy dòng hàng hóa. File cần có cột Tên sản phẩm, Số lượng và Giá nhập.');
-      setBulkImportRows(parsed); setBulkImportSelected(parsed.map(row=>row.rowNumber)); showToast(`Đã đọc đủ ${parsed.length} dòng hàng trong file (không giới hạn 200 dòng). Đã chọn tất cả; hệ thống tự chia đợt ghi 50 dòng để tránh quá tải.`);
+      setBulkImportRows(parsed); showToast(`Đã đọc ${parsed.length} dòng hàng. Mỗi đợt ghi xử lý tối đa 100 dòng.`);
     } catch (error) { showToast(error.message || 'Không đọc được file Excel.', 'error'); setBulkImportFile(null); setBulkImportRows([]); }
     finally { event.target.value = ''; }
   };
   const handleBulkImportSubmit = async () => {
-    if (!bulkImportSelected.length) { showToast('Hãy đánh dấu ít nhất một dòng cần nhập.', 'error'); return; }
-    const selectedRows=bulkImportRows.filter(row=>bulkImportSelected.includes(row.rowNumber));
-    const invalid=selectedRows.filter(row=>!row.valid);
-    const validSelectedRows=selectedRows.filter(row=>row.valid);
-    if(!validSelectedRows.length){showToast(`Không có dòng hợp lệ để nhập. ${invalid.length ? `Có ${invalid.length} dòng cần sửa tên/mã sản phẩm, số lượng hoặc giá nhập.` : ''}`, 'error');return;}
-    const unresolvedSuppliers=validSelectedRows.filter(row=>row.supplierName&&!row.supplierId&&!bulkImportSupplierId);
-    if(unresolvedSuppliers.length){showToast(`Có ${unresolvedSuppliers.length} dòng hợp lệ nhưng tên nhà cung cấp chưa khớp. Hãy sửa tên hoặc chọn nhà cung cấp mặc định trước khi nhập.`, 'error');return;}
-    // Chống nhập trùng dựa trên nội dung thực tế, không chỉ tên file/số dòng.
-    // Tránh bỏ nhầm dữ liệu khi người dùng dùng lại tên file Excel cho dữ liệu mới.
-    const makeBulkRowSignature = (productId, qty, importCost, receiptCode, date) => [
-      String(productId || ''), Number(qty || 0), Number(importCost || 0),
-      String(receiptCode || '').trim().toLocaleLowerCase('vi'), String(date || '').slice(0, 10)
-    ].join('|');
-    const existingSignatures=new Set();
-    (imports||[]).forEach(im=>{
-      (im.items||[]).forEach(it=>existingSignatures.add(makeBulkRowSignature(
-        it.id||it.productId, it.qty??it.quantity, it.importCost??it.cost, im.receiptCode||it.receiptCode||'', im.date
-      )));
-      (im.sourceRowSignatures||[]).forEach(signature=>existingSignatures.add(String(signature)));
-    });
-    const duplicateRowNumbers=new Set();
-    for(const row of validSelectedRows){
-      const signature=makeBulkRowSignature(row.productId,row.qty,row.importCost,row.receiptCode,row.date);
-      if(existingSignatures.has(signature)) duplicateRowNumbers.add(Number(row.rowNumber));
-    }
-    const rows=[...validSelectedRows].filter(row=>!duplicateRowNumbers.has(Number(row.rowNumber))).sort((a,b)=>new Date(a.date)-new Date(b.date));
-    if(!rows.length){showToast(`Không có dòng mới để nhập. Đã tự bỏ qua ${duplicateRowNumbers.size} dòng trùng${invalid.length?` và ${invalid.length} dòng không hợp lệ`:''}.`, 'error');return;}
-    const skippedSummary=[duplicateRowNumbers.size?`tự bỏ qua ${duplicateRowNumbers.size} dòng trùng`:null,invalid.length?`bỏ qua ${invalid.length} dòng không hợp lệ`:null].filter(Boolean).join(', ');
-    if(!window.confirm(`Sẽ nhập ${rows.length} dòng hợp lệ chưa trùng theo thời gian nhập tăng dần. Không giới hạn tổng số dòng; hệ thống tự chia đợt ghi 50 dòng để giảm nguy cơ lỗi.${skippedSummary?` Hệ thống sẽ ${skippedSummary}.`:''} Tồn kho sẽ được đối chiếu với đơn hàng hiện có. Tiếp tục?`))return;
-    setBulkImportBusy(true);setBulkImportProgress({done:0,total:rows.length});
-    try{
-      const salesByProduct=new Map();
-      (orders||[]).forEach(order=>{const orderDate=new Date(order.date||order.createdAt||0).getTime();(order.items||[]).forEach(item=>{const pid=item.id||item.productId;if(!pid||!Number.isFinite(orderDate))return;const list=salesByProduct.get(pid)||[];list.push({date:orderDate,qty:Number(item.qty??item.quantity??1)||0});salesByProduct.set(pid,list);});});
-      salesByProduct.forEach(list=>list.sort((a,b)=>a.date-b.date));
-      // Only the remaining portion of newly reconstructed historical lots is added to current stock.
-      const remainingByRow=new Map();
-      const stockDeltasByProduct=new Map();
-      const debtDeltasBySupplier=new Map();
-      const rowsByProduct=new Map();rows.forEach(row=>{const list=rowsByProduct.get(row.productId)||[];list.push(row);rowsByProduct.set(row.productId,list);});
-      rowsByProduct.forEach((productRows,pid)=>{
-        const sales=[...(salesByProduct.get(pid)||[])];
-        productRows.sort((a,b)=>new Date(a.date)-new Date(b.date));
-        productRows.forEach(row=>{let lotQty=Number(row.qty)||0;const lotDate=new Date(row.date).getTime();for(const sale of sales){if(sale.qty<=0)continue;if(sale.date<lotDate)continue;const used=Math.min(lotQty,sale.qty);lotQty-=used;sale.qty-=used;if(lotQty<=0)break;}remainingByRow.set(row.rowNumber,lotQty);});
-      });
-      const supplierFallback=(suppliers||[]).find(item=>item.id===bulkImportSupplierId);
-      for(let offset=0;offset<rows.length;offset+=50){
-        const chunk=rows.slice(offset,offset+50);const batch=writeBatch(db);const groups=new Map();
-        chunk.forEach(row=>{const sid=row.supplierId||bulkImportSupplierId||'';const supplier=(suppliers||[]).find(x=>x.id===sid)||supplierFallback;const groupKey=[sid,row.receiptCode||'',String(row.date||'').slice(0,10)].join('|');const group=groups.get(groupKey)||{sid,supplier,receiptCode:row.receiptCode||'',date:row.date,rows:[]};group.rows.push(row);groups.set(groupKey,group);});
-        for(const group of groups.values()){
-          const items=group.rows.map(row=>{const product=(products||[]).find(p=>p.id===row.productId);return{id:row.productId,productId:row.productId,name:row.matchedName||row.productName,qty:row.qty,quantity:row.qty,importCost:row.importCost,cost:row.importCost,price:Number(product?.price||0),category:product?.category||''};});
-          const total=items.reduce((sum,item)=>sum+item.qty*item.importCost,0);const importRef=doc(collection(db,'stores',storeId,'imports'));
-          batch.set(importRef,{invoiceCode:`EXCEL-${Date.now()}-${offset}-${groups.size}`,receiptCode:group.receiptCode,supplierId:group.sid,supplierName:group.supplier?.name||group.rows[0].supplierName||'Nhà cung cấp chưa xác định',createdByUid:user?.uid||'',createdByName:userData?.name||user?.displayName||user?.email||'Nhân viên',items,total,status:bulkImportDebt?'DEBT':'PAID',date:group.date,source:'excel-bulk',sourceFileName:bulkImportFile?.name||'',sourceRows:group.rows.map(row=>row.rowNumber),sourceRowSignatures:group.rows.map(row=>makeBulkRowSignature(row.productId,row.qty,row.importCost,row.receiptCode,row.date)),bulkImportChunk:Math.floor(offset/50)+1});
-          if(bulkImportDebt&&group.sid&&group.supplier)debtDeltasBySupplier.set(group.sid,(debtDeltasBySupplier.get(group.sid)||0)+total);
-        }
-        const productDelta=new Map();chunk.forEach(row=>productDelta.set(row.productId,(productDelta.get(row.productId)||0)+(remainingByRow.get(row.rowNumber)||0)));
-        for(const [pid,delta] of productDelta){if(delta<=0)continue;const product=(products||[]).find(p=>p.id===pid);if(!product)continue;const cumulative=(stockDeltasByProduct.get(pid)||0)+delta;stockDeltasByProduct.set(pid,cumulative);const latest=[...chunk].filter(r=>r.productId===pid).sort((a,b)=>new Date(a.date)-new Date(b.date)).at(-1);batch.update(doc(db,'stores',storeId,'products',pid),{stock:Number(product.stock||0)+cumulative,cost:latest?.importCost??Number(product.cost||0),lastSupplierId:latest?.supplierId||bulkImportSupplierId||'',lastSupplierName:(suppliers||[]).find(x=>x.id===(latest?.supplierId||bulkImportSupplierId))?.name||latest?.supplierName||''});}
-        // Supplier debt is updated after all rows are processed to avoid overwriting increments within a batch.
-        await batch.commit();setBulkImportProgress({done:Math.min(offset+chunk.length,rows.length),total:rows.length});
+    if (!bulkImportSupplierId) { showToast('Vui lòng chọn nhà cung cấp trước khi nhập Excel.', 'error'); return; }
+    if (!bulkImportRows.length) { showToast('Vui lòng chọn file Excel hợp lệ.', 'error'); return; }
+    const invalid = bulkImportRows.filter(row => !row.valid);
+    if (invalid.length) { showToast(`Còn ${invalid.length} dòng chưa khớp sản phẩm hoặc số lượng/giá nhập không hợp lệ.`, 'error'); return; }
+    if (!window.confirm(`Sẽ nhập ${bulkImportRows.length} dòng, chia thành từng đợt tối đa 100 dòng và cộng tồn kho tương ứng. Không nhập lại cùng file vì sẽ cộng tồn kho lần nữa. Tiếp tục?`)) return;
+    setBulkImportBusy(true); setBulkImportProgress({done:0,total:bulkImportRows.length});
+    try {
+      const supplier = (suppliers || []).find(item => item.id === bulkImportSupplierId);
+      const accumulatedStock = new Map();
+      let accumulatedDebt = 0;
+      for (let offset=0; offset<bulkImportRows.length; offset+=100) {
+        const chunk=bulkImportRows.slice(offset,offset+100); const batch=writeBatch(db);
+        const items=chunk.map(row=>{const product=(products||[]).find(p=>p.id===row.productId);return {id:row.productId,productId:row.productId,name:row.matchedName||row.productName,qty:row.qty,quantity:row.qty,importCost:row.importCost,cost:row.importCost,price:Number(product?.price||0),category:product?.category||''};});
+        const total=items.reduce((sum,item)=>sum+item.qty*item.importCost,0); const importRef=doc(collection(db,'stores',storeId,'imports'));
+        batch.set(importRef,{invoiceCode:`EXCEL-${Date.now()}-${Math.floor(offset/100)+1}`,receiptCode:chunk.find(row=>row.receiptCode)?.receiptCode||'',supplierId:bulkImportSupplierId,supplierName:supplier?.name||'Nhà cung cấp',createdByUid:user?.uid||'',createdByName:userData?.name||user?.displayName||user?.email||'Nhân viên',items,total,status:bulkImportDebt?'DEBT':'PAID',date:new Date(`${bulkImportDate||getVietnamDateKey(new Date())}T12:00:00+07:00`).toISOString(),source:'excel-bulk',sourceFileName:bulkImportFile?.name||'',sourceRows:chunk.map(row=>row.rowNumber),bulkImportChunk:Math.floor(offset/100)+1});
+        const qtyByProduct=new Map(); items.forEach(item=>qtyByProduct.set(item.id,(qtyByProduct.get(item.id)||0)+Number(item.qty||0)));
+        for (const [productId,qty] of qtyByProduct.entries()) { const product=(products||[]).find(p=>p.id===productId); if(!product) continue; const lastItem=[...items].reverse().find(item=>item.id===productId); const cumulativeQty=(accumulatedStock.get(productId)||0)+qty; accumulatedStock.set(productId,cumulativeQty); batch.update(doc(db,'stores',storeId,'products',productId),{stock:Number(product.stock||0)+cumulativeQty,cost:lastItem?.importCost??Number(product.cost||0),lastSupplierId:bulkImportSupplierId,lastSupplierName:supplier?.name||''}); }
+        if(bulkImportDebt&&supplier) { accumulatedDebt += total; batch.update(doc(db,'stores',storeId,'suppliers',bulkImportSupplierId),{totalDebt:Number(supplier.totalDebt||0)+accumulatedDebt}); }
+        await batch.commit(); setBulkImportProgress({done:Math.min(offset+chunk.length,bulkImportRows.length),total:bulkImportRows.length});
       }
-      if(bulkImportDebt){for(const [sid,delta] of debtDeltasBySupplier){const supplier=(suppliers||[]).find(x=>x.id===sid);if(supplier&&delta>0)await updateDoc(doc(db,'stores',storeId,'suppliers',sid),{totalDebt:Number(supplier.totalDebt||0)+delta});}}
-      showToast(`Đã nhập ${rows.length} dòng theo từng đợt 50 dòng${duplicateRowNumbers.size?`, tự bỏ qua ${duplicateRowNumbers.size} dòng trùng`:''}${invalid.length?`, bỏ qua ${invalid.length} dòng không hợp lệ`:''}. Tồn kho đã được xử lý theo logic đối chiếu hiện có.`);setBulkImportRows([]);setBulkImportSelected([]);setBulkImportFile(null);setActiveImportTab('history');
-    }catch(error){showToast(`Nhập Excel bị gián đoạn. Không chạy lại toàn bộ file; hãy kiểm tra lịch sử nhập trước. ${error.message||''}`,'error');}
-    finally{setBulkImportBusy(false);}
+      showToast(`Đã nhập thành công ${bulkImportRows.length} dòng Excel theo từng đợt tối đa 100 dòng.`); setBulkImportRows([]); setBulkImportFile(null); setActiveImportTab('history');
+    } catch(error) { showToast(`Nhập Excel bị gián đoạn. Không chạy lại toàn bộ file; hãy kiểm tra lịch sử nhập trước. ${error.message||''}`,'error'); }
+    finally { setBulkImportBusy(false); }
   };
 
   const addProductToCart = (p) => setCart(c => c.find(i => i.id === p.id) ? c : [...c, { id: p.id, name: p.name, category: p.category || '', qty: 1, importCost: p.cost || 0, price: p.price || 0 }]);
@@ -3248,13 +3011,13 @@ function ImportView({ products, orders = [], imports = [], suppliers, db, storeI
         </div>
       ) : activeImportTab === 'bulk' ? (
         <div className="flex-1 overflow-auto p-4 md:p-6 space-y-4"><div className="bg-white border rounded-xl shadow-sm p-4 md:p-6 space-y-4">
-          <div><h2 className="text-xl font-bold text-gray-800">Nhập hàng hàng loạt từ Excel</h2><p className="text-sm text-gray-500 mt-1">Hỗ trợ .xlsx/.xls không giới hạn 200 dòng. Đọc toàn bộ dòng dữ liệu trong sheet; hệ thống tự chia thành các đợt ghi nhỏ để tránh quá tải Firestore. Tên hoặc mã sản phẩm phải khớp hàng hóa có sẵn.</p></div>
+          <div><h2 className="text-xl font-bold text-gray-800">Nhập hàng hàng loạt từ Excel</h2><p className="text-sm text-gray-500 mt-1">Hỗ trợ .xlsx/.xls. Mỗi đợt ghi tối đa 100 dòng; file lớn hơn tự chia nhiều đợt. Tên hoặc mã sản phẩm phải khớp hàng hóa có sẵn.</p></div>
           <div className="grid grid-cols-1 md:grid-cols-3 gap-3"><label className="block text-sm font-semibold">Nhà cung cấp *<select value={bulkImportSupplierId} onChange={e=>setBulkImportSupplierId(e.target.value)} className="mt-1 w-full p-3 border rounded-lg bg-white"><option value="">Chọn nhà cung cấp</option>{(suppliers||[]).map(s=><option key={s.id} value={s.id}>{s.name}</option>)}</select></label><label className="block text-sm font-semibold">Ngày nhập<input type="date" value={bulkImportDate} onChange={e=>setBulkImportDate(e.target.value)} className="mt-1 w-full p-3 border rounded-lg bg-white"/></label><label className="block text-sm font-semibold">Chọn file Excel<input type="file" accept=".xlsx,.xls" onChange={handleBulkExcelSelect} className="mt-1 block w-full p-2 border rounded-lg bg-white text-sm"/></label></div>
           <label className="flex items-center gap-2 text-sm"><input type="checkbox" checked={bulkImportDebt} onChange={e=>setBulkImportDebt(e.target.checked)}/> Ghi nợ nhà cung cấp</label><p className="text-xs text-gray-500">Cột cần có: Tên hàng/Tên sản phẩm, Số lượng, Giá nhập/Đơn giá nhập. Có thể có cột Mã hàng.</p>
           {bulkImportFile&&<div className="rounded-lg border bg-gray-50 p-3 text-sm"><b>{bulkImportFile.name}</b> · {bulkImportRows.length} dòng hàng đọc được</div>}
-          {bulkImportRows.length>0&&<><div className="flex flex-wrap justify-between items-center gap-2"><b className="text-sm">Xem trước dữ liệu</b><div className="flex items-center gap-2 text-xs"><button type="button" onClick={()=>setBulkImportSelected(bulkImportRows.map(r=>r.rowNumber))} className="px-3 py-2 rounded border bg-white">Chọn tất cả</button><button type="button" onClick={()=>setBulkImportSelected([])} className="px-3 py-2 rounded border bg-white">Bỏ chọn</button><label>Hiển thị <select value={bulkImportPreviewLimit} onChange={e=>setBulkImportPreviewLimit(Number(e.target.value))} className="border rounded p-1"><option value={100}>100 dòng</option><option value={300}>300 dòng</option><option value={1000}>1000 dòng</option><option value={-1}>Tất cả dòng</option></select></label></div></div><div className="overflow-auto border rounded-lg max-h-[50vh]"><table className="w-full min-w-[1250px] text-sm"><thead className="sticky top-0 bg-gray-100"><tr><th className="p-2"><input aria-label="Chọn tất cả dòng đang hiển thị" type="checkbox" checked={(bulkImportPreviewLimit === -1 ? sortedBulkImportRows : sortedBulkImportRows.slice(0,bulkImportPreviewLimit)).length>0&&(bulkImportPreviewLimit === -1 ? sortedBulkImportRows : sortedBulkImportRows.slice(0,bulkImportPreviewLimit)).every(r=>bulkImportSelected.includes(r.rowNumber))} onChange={e=>setBulkImportSelected(prev=>e.target.checked?[...new Set([...prev,...(bulkImportPreviewLimit === -1 ? sortedBulkImportRows : sortedBulkImportRows.slice(0,bulkImportPreviewLimit)).map(r=>r.rowNumber)])]:prev.filter(id=>!(bulkImportPreviewLimit === -1 ? sortedBulkImportRows : sortedBulkImportRows.slice(0,bulkImportPreviewLimit)).some(r=>r.rowNumber===id)))} /></th>{[['rowNumber','Dòng'],['productName','Sản phẩm'],['qty','Số lượng'],['importCost','Giá nhập'],['total','Thành tiền'],['supplierName','Nhà cung cấp'],['date','Thời gian nhập'],['receiptCode','Mã phiếu'],['match','Đối chiếu']].map(([field,label])=><th key={field} onClick={()=>toggleBulkImportSort(field)} className="p-2 text-left cursor-pointer select-none whitespace-nowrap hover:bg-gray-200">{label} <span>{bulkImportSort.field===field?(bulkImportSort.direction==='asc'?'↑':'↓'):'↕'}</span></th>)}</tr></thead><tbody>{(bulkImportPreviewLimit === -1 ? sortedBulkImportRows : sortedBulkImportRows.slice(0,bulkImportPreviewLimit)).map((row,i)=><tr key={`${row.rowNumber}-${i}`} className="border-t"><td className="p-2"><input aria-label={`Chọn dòng ${row.rowNumber}`} type="checkbox" checked={bulkImportSelected.includes(row.rowNumber)} onChange={e=>setBulkImportSelected(prev=>e.target.checked?[...prev,row.rowNumber]:prev.filter(id=>id!==row.rowNumber))}/></td><td className="p-2">{row.rowNumber}</td><td className="p-2 min-w-[190px]">{row.matchedName||row.productName||row.productCode}</td><td className="p-2"><input type="number" min="0.0001" step="any" value={row.qty} onChange={e=>setBulkImportRows(prev=>prev.map(r=>r.rowNumber===row.rowNumber?{...r,qty:Number(e.target.value),valid:!!r.productId&&Number(e.target.value)>0&&Number.isFinite(Number(e.target.value))&&Number.isFinite(Number(r.importCost))&&Number(r.importCost)>=0}:r))} className="w-24 border rounded p-1"/></td><td className="p-2"><input type="number" min="0" step="any" value={row.importCost} onChange={e=>setBulkImportRows(prev=>prev.map(r=>r.rowNumber===row.rowNumber?{...r,importCost:Number(e.target.value),valid:!!r.productId&&Number(r.qty)>0&&Number.isFinite(Number(r.qty))&&Number.isFinite(Number(e.target.value))&&Number(e.target.value)>=0}:r))} className="w-28 border rounded p-1"/></td><td className="p-2 text-right whitespace-nowrap">{Number.isFinite(row.qty)&&Number.isFinite(row.importCost)?formatCurrency(row.qty*row.importCost):'—'}</td><td className="p-2 min-w-[170px]"><input value={row.supplierName||''} onChange={e=>{const value=e.target.value;const matched=(suppliers||[]).find(s=>normalizeImportSearch(s.name)===normalizeImportSearch(value));setBulkImportRows(prev=>prev.map(r=>r.rowNumber===row.rowNumber?{...r,supplierName:value,supplierId:matched?.id||''}:r));}} className="w-40 border rounded p-1" list="bulk-import-suppliers" placeholder="Tên nhà cung cấp"/><datalist id="bulk-import-suppliers">{(suppliers||[]).map(s=><option key={s.id} value={s.name}/>)}</datalist></td><td className="p-2"><input type="datetime-local" value={row.date?(()=>{const d=new Date(row.date);return Number.isNaN(d.getTime())?'':new Date(d.getTime()-d.getTimezoneOffset()*60000).toISOString().slice(0,16)})():''} onChange={e=>{const d=new Date(e.target.value);if(!Number.isNaN(d.getTime()))setBulkImportRows(prev=>prev.map(r=>r.rowNumber===row.rowNumber?{...r,date:d.toISOString()}:r));}} className="min-w-[190px] border rounded p-1"/></td><td className="p-2"><input value={row.receiptCode||''} onChange={e=>setBulkImportRows(prev=>prev.map(r=>r.rowNumber===row.rowNumber?{...r,receiptCode:e.target.value}:r))} className="w-32 border rounded p-1"/></td><td className={`p-2 font-semibold ${row.valid?'text-green-700':'text-red-700'}`}>{row.valid?`Khớp: ${row.matchedName}`:'Không khớp / dữ liệu lỗi'}</td></tr>)}</tbody></table></div><div className="text-sm">Tổng dòng: <b>{bulkImportRows.length}</b> · Đã chọn: <b>{bulkImportSelected.length}</b> · Hợp lệ đã chọn: <b className="text-green-700">{bulkImportRows.filter(r=>bulkImportSelected.includes(r.rowNumber)&&r.valid).length}</b> · Cần sửa đã chọn: <b className="text-red-700">{bulkImportRows.filter(r=>bulkImportSelected.includes(r.rowNumber)&&!r.valid).length}</b> · Số đợt ghi an toàn (50 dòng/đợt): <b>{Math.ceil(bulkImportSelected.length/50)}</b> · Không giới hạn tổng số dòng của file</div>
+          {bulkImportRows.length>0&&<><div className="flex flex-wrap justify-between items-center gap-2"><b className="text-sm">Xem trước dữ liệu</b><label className="text-xs">Hiển thị <select value={bulkImportPreviewLimit} onChange={e=>setBulkImportPreviewLimit(Number(e.target.value))} className="border rounded p-1"><option value={100}>100 dòng</option><option value={300}>300 dòng</option><option value={1000}>1000 dòng</option></select></label></div><div className="overflow-auto border rounded-lg max-h-[50vh]"><table className="w-full min-w-[700px] text-sm"><thead className="sticky top-0 bg-gray-100"><tr><th className="p-2 text-left">Dòng</th><th className="p-2 text-left">Sản phẩm</th><th className="p-2 text-right">Số lượng</th><th className="p-2 text-right">Giá nhập</th><th className="p-2 text-right">Thành tiền</th><th className="p-2 text-left">Đối chiếu</th></tr></thead><tbody>{bulkImportRows.slice(0,bulkImportPreviewLimit).map((row,i)=><tr key={`${row.rowNumber}-${i}`} className="border-t"><td className="p-2">{row.rowNumber}</td><td className="p-2">{row.productName||row.productCode}</td><td className="p-2 text-right">{Number.isFinite(row.qty)?row.qty:'—'}</td><td className="p-2 text-right">{Number.isFinite(row.importCost)?formatCurrency(row.importCost):'—'}</td><td className="p-2 text-right">{Number.isFinite(row.qty)&&Number.isFinite(row.importCost)?formatCurrency(row.qty*row.importCost):'—'}</td><td className={`p-2 font-semibold ${row.valid?'text-green-700':'text-red-700'}`}>{row.valid?`Khớp: ${row.matchedName}`:'Không khớp / dữ liệu lỗi'}</td></tr>)}</tbody></table></div><div className="text-sm">Tổng dòng: <b>{bulkImportRows.length}</b> · Hợp lệ: <b className="text-green-700">{bulkImportRows.filter(r=>r.valid).length}</b> · Cần sửa: <b className="text-red-700">{bulkImportRows.filter(r=>!r.valid).length}</b> · Số đợt: <b>{Math.ceil(bulkImportRows.length/100)}</b></div>
           {bulkImportBusy&&<div><div className="text-sm font-semibold mb-1">Đã xử lý {bulkImportProgress.done}/{bulkImportProgress.total} dòng</div><div className="h-2 rounded-full bg-gray-200 overflow-hidden"><div className="h-full bg-blue-600" style={{width:`${bulkImportProgress.total?bulkImportProgress.done/bulkImportProgress.total*100:0}%`}}/></div></div>}
-          <button type="button" disabled={bulkImportBusy||bulkImportSelected.length===0} onClick={handleBulkImportSubmit} className="w-full md:w-auto px-5 py-3 rounded-xl bg-blue-600 text-white font-bold disabled:bg-gray-300">{bulkImportBusy?'Đang nhập Excel…':`Xác nhận nhập ${bulkImportSelected.length} dòng đã chọn`}</button></>}
+          <button type="button" disabled={bulkImportBusy||bulkImportRows.some(r=>!r.valid)||!bulkImportSupplierId} onClick={handleBulkImportSubmit} className="w-full md:w-auto px-5 py-3 rounded-xl bg-blue-600 text-white font-bold disabled:bg-gray-300">{bulkImportBusy?'Đang nhập Excel…':'Xác nhận nhập hàng loạt'}</button></>}
         </div></div>
       ) : (
       <Modal isOpen={activeImportTab === 'create'} onClose={() => setActiveImportTab('history')} title={editingImport ? 'Sửa phiếu nhập hàng' : 'Tạo phiếu nhập hàng'} maxWidth="max-w-6xl">
@@ -3480,11 +3243,7 @@ function SettingsView({ db, storeId, showToast, storeConfig }) {
         try {
           const wb = window.XLSX.read(evt.target.result, { type: 'binary', cellDates: true });
           const sheet = wb.Sheets[wb.SheetNames[0]];
-          const data = window.XLSX.utils.sheet_to_json(sheet, { defval: '', blankrows: false });
-          // Không cắt mảng dữ liệu theo số dòng cố định: xử lý toàn bộ các dòng có dữ liệu trong sheet.
-          const sourceRowCount = data.length;
-          if (!sourceRowCount) { showToast('Sheet Excel không có dòng dữ liệu để nhập.', 'error'); setLoadingFile(false); e.target.value = ''; return; }
-          if (!window.confirm(`File Excel có ${sourceRowCount.toLocaleString('vi-VN')} dòng dữ liệu. Hệ thống sẽ đọc toàn bộ file, không giới hạn 200 dòng. Tiếp tục nhập?`)) { setLoadingFile(false); e.target.value = ''; return; }
+          const data = window.XLSX.utils.sheet_to_json(sheet, { defval: '' });
           const textVal = v => String(v ?? '').trim();
           const norm = v => textVal(v).toLocaleLowerCase('vi');
           const numberVal = v => {
@@ -3643,11 +3402,10 @@ function SettingsView({ db, storeId, showToast, storeConfig }) {
             }
             let batch = writeBatch(db), writes = 0;
             for (const order of ordersMap.values()) {
-              // Mã hóa đơn là khóa đối chiếu: nếu đã có thì bỏ qua, không ghi đè đơn hàng đang tồn tại.
-              if (existingOrderByCode.has(order.invoiceCode)) { skippedDuplicates++; continue; }
-              const orderRef = doc(collection(db, 'stores', storeId, 'orders'));
+              // So khớp mã hóa đơn với dữ liệu hiện có; nếu đã tồn tại thì cập nhật thay vì tạo trùng.
+              const existingId = existingOrderByCode.get(order.invoiceCode);
+              const orderRef = existingId ? doc(db, 'stores', storeId, 'orders', existingId) : doc(collection(db, 'stores', storeId, 'orders'));
               batch.set(orderRef, order, { merge: true }); writes++; success++;
-              existingOrderByCode.set(order.invoiceCode, orderRef.id);
               if (writes >= 300) { await batch.commit(); batch = writeBatch(db); writes = 0; }
             }
             if (writes) await batch.commit();
@@ -3743,30 +3501,22 @@ function SettingsView({ db, storeId, showToast, storeConfig }) {
             if (writes) await batch.commit();
           }
           else if (type === 'expenses') {
-            const existingExpenseSnap = await getDocs(collection(db, 'stores', storeId, 'expenses'));
-            // Chỉ dùng mã phiếu làm khóa chống trùng. Không loại giao dịch chỉ vì trùng ngày/số tiền/nội dung.
-            const existingVouchers = new Set(existingExpenseSnap.docs.map(d => textVal(d.data().voucherCode || d.data().voucher || d.data().receiptCode)).filter(Boolean).map(norm));
-            const seenVouchers = new Set();
             let batch = writeBatch(db), writes = 0;
             for (const row of data) {
               const amount = numberVal(row['Giá trị'] !== '' ? row['Giá trị'] : row['Số tiền']);
               const typeText = textVal(row['Loại thu chi']);
-              const voucher = textVal(row['Mã phiếu'] || row['Mã chứng từ'] || row['Số phiếu']);
+              const voucher = textVal(row['Mã phiếu']);
               if (row['Giá trị'] !== undefined && !typeText.toLowerCase().includes('chi') && amount >= 0) continue;
               if (!voucher && !textVal(row['Nội dung']) && !textVal(row['Ghi chú'])) continue;
-              const voucherKey = norm(voucher);
-              if (voucherKey && (existingVouchers.has(voucherKey) || seenVouchers.has(voucherKey))) { skippedDuplicates++; continue; }
-              if (voucherKey) seenVouchers.add(voucherKey);
               batch.set(doc(collection(db, 'stores', storeId, 'expenses')), {
-                amount: Math.abs(amount), voucherCode: voucher,
-                note: textVal(row['Nội dung'] || row['Ghi chú'] || [typeText, textVal(row['Người nộp/nhận']), voucher].filter(Boolean).join(' - ')),
+                amount: Math.abs(amount), note: textVal(row['Nội dung'] || row['Ghi chú'] || [typeText, textVal(row['Người nộp/nhận']), voucher].filter(Boolean).join(' - ')),
                 date: dateVal(row['Thời gian'] || row['Ngày'] || row['Ngày tạo'])
               }); writes++; success++;
               if (writes >= 300) { await batch.commit(); batch = writeBatch(db); writes = 0; }
             }
             if (writes) await batch.commit();
           }
-          showToast(`Đã đọc ${sourceRowCount.toLocaleString('vi-VN')} dòng Excel; nhập ${success} dòng/mục. Bỏ qua ${skippedDuplicates} mục trùng theo khóa đối chiếu. Các cột ngoài danh sách quy định đã được bỏ qua.`);
+          showToast(`Đã nhập ${success} dòng/mục. Bỏ qua ${skippedDuplicates} phiếu trùng. Các cột ngoài danh sách quy định đã được bỏ qua.`);
           setLoadingFile(false); e.target.value = '';
         } catch (err) {
           console.error(err);
@@ -4102,7 +3852,7 @@ function SettingsView({ db, storeId, showToast, storeConfig }) {
               </div>
             </div>
             <div className="bg-white p-6 rounded-2xl border shadow-sm">
-              <h3 className="font-bold border-b pb-3 mb-2 text-gray-800 flex items-center gap-2"><FileText className="text-green-600"/> Nhập / Xuất File Excel</h3><p className="text-xs text-gray-500 mb-5">Đọc toàn bộ dòng dữ liệu trong sheet, không giới hạn 200 dòng. Khi nhập sẽ hỏi xác nhận số dòng trước khi ghi. Đơn hàng đối chiếu theo mã hóa đơn; chi phí chỉ chống trùng khi có mã phiếu, không tự bỏ giao dịch chỉ vì trùng ngày hoặc số tiền.</p>
+              <h3 className="font-bold border-b pb-3 mb-5 text-gray-800 flex items-center gap-2"><FileText className="text-green-600"/> Nhập / Xuất File Excel</h3>
               {loadingFile && <div className="mb-4 text-blue-600 font-bold flex items-center gap-2"><div className="animate-spin h-5 w-5 border-2 border-blue-600 border-t-transparent rounded-full"></div> Đang xử lý file, vui lòng đợi...</div>}
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 {menuItems.map(item => (
