@@ -3510,6 +3510,8 @@ function SettingsView({ db, storeId, showToast, storeConfig }) {
   const [stockFileBusy, setStockFileBusy] = useState(false);
   const [stockPreview, setStockPreview] = useState(null);
   const [stockImportProgress, setStockImportProgress] = useState('');
+  const [contactDebtPreview, setContactDebtPreview] = useState(null);
+  const [contactDebtBusy, setContactDebtBusy] = useState(false);
 
   useEffect(() => {
     if (storeConfig) {
@@ -3579,7 +3581,102 @@ function SettingsView({ db, storeId, showToast, storeConfig }) {
     }));
   };
 
+  const parseContactDebtNumber = value => {
+    if (typeof value === 'number') return Number.isFinite(value) ? value : 0;
+    let x = String(value ?? '').trim().replace(/\s/g, '').replace(/[^0-9,.-]/g, '');
+    if (!x) return 0;
+    if (x.includes('.') && x.includes(',')) x = x.lastIndexOf(',') > x.lastIndexOf('.') ? x.replace(/\./g, '').replace(',', '.') : x.replace(/,/g, '');
+    else if (x.includes(',')) x = /,\d{1,2}$/.test(x) ? x.replace(',', '.') : x.replace(/,/g, '');
+    else if ((x.match(/\./g) || []).length > 1 || /\.\d{3}$/.test(x)) x = x.replace(/\./g, '');
+    const n = Number(x); return Number.isFinite(n) ? n : 0;
+  };
+  const handleContactDebtExcelSelect = async (e, type) => {
+    const file = e.target.files?.[0]; if (!file) return;
+    if (!window.XLSX) { showToast('Thư viện Excel chưa tải xong. Hãy tải lại trang rồi thử lại.', 'error'); e.target.value = ''; return; }
+    if (file.size > 25 * 1024 * 1024) { showToast('File Excel lớn hơn 25 MB. Vui lòng tách file.', 'error'); e.target.value = ''; return; }
+    setLoadingFile(true);
+    try {
+      const wb = window.XLSX.read(await file.arrayBuffer(), { type: 'array', cellDates: true });
+      const sheetName = wb.SheetNames.find(n => ['DanhBa','Danh bạ','Data'].includes(n)) || wb.SheetNames[0];
+      const rows = window.XLSX.utils.sheet_to_json(wb.Sheets[sheetName], { defval: '', blankrows: false });
+      if (!rows.length) throw new Error('Sheet danh bạ không có dữ liệu.');
+      const isCustomer = type === 'customers';
+      const codeKeys = isCustomer ? ['Mã khách hàng','Mã'] : ['Mã nhà cung cấp','Mã'];
+      const nameKeys = isCustomer ? ['Tên khách hàng','Tên'] : ['Tên nhà cung cấp','Tên'];
+      const first = (row, keys) => { for (const k of keys) if (row[k] !== undefined && String(row[k]).trim() !== '') return row[k]; return ''; };
+      let skippedJson = 0;
+      const parsed = rows.map((r,i) => {
+        const code = String(first(r,codeKeys)||'').trim(), name = String(first(r,nameKeys)||'').trim();
+        const json = value => {
+          if (value === undefined || value === null || String(value).trim() === '') return [];
+          try { const out = typeof value === 'string' ? JSON.parse(value) : value; if (!Array.isArray(out)) throw new Error(); return out; }
+          catch { skippedJson++; return []; }
+        };
+        if (!code && !name) return null;
+        const totalDebt = Math.max(0,parseContactDebtNumber(r['Tổng nợ']));
+        const remainingRaw = r['Nợ còn lại'];
+        const remainingDebt = Math.max(0,parseContactDebtNumber(remainingRaw !== undefined && String(remainingRaw).trim() !== '' ? remainingRaw : r['Tổng nợ']));
+        return { sourceRow:i+2, code, name, phone:String(r['Điện thoại']||r['Số điện thoại']||''), address:String(r['Địa chỉ']||''), totalDebt, remainingDebt, debtDetails:json(r['Chi tiết nợ (JSON)']), payments:json(r['Lịch sử thanh toán (JSON)']) };
+      }).filter(Boolean);
+      if (!parsed.length) throw new Error('Không tìm thấy dòng nào có mã hoặc tên.');
+      // If duplicate rows exist, keep the first row and skip later duplicates instead of failing the whole import.
+      const seen = new Set();
+      const uniqueParsed = parsed.filter(row => { const key = (row.code || row.name).trim().toLocaleLowerCase('vi'); if (seen.has(key)) return false; seen.add(key); return true; });
+      setContactDebtPreview({ type, fileName:file.name, rows:uniqueParsed, sourceRows:rows.length, skippedDuplicates:parsed.length-uniqueParsed.length, skippedJson });
+      showToast(`Đã đọc trước ${uniqueParsed.length} ${isCustomer?'khách hàng':'nhà cung cấp'}. Dòng trùng và JSON lỗi sẽ được bỏ qua; số nợ còn lại lấy theo Excel. Chưa ghi dữ liệu; kiểm tra rồi xác nhận.`);
+    } catch(err) { console.error(err); showToast('Không đọc được file công nợ: '+(err?.message||'Lỗi không xác định'), 'error'); }
+    finally { setLoadingFile(false); e.target.value = ''; }
+  };
+  const applyContactDebtImport = async () => {
+    if (!contactDebtPreview || contactDebtBusy) return;
+    const {type,rows}=contactDebtPreview; const label=type==='customers'?'khách hàng':'nhà cung cấp';
+    if (!window.confirm(`XÁC NHẬN THAY THẾ ${label.toLocaleUpperCase('vi')} VÀ CÔNG NỢ THEO EXCEL?\n\n- Danh bạ và lịch sử thanh toán của loại này sẽ được thay theo file.\n- Đơn hàng/phiếu nhập cũ không bị xóa.\n- Giao dịch chỉ được liên kết khi đối chiếu chính xác mã giao dịch.\n- Nên sao lưu trước khi tiếp tục.`)) return;
+    setContactDebtBusy(true); setLoadingFile(true);
+    try {
+      const base = ['stores',storeId,type];
+      const snap = await getDocs(collection(db,...base));
+      const old = snap.docs.map(d=>({id:d.id,...d.data()}));
+      const norm = v => String(v||'').trim().toLocaleLowerCase('vi');
+      const byCode = new Map(old.filter(x=>x.code).map(x=>[norm(x.code),x]));
+      const byName = new Map(old.filter(x=>x.name).map(x=>[norm(x.name),x]));
+      const usedIds = new Set(); const mapped=[];
+      for (const row of rows) {
+        const existing = (row.code && byCode.get(norm(row.code))) || (row.name && byName.get(norm(row.name)));
+        const id = existing?.id || doc(collection(db,...base)).id;
+        if (existing) usedIds.add(id);
+        mapped.push({...row,id, existing:!!existing});
+      }
+      // Contact documents are replaced from the workbook. Old orders/imports remain untouched.
+      let batch=writeBatch(db), count=0;
+      for (const row of mapped) {
+        const {id,sourceRow,debtDetails,payments,remainingDebt,...contact}=row;
+        batch.set(doc(db,...base,id),{code:contact.code,name:contact.name,phone:contact.phone,address:contact.address,totalDebt:row.remainingDebt,originalDebt:row.totalDebt,updatedAt:new Date().toISOString()},{merge:false}); count++;
+        if(count>=300){await batch.commit();batch=writeBatch(db);count=0;}
+      }
+      if(count) await batch.commit();
+      // Keep historical orders/imports untouched. The Excel contact balance is the authoritative balance
+      // shown on the web; malformed or unmatched historical details must not block or alter that balance.
+      const collectionName = type==='customers'?'orders':'imports';
+      // Replace payment subcollections for imported contacts; keep old transaction documents.
+      for (const row of mapped) {
+        const payRef=collection(db,...base,row.id,'debtPayments'); const paySnap=await getDocs(payRef);
+        for(let i=0;i<paySnap.docs.length;i+=400){const b=writeBatch(db);paySnap.docs.slice(i,i+400).forEach(d=>b.delete(d.ref));await b.commit();}
+        const reportSnap=await getDocs(collection(db,'stores',storeId,'debtPaymentReports'));
+        const oldReports=reportSnap.docs.filter(d=>d.data().contactType===type && d.data().contactId===row.id);
+        for(let i=0;i<oldReports.length;i+=400){const b=writeBatch(db);oldReports.slice(i,i+400).forEach(d=>b.delete(d.ref));await b.commit();}
+        const payments=row.payments||[];
+        for(let i=0;i<payments.length;i+=400){const b=writeBatch(db);payments.slice(i,i+400).forEach((pay,j)=>{const clean={...pay};delete clean.id;const ref=doc(db,...base,row.id,'debtPayments',String(pay.id||doc(collection(db,...base,row.id,'debtPayments')).id));b.set(ref,{...clean,contactId:row.id,contactName:row.name,contactType:type});const reportId=`${type}_${row.id}_${ref.id}`;b.set(doc(db,'stores',storeId,'debtPaymentReports',reportId),{...clean,id:reportId,sourcePaymentId:ref.id,source:'contactDebt',contactId:row.id,contactName:row.name,contactType:type,direction:type==='customers'?'Khách hàng trả nợ':'Trả nợ nhà cung cấp',date:clean.date||clean.createdAt||new Date().toISOString()});});await b.commit();}
+      }
+      // Delete contacts absent from the workbook after clearing their payment subcollections.
+      const absent=old.filter(x=>!usedIds.has(x.id) && !mapped.some(m=>m.id===x.id));
+      for(const row of absent){const ps=await getDocs(collection(db,...base,row.id,'debtPayments'));for(let i=0;i<ps.docs.length;i+=400){const b=writeBatch(db);ps.docs.slice(i,i+400).forEach(d=>b.delete(d.ref));await b.commit();}await deleteDoc(doc(db,...base,row.id));}
+      setContactDebtPreview(null); showToast(`Đã cố định công nợ theo Excel cho ${mapped.length} ${label}; giữ nguyên ${collectionName==='orders'?'đơn hàng':'phiếu nhập'} cũ. Chi tiết lịch sử không khớp sẽ không làm thay đổi số dư đã nhập.`);
+    } catch(err) { console.error(err); showToast('Nhập công nợ chưa hoàn tất: '+(err?.message||'Lỗi Firestore/kết nối. Kiểm tra dữ liệu trước khi chạy lại.'), 'error'); }
+    finally { setContactDebtBusy(false); setLoadingFile(false); }
+  };
+
   const handleImport = async (e, type) => {
+    if (type === 'customers' || type === 'suppliers') return handleContactDebtExcelSelect(e, type);
     const file = e.target.files?.[0];
     if (!file) return;
     if (!window.XLSX) {
@@ -4063,6 +4160,25 @@ function SettingsView({ db, storeId, showToast, storeConfig }) {
     if (!window.XLSX) return showToast("Hệ thống chưa sẵn sàng", "error");
     setLoadingFile(true);
     try {
+      if (type === 'customers' || type === 'suppliers') {
+        const isCustomer=type==='customers'; const contactsSnap=await getDocs(collection(db,'stores',storeId,type));
+        const txCollection=isCustomer?'orders':'imports'; const txSnap=await getDocs(collection(db,'stores',storeId,txCollection));
+        const norm=v=>String(v||'').trim().toLocaleLowerCase('vi');
+        const contactRows=[];
+        for(const d of contactsSnap.docs){
+          const c={id:d.id,...d.data()}; const linked=txSnap.docs.filter(td=>{const t=td.data();return (isCustomer && (t.customerId===c.id || (norm(t.customerName)===norm(c.name) && norm(t.customerCode)===norm(c.code))) ) || (!isCustomer && (t.supplierId===c.id || (norm(t.supplierName)===norm(c.name) && norm(t.supplierCode)===norm(c.code))));});
+          const debtDetails=linked.map(td=>{const t=td.data();return {'Mã giao dịch':t.invoiceCode||t.receiptCode||t.code||td.id,transactionId:td.id,'Ngày':t.date||'', 'Tổng tiền':Number(t.total??t.totalAmount)||0,'Đã trả':Number(t.paidAmount)||0,'Nợ còn lại':Number(t.remainingDebt ?? (Number(t.total ?? t.totalAmount ?? 0)-Number(t.paidAmount||0)))||0,'Ghi chú':t.debtPaymentNote||t.note||''};});
+          const paySnap=await getDocs(collection(db,'stores',storeId,type,c.id,'debtPayments'));
+          const payments=paySnap.docs.map(pd=>({id:pd.id,...pd.data()}));
+          const totalDebt=debtDetails.reduce((a,x)=>a+Number(x['Tổng tiền']||0),0);
+          const debtSum=Number(c.totalDebt)||debtDetails.reduce((a,x)=>a+Number(x['Nợ còn lại']||0),0);
+          contactRows.push({[isCustomer?'Mã khách hàng':'Mã nhà cung cấp']:c.code||'', [isCustomer?'Tên khách hàng':'Tên nhà cung cấp']:c.name||'', 'Tổng nợ':Number(c.originalDebt)||totalDebt||Number(c.totalDebt)||0,'Nợ còn lại':Number(c.totalDebt)||debtSum,'Điện thoại':c.phone||'','Địa chỉ':c.address||'','Chi tiết nợ (JSON)':JSON.stringify(debtDetails),'Lịch sử thanh toán (JSON)':JSON.stringify(payments)});
+        }
+        const wb=window.XLSX.utils.book_new();
+        window.XLSX.utils.book_append_sheet(wb,window.XLSX.utils.json_to_sheet(contactRows),'DanhBa');
+        window.XLSX.writeFile(wb,`CongNo_${type}_${new Date().toISOString().slice(0,10)}.xlsx`);
+        showToast(`Đã xuất ${contactRows.length} mục kèm chi tiết nợ và lịch sử thanh toán. Hãy giữ nguyên cột JSON nếu muốn nhập phục hồi đầy đủ.`); setLoadingFile(false); return;
+      }
       const snap = await getDocs(collection(db, 'stores', storeId, type));
       let exportData = [];
       snap.docs.forEach(d => {
@@ -4400,6 +4516,17 @@ function SettingsView({ db, storeId, showToast, storeConfig }) {
             </div>
           </div>
         )}
+            {contactDebtPreview && (
+              <div className="fixed inset-0 z-[95] bg-black/60 flex items-center justify-center p-3" role="dialog" aria-modal="true" aria-labelledby="contact-debt-preview-title">
+                <div className="bg-white w-full max-w-5xl max-h-[92vh] overflow-auto rounded-2xl shadow-2xl p-5 space-y-4">
+                  <div className="flex items-start justify-between gap-3"><div><h3 id="contact-debt-preview-title" className="text-xl font-black text-gray-900">Xem trước nhập danh bạ & công nợ</h3><p className="text-sm text-gray-600 mt-1">{contactDebtPreview.fileName} · {contactDebtPreview.rows.length} mục sẽ nhập · {contactDebtPreview.skippedDuplicates||0} dòng trùng bỏ qua · {contactDebtPreview.skippedJson||0} ô JSON lỗi bỏ qua · chưa ghi dữ liệu</p></div><button type="button" className="border rounded-lg px-3 py-2" onClick={()=>setContactDebtPreview(null)} disabled={contactDebtBusy}>Đóng</button></div>
+                  <p className="text-sm rounded-lg bg-amber-50 border border-amber-200 p-3">Khi xác nhận, danh bạ và lịch sử thanh toán của loại đang nhập sẽ thay theo Excel. Số nợ còn lại trên web lấy trực tiếp từ Excel; JSON lỗi, dòng trùng và chi tiết không khớp được bỏ qua. Đơn hàng/phiếu nhập cũ được giữ nguyên, không sửa. Nên xuất file sao lưu trước.</p>
+                  <div className="max-h-[48vh] overflow-auto border rounded-xl"><table className="w-full text-sm"><thead className="sticky top-0 bg-gray-100"><tr><th className="p-2 text-left">Mã</th><th className="p-2 text-left">Tên</th><th className="p-2 text-left">Điện thoại</th><th className="p-2 text-right">Tổng nợ</th><th className="p-2 text-right">Nợ còn lại</th><th className="p-2 text-right">Chi tiết nợ</th><th className="p-2 text-right">Thanh toán</th></tr></thead><tbody>{contactDebtPreview.rows.slice(0,200).map((r,i)=><tr key={`${r.code}-${i}`} className="border-t"><td className="p-2">{r.code||'—'}</td><td className="p-2">{r.name||'—'}</td><td className="p-2">{r.phone||'—'}</td><td className="p-2 text-right">{formatCurrency(r.totalDebt)}</td><td className="p-2 text-right">{formatCurrency(r.remainingDebt)}</td><td className="p-2 text-right">{r.debtDetails.length}</td><td className="p-2 text-right">{r.payments.length}</td></tr>)}</tbody></table></div>
+                  {contactDebtPreview.rows.length>200&&<p className="text-xs text-gray-500">Bảng xem trước hiển thị 200 dòng đầu; khi xác nhận sẽ xử lý toàn bộ {contactDebtPreview.rows.length} mục.</p>}
+                  <div className="flex flex-col sm:flex-row gap-2 justify-end"><button type="button" className="border rounded-xl px-4 py-3 font-bold" onClick={()=>setContactDebtPreview(null)} disabled={contactDebtBusy}>Hủy, chưa ghi</button><button type="button" className="bg-blue-600 text-white rounded-xl px-4 py-3 font-bold disabled:opacity-50" onClick={applyContactDebtImport} disabled={contactDebtBusy}>{contactDebtBusy?'Đang cập nhật...':'Xác nhận thay danh bạ & công nợ'}</button></div>
+                </div>
+              </div>
+            )}
             {deleteTarget && (
               <div className="fixed inset-0 z-[100] bg-black/60 flex items-center justify-center p-4" role="dialog" aria-modal="true" aria-labelledby="delete-confirm-title">
                 <form onSubmit={handleConfirmedDelete} className="bg-white w-full max-w-md rounded-2xl shadow-2xl p-6 space-y-4">
