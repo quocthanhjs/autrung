@@ -1734,8 +1734,11 @@ function ContactManager({ type, data, orders, products = [], navigationTarget, s
     setSavingDebtPayment(true);
     try {
       const transactionDebt = getContactTransactionsForDebt().reduce((sum, transaction) => sum + getOrderRemainingDebt(transaction), 0);
+      const hasContactDebtBalance = detailTarget.totalDebt !== undefined && detailTarget.totalDebt !== null && detailTarget.totalDebt !== '';
       const contactDebt = Math.max(0, Number(detailTarget.totalDebt) || 0);
-      const currentDebt = Math.max(contactDebt, transactionDebt);
+      // Số dư trên hồ sơ là nguồn chính thức (đặc biệt sau khi nhập Excel/KiotViet).
+      // Chỉ dùng tổng nợ giao dịch cũ khi hồ sơ chưa có trường totalDebt.
+      const currentDebt = hasContactDebtBalance ? contactDebt : transactionDebt;
       const oldAmount = editingDebtPayment ? Math.max(0, Number(editingDebtPayment.amount) || 0) : 0;
       const debtBeforeEdit = currentDebt + oldAmount;
       // Khi chọn “Trừ trên tổng nợ”, tất toán theo số dư trên hồ sơ hoặc
@@ -1878,7 +1881,17 @@ function ContactManager({ type, data, orders, products = [], navigationTarget, s
         direction: type === 'customers' ? 'Khách hàng trả nợ' : 'Trả nợ nhà cung cấp',
         date: paymentPayload.date || nowIso
       }, { merge: true });
-      batch.update(contactRef, { totalDebt: remainingDebt, debtNote: note, debtUpdatedAt: nowIso });
+      // set(..., merge) để ghi nhận thanh toán theo số dư hồ sơ ngay cả khi
+      // một hồ sơ cũ chưa có document tương ứng hoặc không còn đơn/phiếu liên quan.
+      batch.set(contactRef, {
+        totalDebt: remainingDebt,
+        debtNote: note,
+        debtUpdatedAt: nowIso,
+        ...(detailTarget.name ? { name: detailTarget.name } : {}),
+        ...(detailTarget.code ? { code: detailTarget.code } : {}),
+        ...(detailTarget.phone ? { phone: detailTarget.phone } : {}),
+        ...(detailTarget.address ? { address: detailTarget.address } : {})
+      }, { merge: true });
       await batch.commit();
 
       setDetailTarget(prev => prev ? { ...prev, totalDebt: remainingDebt } : prev);
