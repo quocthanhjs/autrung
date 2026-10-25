@@ -1637,7 +1637,7 @@ function ContactManager({ type, data, orders, navigationTarget, storeConfig, db,
       const sourceTransactions = orders || []; // Parent passes orders for customers and imports for suppliers.
       const transaction = sourceTransactions.find(o => o.id === allocation.transactionId);
       if (!transaction) continue;
-      const total = Math.max(0, Number(transaction.total ?? transaction.totalAmount ?? transaction.grandTotal ?? transaction.amount ?? transaction.finalTotal) || 0);
+      const total = Math.max(0, Number(transaction.total) || 0);
       const currentRemaining = getOrderRemainingDebt(transaction);
       const amount = Math.max(0, Number(allocation.amount) || 0);
       const nextRemaining = direction === 'reverse'
@@ -1683,7 +1683,7 @@ function ContactManager({ type, data, orders, navigationTarget, storeConfig, db,
     try {
       const transactionDebt = getContactTransactionsForDebt().reduce((sum, transaction) => sum + getOrderRemainingDebt(transaction), 0);
       const contactDebt = Math.max(0, Number(detailTarget.totalDebt) || 0);
-      const currentDebt = debtPayments.length > 0 ? contactDebt : Math.max(contactDebt, transactionDebt);
+      const currentDebt = Math.max(contactDebt, transactionDebt);
       const oldAmount = editingDebtPayment ? Math.max(0, Number(editingDebtPayment.amount) || 0) : 0;
       const debtBeforeEdit = currentDebt + oldAmount;
       // Khi chọn “Trừ trên tổng nợ”, tất toán theo số dư trên hồ sơ hoặc
@@ -1713,7 +1713,7 @@ function ContactManager({ type, data, orders, navigationTarget, storeConfig, db,
       for (const transactionId of restoredByTransaction.keys()) {
         const transaction = transactionsById.get(transactionId);
         if (!transaction) continue;
-        const total = Math.max(0, Number(transaction.total ?? transaction.totalAmount ?? transaction.grandTotal ?? transaction.amount ?? transaction.finalTotal) || 0);
+        const total = Math.max(0, Number(transaction.total) || 0);
         const restoredRemaining = Math.min(total, getOrderRemainingDebt(transaction) + restoredByTransaction.get(transactionId));
         transactionUpdates.set(transactionId, { transaction, total, remaining: restoredRemaining, note: transaction.debtPaymentNote || '' });
       }
@@ -1750,7 +1750,7 @@ function ContactManager({ type, data, orders, navigationTarget, storeConfig, db,
       // remaining amount is still recorded against the contact's total debt.
       const debtTransactions = Array.from(verifiedDebtTransactionMap.values()).map(transaction => {
         const existing = transactionUpdates.get(transaction.id);
-        const total = Math.max(0, Number(transaction.total ?? transaction.totalAmount ?? transaction.grandTotal ?? transaction.amount ?? transaction.finalTotal) || 0);
+        const total = Math.max(0, Number(transaction.total ?? transaction.totalAmount ?? transaction.grandTotal) || 0);
         const remaining = existing ? existing.remaining : getOrderRemainingDebt(transaction);
         return { ...transaction, total, _baseRemaining: Math.min(total, remaining) };
       }).filter(transaction => transaction._baseRemaining > 0)
@@ -1767,7 +1767,7 @@ function ContactManager({ type, data, orders, navigationTarget, storeConfig, db,
           const nextRemaining = Math.max(0, remaining - applied);
           const transactionCode = transaction.invoiceCode || transaction.receiptCode || transaction.code || transaction.id;
           const allocationNote = `Đã trừ ${formatCurrency(applied)} vào ${isCus ? 'đơn hàng' : 'phiếu nhập'} ${transactionCode} ngày ${paymentDateText}${userNote ? `; Ghi chú: ${userNote}` : ''}`;
-          transactionUpdates.set(transaction.id, { transaction, total: Math.max(0, Number(transaction.total ?? transaction.totalAmount ?? transaction.grandTotal ?? transaction.amount ?? transaction.finalTotal) || 0), remaining: nextRemaining, note: allocationNote });
+          transactionUpdates.set(transaction.id, { transaction, total: transaction.total, remaining: nextRemaining, note: allocationNote });
           allocations.push({ transactionId: transaction.id, transactionCode, transactionDate: transaction.date || '', amount: applied, note: allocationNote });
           amountToAllocate = Math.max(0, amountToAllocate - applied);
         }
@@ -2004,14 +2004,11 @@ function ContactManager({ type, data, orders, navigationTarget, storeConfig, db,
       const matchTime = validDate && (filterYear === 'ALL' || d.getFullYear().toString() === filterYear);
       return matchTime;
     }).sort((a,b) => new Date(b.date) - new Date(a.date));
-    let totalAmount = matched.reduce((s, o) => s + (Number(o.total ?? o.totalAmount ?? o.grandTotal ?? o.amount ?? o.finalTotal) || 0), 0);
-    let totalPaid = matched.reduce((s, o) => s + (Number(o.paidAmount ?? o.amountPaid ?? o.paid) || (o.status === 'PAID' ? (Number(o.total ?? o.totalAmount ?? o.grandTotal ?? o.amount ?? o.finalTotal) || 0) : 0)), 0);
+    let totalAmount = matched.reduce((s, o) => s + (Number(o.total) || 0), 0);
+    let totalPaid = matched.reduce((s, o) => s + (Number(o.paidAmount) || (o.status === 'PAID' ? (Number(o.total) || 0) : 0)), 0);
     let totalDebtRemain = matched.reduce((s, o) => s + getOrderRemainingDebt(o), 0);
     return { list: matched, totalAmount, totalPaid, totalDebtRemain };
   }, [detailTarget, orders, filterYear, isCus]);
-  const transactionDebtForDisplay = detailData.totalDebtRemain;
-  const contactDebtForDisplay = Math.max(0, Number(detailTarget?.totalDebt) || 0);
-  const debtForDisplay = debtPayments.length > 0 ? contactDebtForDisplay : Math.max(contactDebtForDisplay, transactionDebtForDisplay);
   const detailPageList = detailRowsPerPage === 'all' ? detailData.list : detailData.list.slice((detailCurrentPage - 1) * Number(detailRowsPerPage), detailCurrentPage * Number(detailRowsPerPage));
   const detailTotalPages = detailRowsPerPage === 'all' ? 1 : Math.max(1, Math.ceil(detailData.list.length / Number(detailRowsPerPage)));
 
@@ -2083,17 +2080,17 @@ function ContactManager({ type, data, orders, navigationTarget, storeConfig, db,
             </div>
             <div className="grid grid-cols-3 gap-3 text-center">
               <div className="bg-blue-50 p-2.5 rounded-lg border border-blue-100"><p className="text-[10px] text-blue-600 font-bold uppercase">Tổng Giao Dịch</p><p className="text-sm font-bold text-blue-800">{formatCurrency(detailData.totalAmount)}</p></div>
-              <div className="bg-green-50 p-2.5 rounded-lg border border-green-100"><p className="text-[10px] text-green-600 font-bold uppercase">Đã Thanh Toán</p><p className="text-sm font-bold text-green-700">{formatCurrency(debtPayments.length > 0 ? Math.max(detailData.totalPaid, detailData.totalAmount - debtForDisplay) : detailData.totalPaid)}</p></div>
-              <div className="bg-orange-50 p-2.5 rounded-lg border border-orange-100"><p className="text-[10px] text-orange-600 font-bold uppercase">Đang Nợ</p><p className="text-sm font-bold text-orange-700">{formatCurrency(debtForDisplay)}</p></div>
+              <div className="bg-green-50 p-2.5 rounded-lg border border-green-100"><p className="text-[10px] text-green-600 font-bold uppercase">Đã Thanh Toán</p><p className="text-sm font-bold text-green-700">{formatCurrency(detailData.totalPaid)}</p></div>
+              <div className="bg-orange-50 p-2.5 rounded-lg border border-orange-100"><p className="text-[10px] text-orange-600 font-bold uppercase">Đang Nợ</p><p className="text-sm font-bold text-orange-700">{formatCurrency(detailData.totalDebtRemain)}</p></div>
             </div>
             <section className="border rounded-xl bg-white p-4 space-y-3">
-              <div className="flex flex-wrap justify-between items-center gap-2"><h3 className="font-bold text-gray-800">Trừ công nợ</h3><span className="text-sm font-bold text-blue-600">Còn nợ: {formatCurrency(debtForDisplay)}</span></div>
+              <div className="flex flex-wrap justify-between items-center gap-2"><h3 className="font-bold text-gray-800">Trừ công nợ</h3><span className="text-sm font-bold text-blue-600">Còn nợ: {formatCurrency(Math.max(Number(detailTarget.totalDebt)||0, getContactTransactionsForDebt().reduce((sum, transaction) => sum + getOrderRemainingDebt(transaction), 0)))}</span></div>
               <form onSubmit={handleDebtPaymentSave} className="grid grid-cols-1 md:grid-cols-4 gap-3 items-end">
                 <label className="text-xs font-semibold text-gray-600">Cách trừ công nợ<select value={debtPaymentMode} onChange={e=>{setDebtPaymentMode(e.target.value); if(e.target.value==='all') setDebtPaymentAmount('');}} className="mt-1 w-full border rounded-lg p-2 bg-white text-sm"><option value="partial">Trừ từng phần</option><option value="all">Trừ trên tổng nợ</option></select></label>
-                <label className="text-xs font-semibold text-gray-600">Số tiền (VNĐ)<input type="number" min="1" step="any" value={debtPaymentMode==='all' ? debtForDisplay : debtPaymentAmount} onChange={e=>setDebtPaymentAmount(e.target.value)} disabled={debtPaymentMode==='all'} required={debtPaymentMode==='partial'} className="mt-1 w-full border rounded-lg p-2 text-sm disabled:bg-gray-100" placeholder="Nhập số tiền" /></label>
+                <label className="text-xs font-semibold text-gray-600">Số tiền (VNĐ)<input type="number" min="1" step="any" value={debtPaymentMode==='all' ? Math.max(0, Number(detailTarget.totalDebt)||0, getContactTransactionsForDebt().reduce((sum, transaction) => sum + getOrderRemainingDebt(transaction), 0)) : debtPaymentAmount} onChange={e=>setDebtPaymentAmount(e.target.value)} disabled={debtPaymentMode==='all'} required={debtPaymentMode==='partial'} className="mt-1 w-full border rounded-lg p-2 text-sm disabled:bg-gray-100" placeholder="Nhập số tiền" /></label>
                 <label className="text-xs font-semibold text-gray-600">Phương thức<select value={debtPaymentMethod} onChange={e=>setDebtPaymentMethod(e.target.value)} className="mt-1 w-full border rounded-lg p-2 bg-white text-sm"><option value="cash">Tiền mặt</option><option value="transfer">Chuyển khoản</option></select></label>
                 <label className="text-xs font-semibold text-gray-600 md:col-span-3">Ghi chú giao dịch<textarea value={debtPaymentNote} onChange={e=>setDebtPaymentNote(e.target.value)} rows={2} className="mt-1 w-full border rounded-lg p-2 text-sm" placeholder="Ví dụ: trừ từng phần / trừ tổng nợ, nội dung đối chiếu..." /></label>
-                <button type="submit" disabled={savingDebtPayment || (debtForDisplay<=0 && !editingDebtPayment)} className="bg-blue-600 hover:bg-blue-700 disabled:opacity-50 text-white font-bold rounded-lg p-2.5 text-sm">{savingDebtPayment ? 'Đang lưu...' : editingDebtPayment ? 'Lưu chỉnh sửa' : 'Xác nhận trừ nợ'}</button>
+                <button type="submit" disabled={savingDebtPayment || (Math.max(Number(detailTarget.totalDebt)||0, getContactTransactionsForDebt().reduce((sum, transaction) => sum + getOrderRemainingDebt(transaction), 0))<=0 && !editingDebtPayment)} className="bg-blue-600 hover:bg-blue-700 disabled:opacity-50 text-white font-bold rounded-lg p-2.5 text-sm">{savingDebtPayment ? 'Đang lưu...' : editingDebtPayment ? 'Lưu chỉnh sửa' : 'Xác nhận trừ nợ'}</button>
               </form>
               {editingDebtPayment && <button type="button" onClick={()=>{setEditingDebtPayment(null);setDebtPaymentAmount('');setDebtPaymentMode('partial');setDebtPaymentMethod('cash');}} className="text-xs text-gray-600 underline">Hủy chỉnh sửa</button>}
               <div className="border rounded-lg overflow-x-auto"><table className="w-full text-xs text-left"><thead className="bg-gray-100"><tr><th className="p-2">Thời gian</th><th className="p-2">Số tiền</th><th className="p-2">Cách trừ</th><th className="p-2">Phương thức</th><th className="p-2">Ghi chú</th><th className="p-2">Thao tác</th></tr></thead><tbody>
@@ -3857,6 +3854,22 @@ function SettingsView({ db, storeId, showToast, storeConfig }) {
     }
   };
   const normalizeStockHeader = value => String(value ?? '').trim().toLocaleLowerCase('vi').normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/đ/g, 'd').replace(/[^a-z0-9]/g, '');
+  const normalizeStockMatch = value => String(value ?? '').trim().toLocaleLowerCase('vi').normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/đ/g, 'd').replace(/[^a-z0-9]/g, '');
+  const parseStockNumber = value => {
+    if (typeof value === 'number') return value;
+    let text = String(value ?? '').trim().replace(/\s/g, '').replace(/[^0-9,.-]/g, '');
+    if (!text) return NaN;
+    if (text.includes(',') && text.includes('.')) {
+      if (text.lastIndexOf(',') > text.lastIndexOf('.')) text = text.replace(/\./g, '').replace(',', '.');
+      else text = text.replace(/,/g, '');
+    } else if (text.includes(',')) {
+      const parts = text.split(',');
+      text = parts.length === 2 && parts[1].length <= 2 ? `${parts[0]}.${parts[1]}` : parts.join('');
+    } else if ((text.match(/\./g) || []).length > 1 || /\.\d{3}$/.test(text)) {
+      text = text.replace(/\./g, '');
+    }
+    return Number(text);
+  };
   const handleStockExcelSelect = async (e) => {
     const file = e.target.files?.[0];
     if (!file) return;
@@ -3867,7 +3880,7 @@ function SettingsView({ db, storeId, showToast, storeConfig }) {
       const buffer = await file.arrayBuffer();
       const wb = window.XLSX.read(buffer, { type: 'array', cellDates: true });
       const sheet = wb.Sheets[wb.SheetNames[0]];
-      const rows = window.XLSX.utils.sheet_to_json(sheet, { defval: '', blankrows: false });
+      const rows = window.XLSX.utils.sheet_to_json(sheet, { defval: '', blankrows: false, raw: false });
       if (!rows.length) throw new Error('File không có dòng dữ liệu.');
       const first = rows[0];
       const keys = Object.keys(first);
@@ -3886,7 +3899,7 @@ function SettingsView({ db, storeId, showToast, storeConfig }) {
         const name = String(row[nameKey] ?? '').trim();
         const rawQty = row[qtyKey];
         if (!code && !name && (rawQty === '' || rawQty == null)) continue;
-        const qty = typeof rawQty === 'number' ? rawQty : Number(String(rawQty ?? '').trim().replace(/\s/g,'').replace(/,(?=\d{1,2}$)/,'.').replace(/\.(?=\d{3}(\D|$))/g,''));
+        const qty = parseStockNumber(rawQty);
         if (!name || rawQty === '' || rawQty == null || !Number.isFinite(qty) || qty < 0) { invalid++; continue; }
         const ckey = code.toLocaleLowerCase('vi');
         const nkey = name.toLocaleLowerCase('vi');
@@ -3905,43 +3918,50 @@ function SettingsView({ db, storeId, showToast, storeConfig }) {
 
   const handleApplyStockExcel = async () => {
     if (!stockPreview?.rows?.length || stockFileBusy) return;
-    const confirmed = window.confirm(`Bạn sắp cập nhật số tồn hiện tại của sản phẩm theo file ${stockPreview.fileName}.\n\n${stockPreview.rows.length} dòng sẽ được đối chiếu. Chỉ cập nhật trường tồn kho; không sửa đơn hàng, phiếu nhập, nhà cung cấp hay công nợ. Dòng không khớp hoặc mã trùng trong hệ thống sẽ bị bỏ qua.\n\nBạn đã sao lưu dữ liệu và muốn tiếp tục chưa?`);
+    const confirmed = window.confirm(`Bạn sắp ĐÈ SỐ TỒN ĐANG LƯU TRÊN WEB bằng số lượng trong file ${stockPreview.fileName}.\n\nChỉ sản phẩm khớp được mới cập nhật; tồn kho của sản phẩm không có trong Excel sẽ giữ nguyên. Không sửa lịch sử đơn hàng, phiếu nhập, nhà cung cấp hoặc công nợ.\n\nBạn đã sao lưu dữ liệu và muốn tiếp tục chưa?`);
     if (!confirmed) return;
-    setStockFileBusy(true); setStockImportProgress('Đang đọc danh mục sản phẩm hiện tại...');
+    setStockFileBusy(true); setStockImportProgress('Đang đọc danh mục sản phẩm hiện tại và đối chiếu mã/tên...');
     try {
       const snap = await getDocs(collection(db, 'stores', storeId, 'products'));
       const byCode = new Map(), byName = new Map();
       const duplicateCodes = new Set(), duplicateNames = new Set();
       snap.docs.forEach(d => {
         const x = d.data();
-        const code = String(x.code ?? '').trim().toLocaleLowerCase('vi');
-        const name = String(x.name ?? '').trim().toLocaleLowerCase('vi');
+        const code = normalizeStockMatch(x.code);
+        const name = normalizeStockMatch(x.name);
         if (code) { if (byCode.has(code)) duplicateCodes.add(code); else byCode.set(code, d); }
         if (name) { if (byName.has(name)) duplicateNames.add(name); else byName.set(name, d); }
       });
-      let matched = 0, missing = 0, ambiguous = 0, updated = 0;
+      let matchedByCode = 0, matchedByName = 0, missing = 0, ambiguous = 0, updated = 0;
       const updates = [];
       for (const row of stockPreview.rows) {
+        const codeKey = normalizeStockMatch(row.code);
+        const nameKey = normalizeStockMatch(row.name);
         let productDoc = null;
-        if (row.code) {
-          const key = row.code.toLocaleLowerCase('vi');
-          if (duplicateCodes.has(key)) { ambiguous++; continue; }
-          productDoc = byCode.get(key) || null;
-        } else {
-          const key = row.name.toLocaleLowerCase('vi');
-          if (duplicateNames.has(key)) { ambiguous++; continue; }
-          productDoc = byName.get(key) || null;
+        let matchType = '';
+        if (codeKey && duplicateCodes.has(codeKey)) { ambiguous++; continue; }
+        if (codeKey) {
+          productDoc = byCode.get(codeKey) || null;
+          if (productDoc) matchType = 'mã';
+        }
+        // If Excel contains a code that does not exist in the catalog, safely fall back to a unique exact normalized name.
+        if (!productDoc && nameKey) {
+          if (duplicateNames.has(nameKey)) { ambiguous++; continue; }
+          productDoc = byName.get(nameKey) || null;
+          if (productDoc) matchType = 'tên duy nhất';
         }
         if (!productDoc) { missing++; continue; }
-        matched++;
-        updates.push({ ref: productDoc.ref, stock: row.stock });
+        const current = productDoc.data();
+        if (matchType === 'mã') matchedByCode++; else matchedByName++;
+        updates.push({ ref: productDoc.ref, stock: row.stock, code: current.code || row.code || '', name: current.name || row.name, oldStock: Number(current.stock) || 0, matchType, sourceRow: row.sourceRow });
       }
       if (!updates.length) {
-        setStockImportProgress(`Không có sản phẩm nào được cập nhật. Không khớp: ${missing}; mã/tên trùng trong danh mục: ${ambiguous}.`);
+        setStockImportProgress(`Không có sản phẩm nào được cập nhật. Không khớp: ${missing}; mã/tên trùng, không an toàn để ghép: ${ambiguous}.`);
         showToast('Không tìm được sản phẩm khớp để cập nhật tồn kho.', 'error');
         return;
       }
-      const proceed = window.confirm(`Kết quả đối chiếu:\n- Khớp để cập nhật: ${matched}\n- Không tìm thấy: ${missing}\n- Mã/tên trùng, cần xử lý thủ công: ${ambiguous}\n\nChỉ cập nhật trường stock của ${updates.length} sản phẩm. Tiếp tục?`);
+      const sample = updates.slice(0, 8).map(x => `• ${x.code || x.name}: tồn web ${x.oldStock} → tồn Excel ${x.stock} (khớp theo ${x.matchType})`).join('\n');
+      const proceed = window.confirm(`KẾT QUẢ ĐỐI CHIẾU\n- Khớp mã sản phẩm: ${matchedByCode}\n- Khớp tên duy nhất: ${matchedByName}\n- Không tìm thấy: ${missing}\n- Mã/tên trùng, bỏ qua: ${ambiguous}\n\nVí dụ tồn kho sẽ bị thay thế:\n${sample}${updates.length > 8 ? `\n... và ${updates.length - 8} sản phẩm khác` : ''}\n\nSẽ thay trường stock trên web bằng đúng số trong Excel cho ${updates.length} sản phẩm khớp. Sản phẩm không có trong Excel được giữ nguyên. Lịch sử đơn hàng/phiếu nhập/công nợ không thay đổi.\n\nXác nhận cập nhật?`);
       if (!proceed) { setStockImportProgress('Đã hủy cập nhật; dữ liệu chưa thay đổi.'); return; }
       const chunkSize = 400;
       for (let i = 0; i < updates.length; i += chunkSize) {
@@ -3950,14 +3970,14 @@ function SettingsView({ db, storeId, showToast, storeConfig }) {
         chunk.forEach(item => batch.update(item.ref, { stock: item.stock }));
         await batch.commit();
         updated += chunk.length;
-        setStockImportProgress(`Đã cập nhật ${updated}/${updates.length} sản phẩm...`);
+        setStockImportProgress(`Đã thay số tồn theo Excel: ${updated}/${updates.length} sản phẩm...`);
       }
-      setStockImportProgress(`Hoàn tất: cập nhật ${updated}; không tìm thấy ${missing}; mã/tên trùng ${ambiguous}.`);
-      showToast(`Đã cập nhật tồn kho ${updated} sản phẩm. Lịch sử nhập hàng, đơn hàng và công nợ không bị sửa.`);
+      setStockImportProgress(`Hoàn tất: đã thay tồn web bằng tồn Excel cho ${updated} sản phẩm (khớp mã ${matchedByCode}, khớp tên ${matchedByName}); không tìm thấy ${missing}; trùng/không an toàn ${ambiguous}.`);
+      showToast(`Đã thay số tồn web bằng số tồn trong Excel cho ${updated} sản phẩm. Lịch sử đơn hàng, phiếu nhập và công nợ không bị sửa.`);
       setStockPreview(null);
     } catch (err) {
       console.error('Stock Excel update error:', err);
-      setStockImportProgress('Có lỗi khi cập nhật. Một số lô trước đó có thể đã lưu; hãy kiểm tra tồn kho trước khi chạy lại.');
+      setStockImportProgress('Cập nhật chưa hoàn tất. Một số lô trước đó có thể đã lưu; hãy kiểm tra tồn kho trước khi chạy lại.');
       showToast('Cập nhật tồn kho chưa hoàn tất: ' + (err?.code || err?.message || 'Lỗi Firestore'), 'error');
     } finally { setStockFileBusy(false); }
   };
@@ -4288,7 +4308,7 @@ function SettingsView({ db, storeId, showToast, storeConfig }) {
             </div>
             <div className="bg-white p-6 rounded-2xl border border-emerald-200 shadow-sm">
               <h3 className="font-bold text-gray-800 flex items-center gap-2"><Package className="text-emerald-600"/> Đối chiếu & cập nhật tồn kho bằng Excel</h3>
-              <p className="text-sm text-gray-600 mt-2 mb-4">File cần có các cột <b>Mã sản phẩm</b>, <b>Tên sản phẩm</b>, <b>Tồn kho</b>. Hệ thống đối chiếu mã sản phẩm chính xác; chỉ khi file không có mã mới đối chiếu bằng tên duy nhất. Không tạo đơn/phiếu nhập giả và không sửa lịch sử nhà cung cấp, đơn hàng hoặc công nợ.</p>
+              <p className="text-sm text-gray-600 mt-2 mb-4">File cần có các cột <b>Mã sản phẩm</b>, <b>Tên sản phẩm</b>, <b>Tồn kho</b>. Hệ thống ưu tiên mã sản phẩm; nếu mã không khớp thì chỉ ghép theo tên đã chuẩn hóa khi tên duy nhất. Số tồn trong Excel sẽ <b>thay thế</b> số tồn đang lưu trên web cho sản phẩm khớp, không cộng dồn. Sản phẩm không có trong file Excel được giữ nguyên. Không sửa lịch sử nhà cung cấp, đơn hàng hoặc công nợ.</p>
               <div className="flex flex-col sm:flex-row gap-3">
                 <label className="relative overflow-hidden cursor-pointer inline-flex items-center justify-center gap-2 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-bold px-4 py-3"> <Upload size={17}/> Chọn file Excel <input type="file" accept=".xls,.xlsx" onChange={handleStockExcelSelect} disabled={stockFileBusy} className="absolute inset-0 opacity-0 cursor-pointer"/> </label>
                 <button type="button" onClick={handleExportCurrentStock} disabled={stockFileBusy} className="inline-flex items-center justify-center gap-2 rounded-xl border border-emerald-300 bg-white px-4 py-3 font-bold text-emerald-700 disabled:opacity-50"><Download size={17}/> Xuất tồn kho Excel</button>
