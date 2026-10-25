@@ -1637,7 +1637,7 @@ function ContactManager({ type, data, orders, navigationTarget, storeConfig, db,
       const sourceTransactions = orders || []; // Parent passes orders for customers and imports for suppliers.
       const transaction = sourceTransactions.find(o => o.id === allocation.transactionId);
       if (!transaction) continue;
-      const total = Math.max(0, Number(transaction.total) || 0);
+      const total = Math.max(0, Number(transaction.total ?? transaction.totalAmount ?? transaction.grandTotal ?? transaction.amount ?? transaction.finalTotal) || 0);
       const currentRemaining = getOrderRemainingDebt(transaction);
       const amount = Math.max(0, Number(allocation.amount) || 0);
       const nextRemaining = direction === 'reverse'
@@ -1683,7 +1683,7 @@ function ContactManager({ type, data, orders, navigationTarget, storeConfig, db,
     try {
       const transactionDebt = getContactTransactionsForDebt().reduce((sum, transaction) => sum + getOrderRemainingDebt(transaction), 0);
       const contactDebt = Math.max(0, Number(detailTarget.totalDebt) || 0);
-      const currentDebt = Math.max(contactDebt, transactionDebt);
+      const currentDebt = debtPayments.length > 0 ? contactDebt : Math.max(contactDebt, transactionDebt);
       const oldAmount = editingDebtPayment ? Math.max(0, Number(editingDebtPayment.amount) || 0) : 0;
       const debtBeforeEdit = currentDebt + oldAmount;
       // Khi chọn “Trừ trên tổng nợ”, tất toán theo số dư trên hồ sơ hoặc
@@ -1713,7 +1713,7 @@ function ContactManager({ type, data, orders, navigationTarget, storeConfig, db,
       for (const transactionId of restoredByTransaction.keys()) {
         const transaction = transactionsById.get(transactionId);
         if (!transaction) continue;
-        const total = Math.max(0, Number(transaction.total) || 0);
+        const total = Math.max(0, Number(transaction.total ?? transaction.totalAmount ?? transaction.grandTotal ?? transaction.amount ?? transaction.finalTotal) || 0);
         const restoredRemaining = Math.min(total, getOrderRemainingDebt(transaction) + restoredByTransaction.get(transactionId));
         transactionUpdates.set(transactionId, { transaction, total, remaining: restoredRemaining, note: transaction.debtPaymentNote || '' });
       }
@@ -1750,7 +1750,7 @@ function ContactManager({ type, data, orders, navigationTarget, storeConfig, db,
       // remaining amount is still recorded against the contact's total debt.
       const debtTransactions = Array.from(verifiedDebtTransactionMap.values()).map(transaction => {
         const existing = transactionUpdates.get(transaction.id);
-        const total = Math.max(0, Number(transaction.total ?? transaction.totalAmount ?? transaction.grandTotal) || 0);
+        const total = Math.max(0, Number(transaction.total ?? transaction.totalAmount ?? transaction.grandTotal ?? transaction.amount ?? transaction.finalTotal) || 0);
         const remaining = existing ? existing.remaining : getOrderRemainingDebt(transaction);
         return { ...transaction, total, _baseRemaining: Math.min(total, remaining) };
       }).filter(transaction => transaction._baseRemaining > 0)
@@ -1767,7 +1767,7 @@ function ContactManager({ type, data, orders, navigationTarget, storeConfig, db,
           const nextRemaining = Math.max(0, remaining - applied);
           const transactionCode = transaction.invoiceCode || transaction.receiptCode || transaction.code || transaction.id;
           const allocationNote = `Đã trừ ${formatCurrency(applied)} vào ${isCus ? 'đơn hàng' : 'phiếu nhập'} ${transactionCode} ngày ${paymentDateText}${userNote ? `; Ghi chú: ${userNote}` : ''}`;
-          transactionUpdates.set(transaction.id, { transaction, total: transaction.total, remaining: nextRemaining, note: allocationNote });
+          transactionUpdates.set(transaction.id, { transaction, total: Math.max(0, Number(transaction.total ?? transaction.totalAmount ?? transaction.grandTotal ?? transaction.amount ?? transaction.finalTotal) || 0), remaining: nextRemaining, note: allocationNote });
           allocations.push({ transactionId: transaction.id, transactionCode, transactionDate: transaction.date || '', amount: applied, note: allocationNote });
           amountToAllocate = Math.max(0, amountToAllocate - applied);
         }
@@ -2004,11 +2004,14 @@ function ContactManager({ type, data, orders, navigationTarget, storeConfig, db,
       const matchTime = validDate && (filterYear === 'ALL' || d.getFullYear().toString() === filterYear);
       return matchTime;
     }).sort((a,b) => new Date(b.date) - new Date(a.date));
-    let totalAmount = matched.reduce((s, o) => s + (Number(o.total) || 0), 0);
-    let totalPaid = matched.reduce((s, o) => s + (Number(o.paidAmount) || (o.status === 'PAID' ? (Number(o.total) || 0) : 0)), 0);
+    let totalAmount = matched.reduce((s, o) => s + (Number(o.total ?? o.totalAmount ?? o.grandTotal ?? o.amount ?? o.finalTotal) || 0), 0);
+    let totalPaid = matched.reduce((s, o) => s + (Number(o.paidAmount ?? o.amountPaid ?? o.paid) || (o.status === 'PAID' ? (Number(o.total ?? o.totalAmount ?? o.grandTotal ?? o.amount ?? o.finalTotal) || 0) : 0)), 0);
     let totalDebtRemain = matched.reduce((s, o) => s + getOrderRemainingDebt(o), 0);
     return { list: matched, totalAmount, totalPaid, totalDebtRemain };
   }, [detailTarget, orders, filterYear, isCus]);
+  const transactionDebtForDisplay = detailData.totalDebtRemain;
+  const contactDebtForDisplay = Math.max(0, Number(detailTarget?.totalDebt) || 0);
+  const debtForDisplay = debtPayments.length > 0 ? contactDebtForDisplay : Math.max(contactDebtForDisplay, transactionDebtForDisplay);
   const detailPageList = detailRowsPerPage === 'all' ? detailData.list : detailData.list.slice((detailCurrentPage - 1) * Number(detailRowsPerPage), detailCurrentPage * Number(detailRowsPerPage));
   const detailTotalPages = detailRowsPerPage === 'all' ? 1 : Math.max(1, Math.ceil(detailData.list.length / Number(detailRowsPerPage)));
 
@@ -2080,17 +2083,17 @@ function ContactManager({ type, data, orders, navigationTarget, storeConfig, db,
             </div>
             <div className="grid grid-cols-3 gap-3 text-center">
               <div className="bg-blue-50 p-2.5 rounded-lg border border-blue-100"><p className="text-[10px] text-blue-600 font-bold uppercase">Tổng Giao Dịch</p><p className="text-sm font-bold text-blue-800">{formatCurrency(detailData.totalAmount)}</p></div>
-              <div className="bg-green-50 p-2.5 rounded-lg border border-green-100"><p className="text-[10px] text-green-600 font-bold uppercase">Đã Thanh Toán</p><p className="text-sm font-bold text-green-700">{formatCurrency(detailData.totalPaid)}</p></div>
-              <div className="bg-orange-50 p-2.5 rounded-lg border border-orange-100"><p className="text-[10px] text-orange-600 font-bold uppercase">Đang Nợ</p><p className="text-sm font-bold text-orange-700">{formatCurrency(detailData.totalDebtRemain)}</p></div>
+              <div className="bg-green-50 p-2.5 rounded-lg border border-green-100"><p className="text-[10px] text-green-600 font-bold uppercase">Đã Thanh Toán</p><p className="text-sm font-bold text-green-700">{formatCurrency(debtPayments.length > 0 ? Math.max(detailData.totalPaid, detailData.totalAmount - debtForDisplay) : detailData.totalPaid)}</p></div>
+              <div className="bg-orange-50 p-2.5 rounded-lg border border-orange-100"><p className="text-[10px] text-orange-600 font-bold uppercase">Đang Nợ</p><p className="text-sm font-bold text-orange-700">{formatCurrency(debtForDisplay)}</p></div>
             </div>
             <section className="border rounded-xl bg-white p-4 space-y-3">
-              <div className="flex flex-wrap justify-between items-center gap-2"><h3 className="font-bold text-gray-800">Trừ công nợ</h3><span className="text-sm font-bold text-blue-600">Còn nợ: {formatCurrency(Math.max(Number(detailTarget.totalDebt)||0, getContactTransactionsForDebt().reduce((sum, transaction) => sum + getOrderRemainingDebt(transaction), 0)))}</span></div>
+              <div className="flex flex-wrap justify-between items-center gap-2"><h3 className="font-bold text-gray-800">Trừ công nợ</h3><span className="text-sm font-bold text-blue-600">Còn nợ: {formatCurrency(debtForDisplay)}</span></div>
               <form onSubmit={handleDebtPaymentSave} className="grid grid-cols-1 md:grid-cols-4 gap-3 items-end">
                 <label className="text-xs font-semibold text-gray-600">Cách trừ công nợ<select value={debtPaymentMode} onChange={e=>{setDebtPaymentMode(e.target.value); if(e.target.value==='all') setDebtPaymentAmount('');}} className="mt-1 w-full border rounded-lg p-2 bg-white text-sm"><option value="partial">Trừ từng phần</option><option value="all">Trừ trên tổng nợ</option></select></label>
-                <label className="text-xs font-semibold text-gray-600">Số tiền (VNĐ)<input type="number" min="1" step="any" value={debtPaymentMode==='all' ? Math.max(0, Number(detailTarget.totalDebt)||0, getContactTransactionsForDebt().reduce((sum, transaction) => sum + getOrderRemainingDebt(transaction), 0)) : debtPaymentAmount} onChange={e=>setDebtPaymentAmount(e.target.value)} disabled={debtPaymentMode==='all'} required={debtPaymentMode==='partial'} className="mt-1 w-full border rounded-lg p-2 text-sm disabled:bg-gray-100" placeholder="Nhập số tiền" /></label>
+                <label className="text-xs font-semibold text-gray-600">Số tiền (VNĐ)<input type="number" min="1" step="any" value={debtPaymentMode==='all' ? debtForDisplay : debtPaymentAmount} onChange={e=>setDebtPaymentAmount(e.target.value)} disabled={debtPaymentMode==='all'} required={debtPaymentMode==='partial'} className="mt-1 w-full border rounded-lg p-2 text-sm disabled:bg-gray-100" placeholder="Nhập số tiền" /></label>
                 <label className="text-xs font-semibold text-gray-600">Phương thức<select value={debtPaymentMethod} onChange={e=>setDebtPaymentMethod(e.target.value)} className="mt-1 w-full border rounded-lg p-2 bg-white text-sm"><option value="cash">Tiền mặt</option><option value="transfer">Chuyển khoản</option></select></label>
                 <label className="text-xs font-semibold text-gray-600 md:col-span-3">Ghi chú giao dịch<textarea value={debtPaymentNote} onChange={e=>setDebtPaymentNote(e.target.value)} rows={2} className="mt-1 w-full border rounded-lg p-2 text-sm" placeholder="Ví dụ: trừ từng phần / trừ tổng nợ, nội dung đối chiếu..." /></label>
-                <button type="submit" disabled={savingDebtPayment || (Math.max(Number(detailTarget.totalDebt)||0, getContactTransactionsForDebt().reduce((sum, transaction) => sum + getOrderRemainingDebt(transaction), 0))<=0 && !editingDebtPayment)} className="bg-blue-600 hover:bg-blue-700 disabled:opacity-50 text-white font-bold rounded-lg p-2.5 text-sm">{savingDebtPayment ? 'Đang lưu...' : editingDebtPayment ? 'Lưu chỉnh sửa' : 'Xác nhận trừ nợ'}</button>
+                <button type="submit" disabled={savingDebtPayment || (debtForDisplay<=0 && !editingDebtPayment)} className="bg-blue-600 hover:bg-blue-700 disabled:opacity-50 text-white font-bold rounded-lg p-2.5 text-sm">{savingDebtPayment ? 'Đang lưu...' : editingDebtPayment ? 'Lưu chỉnh sửa' : 'Xác nhận trừ nợ'}</button>
               </form>
               {editingDebtPayment && <button type="button" onClick={()=>{setEditingDebtPayment(null);setDebtPaymentAmount('');setDebtPaymentMode('partial');setDebtPaymentMethod('cash');}} className="text-xs text-gray-600 underline">Hủy chỉnh sửa</button>}
               <div className="border rounded-lg overflow-x-auto"><table className="w-full text-xs text-left"><thead className="bg-gray-100"><tr><th className="p-2">Thời gian</th><th className="p-2">Số tiền</th><th className="p-2">Cách trừ</th><th className="p-2">Phương thức</th><th className="p-2">Ghi chú</th><th className="p-2">Thao tác</th></tr></thead><tbody>
