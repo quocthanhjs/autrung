@@ -1946,7 +1946,12 @@ function ContactManager({ type, data, orders, products = [], navigationTarget, s
     try {
       const batch = writeBatch(db);
       const autoDebtNote = `${successMessage || 'Cập nhật công nợ'}: ${formatCurrency(Math.abs(delta))}; ${new Date().toLocaleString('vi-VN', { timeZone: 'Asia/Ho_Chi_Minh' })}`;
-      batch.update(doc(db, 'stores', storeId, collectionName, ord.id), {
+      // Một số giao dịch cũ vẫn hiện trong danh sách nhưng tài liệu Firestore đã bị xóa/mất.
+      // Dùng set + merge để có thể lưu trạng thái lại từ bản ghi đang hiển thị, thay vì
+      // updateDoc/batch.update gây lỗi 'No document to update'. Không cập nhật tồn kho.
+      const { id: ignoredTransactionId, ...transactionSnapshot } = ord;
+      batch.set(doc(db, 'stores', storeId, collectionName, ord.id), {
+        ...transactionSnapshot,
         remainingDebt: nextRemaining,
         paidAmount: Math.max(0, total - nextRemaining),
         status: nextRemaining > 0 ? 'DEBT' : 'PAID',
@@ -1954,10 +1959,14 @@ function ContactManager({ type, data, orders, products = [], navigationTarget, s
         lastPaymentAt: delta < 0 ? new Date().toISOString() : (ord.lastPaymentAt || ord.paidAt || null),
         paidAt: nextRemaining === 0 && oldRemaining > 0 ? new Date().toISOString() : (ord.paidAt || null),
         debtPaymentNote: autoDebtNote
-      });
-      if (delta !== 0) batch.update(doc(db, 'stores', storeId, type, detailTarget.id), {
-        totalDebt: Math.max(0, (Number(detailTarget.totalDebt) || 0) + delta)
-      });
+      }, { merge: true });
+      if (delta !== 0) batch.set(doc(db, 'stores', storeId, type, detailTarget.id), {
+        totalDebt: Math.max(0, (Number(detailTarget.totalDebt) || 0) + delta),
+        ...(detailTarget.name ? { name: detailTarget.name } : {}),
+        ...(detailTarget.code ? { code: detailTarget.code } : {}),
+        ...(detailTarget.phone ? { phone: detailTarget.phone } : {}),
+        ...(detailTarget.address ? { address: detailTarget.address } : {})
+      }, { merge: true });
       await batch.commit();
       if (nextRemaining < oldRemaining) { const paidAmount = oldRemaining - nextRemaining; await addDoc(collection(db, 'stores', storeId, 'debtPaymentReports'), { contactId: detailTarget.id, contactName: detailTarget.name, contactType: type, direction: isCus ? 'Khách hàng trả nợ' : 'Trả nợ nhà cung cấp', amount: paidAmount, date: new Date().toISOString(), method: 'transaction', source: 'transactionDebt', transactionId: ord.id, transactionCode: ord.invoiceCode || ord.receiptCode || ord.code || ord.id, note: autoDebtNote, createdAt: new Date().toISOString() }); }
       setDetailTarget(prev => prev ? { ...prev, totalDebt: Math.max(0, (Number(prev.totalDebt) || 0) + delta) } : prev);
