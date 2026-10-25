@@ -485,8 +485,8 @@ export default function App() {
         {activeTab === 'imports' && <ImportView products={products} orders={orders} imports={imports} suppliers={suppliers} db={db} storeId={storeId} user={user} userData={userData} showToast={showToast} storeConfig={storeConfig} setActiveTab={setActiveTab} />}
         {activeTab === 'products' && <InventoryView products={products} orders={orders} imports={imports} warrantyRequests={warrantyRequests} customers={customers} suppliers={suppliers} navigationTarget={navigationTarget} storeConfig={storeConfig} db={db} storeId={storeId} showToast={showToast} />}
         {activeTab === 'warranty' && <WarrantyView products={products} customers={customers} suppliers={suppliers} warrantyRequests={warrantyRequests} storeConfig={storeConfig} db={db} storeId={storeId} showToast={showToast} />}
-        {activeTab === 'customers' && <ContactManager type="customers" data={customers} orders={orders} navigationTarget={navigationTarget} storeConfig={storeConfig} db={db} storeId={storeId} showToast={showToast} />}
-        {activeTab === 'suppliers' && <ContactManager type="suppliers" data={suppliers} orders={imports} navigationTarget={navigationTarget} storeConfig={storeConfig} db={db} storeId={storeId} showToast={showToast} />}
+        {activeTab === 'customers' && <ContactManager type="customers" data={customers} products={products} orders={orders} navigationTarget={navigationTarget} storeConfig={storeConfig} db={db} storeId={storeId} showToast={showToast} />}
+        {activeTab === 'suppliers' && <ContactManager type="suppliers" data={suppliers} products={products} orders={imports} navigationTarget={navigationTarget} storeConfig={storeConfig} db={db} storeId={storeId} showToast={showToast} />}
         {activeTab === 'expenses' && <ExpenseView expenses={expenses} db={db} storeId={storeId} showToast={showToast} />}
         {activeTab === 'settings' && <SettingsView db={db} storeId={storeId} showToast={showToast} storeConfig={storeConfig} />}
       </main>
@@ -1570,7 +1570,7 @@ function StaffManagerView({ db, showToast }) {
   );
 }
 
-function ContactManager({ type, data, orders, navigationTarget, storeConfig, db, storeId, showToast }) {
+function ContactManager({ type, data, orders, products = [], navigationTarget, storeConfig, db, storeId, showToast }) {
   const isCus = type === 'customers'; const title = isCus ? "Khách Hàng" : "Nhà Cung Cấp";
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [form, setForm] = useState({});
@@ -1581,6 +1581,8 @@ function ContactManager({ type, data, orders, navigationTarget, storeConfig, db,
   const [detailRowsPerPage, setDetailRowsPerPage] = useState('5');
   const [detailCurrentPage, setDetailCurrentPage] = useState(1);
   const [debtPayments, setDebtPayments] = useState([]);
+  const [selectedPaymentIds, setSelectedPaymentIds] = useState([]);
+  const [selectedTransactionIds, setSelectedTransactionIds] = useState([]);
   const [debtPaymentMode, setDebtPaymentMode] = useState('partial');
   const [debtPaymentAmount, setDebtPaymentAmount] = useState('');
   const [debtPaymentMethod, setDebtPaymentMethod] = useState('cash');
@@ -1668,6 +1670,56 @@ function ContactManager({ type, data, orders, navigationTarget, storeConfig, db,
       showToast('Đã hoàn tác giao dịch công nợ');
     } catch (err) { showToast('Không thể hoàn tác giao dịch công nợ: ' + (err?.message || ''), 'error'); }
     finally { setSavingDebtPayment(false); }
+  };
+
+  const handleDeleteSelectedPayments = async () => {
+    if (!selectedPaymentIds.length || savingDebtPayment) return;
+    const chosen = debtPayments.filter(payment => selectedPaymentIds.includes(payment.id));
+    if (chosen.length !== 1) { showToast('Để tránh tính sai số dư, vui lòng chọn và xóa từng lần thanh toán một.', 'error'); return; }
+    if (!window.confirm(`Xóa lần thanh toán ${formatCurrency(chosen[0].amount)} đã chọn? Hệ thống sẽ hoàn tác lần này để cập nhật lại công nợ và các giao dịch liên quan.`)) return;
+    await handleUndoDebtPayment(chosen[0]);
+    setSelectedPaymentIds([]);
+  };
+
+  const handleDeleteSelectedTransactions = async () => {
+    if (!selectedTransactionIds.length || savingDebtPayment || !detailTarget?.id) return;
+    const chosen = (detailData?.list || []).filter(transaction => selectedTransactionIds.includes(transaction.id));
+    if (!chosen.length) { setSelectedTransactionIds([]); return; }
+    if (!window.confirm(`Bạn sắp xóa ${chosen.length} giao dịch khỏi lịch sử chi tiết. Thao tác này chỉ xóa đơn hàng/phiếu nhập đã chọn và điều chỉnh công nợ trên hồ sơ; KHÔNG thay đổi số lượng tồn kho hiện tại. Bạn có chắc chắn muốn tiếp tục?`)) return;
+    setSavingDebtPayment(true);
+    try {
+      const batch = writeBatch(db);
+      let debtReduction = 0;
+      for (const transaction of chosen) {
+        const remaining = getOrderRemainingDebt(transaction);
+        debtReduction += remaining;
+        // Chủ ý không cập nhật collection products: xóa lịch sử giao dịch không được làm thay đổi tồn kho.
+        batch.delete(doc(db, 'stores', storeId, isCus ? 'orders' : 'imports', transaction.id));
+      }
+      batch.update(doc(db, 'stores', storeId, type, detailTarget.id), {
+        totalDebt: Math.max(0, (Number(detailTarget.totalDebt) || 0) - debtReduction),
+        debtUpdatedAt: new Date().toISOString(),
+        debtNote: `Đã xóa ${chosen.length} giao dịch chi tiết; điều chỉnh công nợ ${formatCurrency(debtReduction)}`
+      });
+      await batch.commit();
+      // Remove matching transaction-specific payment report entries to keep reports aligned.
+      const reportSnapshot = await getDocs(collection(db, 'stores', storeId, 'debtPaymentReports'));
+      const reportBatch = writeBatch(db);
+      let reportDeletes = 0;
+      const ids = new Set(chosen.map(row => row.id));
+      reportSnapshot.docs.forEach(reportDoc => {
+        const report = reportDoc.data();
+        if (ids.has(report.transactionId) && report.source === 'transactionDebt' && reportDeletes < 490) {
+          reportBatch.delete(reportDoc.ref); reportDeletes += 1;
+        }
+      });
+      if (reportDeletes) await reportBatch.commit();
+      setSelectedTransactionIds([]);
+      setDetailTarget(prev => prev ? { ...prev, totalDebt: Math.max(0, (Number(prev.totalDebt) || 0) - debtReduction) } : prev);
+      showToast(`Đã xóa ${chosen.length} giao dịch; tồn kho giữ nguyên, công nợ đã được điều chỉnh.`);
+    } catch (err) {
+      showToast(`Không thể xóa giao dịch: ${err?.message || 'Lỗi không xác định'}`, 'error');
+    } finally { setSavingDebtPayment(false); }
   };
 
   const handleDebtPaymentSave = async (e) => {
@@ -1812,6 +1864,8 @@ function ContactManager({ type, data, orders, navigationTarget, storeConfig, db,
           paidAmount: Math.max(0, update.total - update.remaining),
           status: update.remaining > 0 ? 'DEBT' : 'PAID',
           debtUpdatedAt: nowIso,
+          lastPaymentAt: nowIso,
+          paidAt: update.remaining === 0 ? nowIso : null,
           debtPaymentNote: update.note
         });
       }
@@ -1880,6 +1934,8 @@ function ContactManager({ type, data, orders, navigationTarget, storeConfig, db,
         paidAmount: Math.max(0, total - nextRemaining),
         status: nextRemaining > 0 ? 'DEBT' : 'PAID',
         debtUpdatedAt: new Date().toISOString(),
+        lastPaymentAt: delta < 0 ? new Date().toISOString() : (ord.lastPaymentAt || ord.paidAt || null),
+        paidAt: nextRemaining === 0 && oldRemaining > 0 ? new Date().toISOString() : (ord.paidAt || null),
         debtPaymentNote: autoDebtNote
       });
       if (delta !== 0) batch.update(doc(db, 'stores', storeId, type, detailTarget.id), {
@@ -2093,23 +2149,27 @@ function ContactManager({ type, data, orders, navigationTarget, storeConfig, db,
                 <button type="submit" disabled={savingDebtPayment || (Math.max(Number(detailTarget.totalDebt)||0, getContactTransactionsForDebt().reduce((sum, transaction) => sum + getOrderRemainingDebt(transaction), 0))<=0 && !editingDebtPayment)} className="bg-blue-600 hover:bg-blue-700 disabled:opacity-50 text-white font-bold rounded-lg p-2.5 text-sm">{savingDebtPayment ? 'Đang lưu...' : editingDebtPayment ? 'Lưu chỉnh sửa' : 'Xác nhận trừ nợ'}</button>
               </form>
               {editingDebtPayment && <button type="button" onClick={()=>{setEditingDebtPayment(null);setDebtPaymentAmount('');setDebtPaymentMode('partial');setDebtPaymentMethod('cash');}} className="text-xs text-gray-600 underline">Hủy chỉnh sửa</button>}
-              <div className="border rounded-lg overflow-x-auto"><table className="w-full text-xs text-left"><thead className="bg-gray-100"><tr><th className="p-2">Thời gian</th><th className="p-2">Số tiền</th><th className="p-2">Cách trừ</th><th className="p-2">Phương thức</th><th className="p-2">Ghi chú</th><th className="p-2">Thao tác</th></tr></thead><tbody>
-                {debtPayments.map(payment => <tr key={payment.id} className="border-t"><td className="p-2 whitespace-nowrap">{formatDate(payment.date)}</td><td className="p-2 font-bold">{formatCurrency(payment.amount)}</td><td className="p-2">{payment.mode==='all'?'Trừ trên tổng nợ':'Trừ từng phần'}</td><td className="p-2">{payment.method==='transfer'?'Chuyển khoản':'Tiền mặt'}</td><td className="p-2 min-w-[180px]">{payment.note || '—'}</td><td className="p-2"><div className="flex flex-wrap gap-2"><button type="button" onClick={()=>{setEditingDebtPayment(payment);setDebtPaymentMode(payment.mode==='all'?'all':'partial');setDebtPaymentAmount(String(payment.amount||''));setDebtPaymentMethod(payment.method||'cash');setDebtPaymentNote(payment.note||'');}} className="text-blue-600 underline font-semibold">Chỉnh sửa</button><button type="button" disabled={savingDebtPayment} onClick={()=>handleUndoDebtPayment(payment)} className="text-red-600 underline font-semibold disabled:opacity-50">Hoàn tác</button></div></td></tr>)}
-                {debtPayments.length===0 && <tr><td colSpan="6" className="p-3 text-center text-gray-400">Chưa có giao dịch trừ công nợ</td></tr>}
+              {selectedPaymentIds.length > 0 && <div className="flex items-center justify-between gap-2 bg-red-50 border border-red-200 rounded-lg p-2 text-xs"><span>Đã chọn {selectedPaymentIds.length} lần thanh toán</span><button type="button" disabled={savingDebtPayment} onClick={handleDeleteSelectedPayments} className="bg-red-600 text-white rounded px-3 py-1.5 font-bold disabled:opacity-50">Xóa lần thanh toán đã chọn</button></div>}
+              <div className="border rounded-lg overflow-x-auto"><table className="w-full text-xs text-left"><thead className="bg-gray-100"><tr><th className="p-2">Chọn</th><th className="p-2">Thời gian thanh toán</th><th className="p-2">Số tiền</th><th className="p-2">Cách trừ</th><th className="p-2">Phương thức</th><th className="p-2">Ghi chú</th><th className="p-2">Thao tác</th></tr></thead><tbody>
+                {debtPayments.map(payment => <tr key={payment.id} className="border-t"><td className="p-2"><input type="checkbox" checked={selectedPaymentIds.includes(payment.id)} onChange={e=>setSelectedPaymentIds(prev=>e.target.checked?[...prev,payment.id]:prev.filter(id=>id!==payment.id))} aria-label="Chọn lần thanh toán" /></td><td className="p-2 whitespace-nowrap">{formatDate(payment.date || payment.createdAt)}</td><td className="p-2 font-bold">{formatCurrency(payment.amount)}</td><td className="p-2">{payment.mode==='all'?'Trừ trên tổng nợ':'Trừ từng phần'}</td><td className="p-2">{payment.method==='transfer'?'Chuyển khoản':'Tiền mặt'}</td><td className="p-2 min-w-[180px]">{payment.note || '—'}</td><td className="p-2"><div className="flex flex-wrap gap-2"><button type="button" onClick={()=>{setEditingDebtPayment(payment);setDebtPaymentMode(payment.mode==='all'?'all':'partial');setDebtPaymentAmount(String(payment.amount||''));setDebtPaymentMethod(payment.method||'cash');setDebtPaymentNote(payment.note||'');}} className="text-blue-600 underline font-semibold">Chỉnh sửa</button><button type="button" disabled={savingDebtPayment} onClick={()=>handleUndoDebtPayment(payment)} className="text-red-600 underline font-semibold disabled:opacity-50">Hoàn tác</button></div></td></tr>)}
+                {debtPayments.length===0 && <tr><td colSpan="7" className="p-3 text-center text-gray-400">Chưa có giao dịch trừ công nợ</td></tr>}
               </tbody></table></div>
             </section>
             <div>
               <h4 className="font-bold text-sm text-gray-800 mb-2">Chi tiết sản phẩm đã {isCus ? "mua" : "cung cấp"}:</h4>
               <div className="border rounded-xl overflow-hidden">
+                {selectedTransactionIds.length > 0 && <div className="flex flex-wrap items-center justify-between gap-2 bg-red-50 border-b border-red-200 p-2 text-xs"><span>Đã chọn {selectedTransactionIds.length} giao dịch</span><button type="button" disabled={savingDebtPayment} onClick={handleDeleteSelectedTransactions} className="bg-red-600 text-white rounded px-3 py-1.5 font-bold disabled:opacity-50">Xóa giao dịch đã chọn</button></div>}
                 <div className="flex flex-wrap items-center justify-between gap-2 p-2 border-b bg-gray-50"><span className="text-xs text-gray-500">{detailData.list.length} giao dịch</span><label className="text-xs flex items-center gap-2">Hiển thị <select className="border rounded-lg p-1.5 bg-white" value={detailRowsPerPage} onChange={e=>{setDetailRowsPerPage(e.target.value);setDetailCurrentPage(1);}}><option value="5">5 dòng</option><option value="10">10 dòng</option><option value="20">20 dòng</option><option value="all">Tất cả</option></select></label></div>
                 <div className="max-h-80 overflow-auto"><table className="w-full text-xs text-left">
-                  <thead className="bg-gray-100 sticky top-0 border-b"><tr><th className="p-2.5">Thời gian</th><th className="p-2.5">Mặt hàng & Ghi chú/BH</th><th className="p-2.5">Giá nhập</th><th className="p-2.5">Giá bán</th><th className="p-2.5">Giá trị đơn</th><th className="p-2.5">Trạng thái nợ</th></tr></thead>
+                  <thead className="bg-gray-100 sticky top-0 border-b"><tr><th className="p-2.5">Chọn</th><th className="p-2.5">Thời gian giao dịch</th><th className="p-2.5">Thời gian thanh toán</th><th className="p-2.5">Mặt hàng & Ghi chú/BH</th><th className="p-2.5">Giá nhập</th><th className="p-2.5">Giá bán</th><th className="p-2.5">Giá trị đơn</th><th className="p-2.5">Trạng thái nợ</th></tr></thead>
                   <tbody>
                     {detailPageList.map(ord => {
                       const statusClass = ord.status === 'PAID' ? 'bg-green-100 text-green-700' : 'bg-orange-100 text-orange-700';
                       return (
                         <tr key={ord.id} className="border-b hover:bg-gray-50">
+                          <td className="p-2.5"><input type="checkbox" checked={selectedTransactionIds.includes(ord.id)} onChange={e=>setSelectedTransactionIds(prev=>e.target.checked?[...prev,ord.id]:prev.filter(id=>id!==ord.id))} aria-label="Chọn giao dịch để xóa" /></td>
                           <td className="p-2.5 whitespace-nowrap">{formatDate(ord.date)}</td>
+                          <td className="p-2.5 whitespace-nowrap">{formatDate(ord.lastPaymentAt || ord.paidAt || ord.paymentDate || ord.paidDate || ord.debtUpdatedAt) || '—'}</td>
                           <td className="p-2.5">
                             <ul className="space-y-1.5">
                               {ord.items?.map((it, idx) => {
@@ -2137,7 +2197,7 @@ function ContactManager({ type, data, orders, navigationTarget, storeConfig, db,
                         </tr>
                       );
                     })}
-                    {detailData.list.length === 0 && (<tr><td colSpan="6" className="p-4 text-center text-gray-400">Không có phát sinh giao dịch</td></tr>)}
+                    {detailData.list.length === 0 && (<tr><td colSpan="8" className="p-4 text-center text-gray-400">Không có phát sinh giao dịch</td></tr>)}
                   </tbody>
                 </table></div>
                 <div className="flex flex-wrap items-center justify-between gap-2 p-2 border-t bg-gray-50"><span className="text-xs text-gray-500">Trang {detailRowsPerPage === 'all' ? 1 : detailCurrentPage} / {detailTotalPages}</span><div className="flex gap-2"><button type="button" onClick={()=>setDetailCurrentPage(p=>Math.max(1,p-1))} disabled={detailCurrentPage===1 || detailRowsPerPage==='all'} className="border rounded px-3 py-1 text-xs disabled:opacity-40">Lùi</button><button type="button" onClick={()=>setDetailCurrentPage(p=>Math.min(detailTotalPages,p+1))} disabled={detailCurrentPage>=detailTotalPages || detailRowsPerPage==='all'} className="border rounded px-3 py-1 text-xs disabled:opacity-40">Tiến</button></div></div>
