@@ -1665,12 +1665,9 @@ function ContactManager({ type, data, orders, navigationTarget, storeConfig, db,
     e.preventDefault();
     if (!detailTarget?.id || savingDebtPayment) return;
 
-    const collectionName = isCus ? 'orders' : 'imports';
-    const allTransactions = (isCus ? (orders || []) : (imports || []));
-    const oldAllocations = editingDebtPayment?.allocations || [];
+    const transactionDebt = getContactTransactionsForDebt().reduce((sum, transaction) => sum + getOrderRemainingDebt(transaction), 0);
+    const currentDebt = Math.max(0, Number(detailTarget.totalDebt) || 0, transactionDebt);
     const oldAmount = editingDebtPayment ? Math.max(0, Number(editingDebtPayment.amount) || 0) : 0;
-    const currentTransactionDebt = getContactTransactionsForDebt().reduce((sum, transaction) => sum + getOrderRemainingDebt(transaction), 0);
-    const currentDebt = Math.max(0, Number(detailTarget.totalDebt) || 0, currentTransactionDebt);
     const debtBeforeEdit = currentDebt + oldAmount;
     const amount = debtPaymentMode === 'all' ? debtBeforeEdit : Number(debtPaymentAmount);
     if (!Number.isFinite(amount) || amount <= 0 || amount > debtBeforeEdit) {
@@ -1680,45 +1677,61 @@ function ContactManager({ type, data, orders, navigationTarget, storeConfig, db,
 
     setSavingDebtPayment(true);
     try {
-      // Chuẩn bị toàn bộ số dư trong bộ nhớ trước khi ghi Firebase, tránh ghi dở dang.
-      // Khi sửa một giao dịch cũ, hoàn lại phần đã phân bổ trước đó rồi phân bổ lại từ giao dịch cũ nhất.
-      const oldAllocationMap = new Map();
-      oldAllocations.forEach(a => oldAllocationMap.set(a.transactionId, (oldAllocationMap.get(a.transactionId) || 0) + Math.max(0, Number(a.amount) || 0)));
-      const candidatesById = new Map();
-      getContactTransactionsForDebt().forEach(t => candidatesById.set(t.id, t));
-      oldAllocationMap.forEach((_, id) => {
-        const found = allTransactions.find(t => t.id === id);
-        if (found) candidatesById.set(found.id, found);
+      const now = new Date();
+      const nowIso = now.toISOString();
+      const paymentDateText = now.toLocaleString('vi-VN', { timeZone: 'Asia/Ho_Chi_Minh' });
+      const userNote = String(debtPaymentNote || '').trim();
+      const collectionName = isCus ? 'orders' : 'imports';
+      const oldAllocations = Array.isArray(editingDebtPayment?.allocations) ? editingDebtPayment.allocations : [];
+      const restoredByTransaction = new Map();
+      oldAllocations.forEach((allocation) => {
+        restoredByTransaction.set(allocation.transactionId, (restoredByTransaction.get(allocation.transactionId) || 0) + Math.max(0, Number(allocation.amount) || 0));
       });
-      const candidates = [...candidatesById.values()].sort((a, b) => new Date(a.date || 0) - new Date(b.date || 0));
-      const plannedRemaining = new Map();
-      for (const transaction of candidates) {
+
+      // Prepare every transaction update in memory first, then commit all Firestore
+      // writes atomically so a quota/permission error cannot leave half a payment saved.
+      const transactionsById = new Map((orders || []).map(transaction => [transaction.id, transaction]));
+      const transactionUpdates = new Map();
+      for (const transactionId of restoredByTransaction.keys()) {
+        const transaction = transactionsById.get(transactionId);
+        if (!transaction) continue;
         const total = Math.max(0, Number(transaction.total) || 0);
-        const restored = Math.min(total, getOrderRemainingDebt(transaction) + (oldAllocationMap.get(transaction.id) || 0));
-        plannedRemaining.set(transaction.id, restored);
+        const restoredRemaining = Math.min(total, getOrderRemainingDebt(transaction) + restoredByTransaction.get(transactionId));
+        transactionUpdates.set(transactionId, { transaction, total, remaining: restoredRemaining, note: transaction.debtPaymentNote || '' });
       }
 
+      const debtTransactionMap = new Map((getContactTransactionsForDebt() || []).map(transaction => [transaction.id, transaction]));
+      // Include transactions restored by an edited payment even if their current
+      // remaining debt is zero; they may need to be allocated again in this save.
+      for (const transactionId of restoredByTransaction.keys()) {
+        const transaction = transactionsById.get(transactionId);
+        if (transaction) debtTransactionMap.set(transactionId, transaction);
+      }
+      const debtTransactions = Array.from(debtTransactionMap.values()).map(transaction => {
+        const existing = transactionUpdates.get(transaction.id);
+        const total = Math.max(0, Number(transaction.total) || 0);
+        const remaining = existing ? existing.remaining : getOrderRemainingDebt(transaction);
+        return { ...transaction, total, _baseRemaining: Math.min(total, remaining) };
+      }).filter(transaction => transaction._baseRemaining > 0)
+        .sort((a, b) => new Date(a.date || 0) - new Date(b.date || 0));
+
       const allocations = [];
-      let amountToAllocate = debtPaymentMode === 'partial' ? amount : 0;
-      const paymentDate = new Date();
-      const paymentDateText = paymentDate.toLocaleString('vi-VN', { timeZone: 'Asia/Ho_Chi_Minh' });
-      const userNote = debtPaymentNote.trim();
+      let amountToAllocate = amount;
       if (debtPaymentMode === 'partial') {
-        for (const transaction of candidates) {
+        for (const transaction of debtTransactions) {
           if (amountToAllocate <= 0) break;
-          const remaining = plannedRemaining.get(transaction.id) || 0;
+          const remaining = Math.max(0, Number(transaction._baseRemaining) || 0);
           const applied = Math.min(remaining, amountToAllocate);
           if (applied <= 0) continue;
           const nextRemaining = Math.max(0, remaining - applied);
-          plannedRemaining.set(transaction.id, nextRemaining);
           const transactionCode = transaction.invoiceCode || transaction.receiptCode || transaction.code || transaction.id;
           const allocationNote = `Đã trừ ${formatCurrency(applied)} vào ${isCus ? 'đơn hàng' : 'phiếu nhập'} ${transactionCode} ngày ${paymentDateText}${userNote ? `; Ghi chú: ${userNote}` : ''}`;
+          transactionUpdates.set(transaction.id, { transaction, total: transaction.total, remaining: nextRemaining, note: allocationNote });
           allocations.push({ transactionId: transaction.id, transactionCode, transactionDate: transaction.date || '', amount: applied, note: allocationNote });
           amountToAllocate = Math.max(0, amountToAllocate - applied);
         }
       }
 
-      const nowIso = new Date().toISOString();
       const outsideDebtNote = debtPaymentMode === 'partial' && amountToAllocate > 0
         ? `; Nợ khác không có trong chi tiết ${formatCurrency(amountToAllocate)} đã được trừ vào tổng công nợ, không phân bổ vào đơn/phiếu nào`
         : '';
@@ -1727,59 +1740,63 @@ function ContactManager({ type, data, orders, navigationTarget, storeConfig, db,
         : '';
       const note = `${userNote || (debtPaymentMode === 'all' ? 'Trừ tổng nợ' : 'Trừ công nợ theo giao dịch cũ nhất')} ${formatCurrency(amount)} ngày ${paymentDateText}${allocationSummary}${outsideDebtNote}`;
       const paymentPayload = {
-        amount, method: debtPaymentMethod, mode: debtPaymentMode, note,
+        amount,
+        method: debtPaymentMethod,
+        mode: debtPaymentMode,
+        note,
         allocations: debtPaymentMode === 'partial' ? allocations : [],
-        date: editingDebtPayment?.date || nowIso, updatedAt: nowIso,
-        contactId: detailTarget.id, contactName: detailTarget.name, contactType: type
+        date: editingDebtPayment?.date || nowIso,
+        updatedAt: nowIso,
+        contactId: detailTarget.id,
+        contactName: detailTarget.name,
+        contactType: type
       };
+
       const paymentRef = editingDebtPayment?.id
         ? doc(db, 'stores', storeId, type, detailTarget.id, 'debtPayments', editingDebtPayment.id)
         : doc(collection(db, 'stores', storeId, type, detailTarget.id, 'debtPayments'));
-      const reportRef = doc(db, 'stores', storeId, 'debtPaymentReports', `${type}_${detailTarget.id}_${paymentRef.id}`);
+      const paymentId = paymentRef.id;
+      const reportId = `${type}_${detailTarget.id}_${paymentId}`;
+      const reportRef = doc(db, 'stores', storeId, 'debtPaymentReports', reportId);
+      const contactRef = doc(db, 'stores', storeId, type, detailTarget.id);
+      const remainingDebt = Math.max(0, debtBeforeEdit - amount);
       const batch = writeBatch(db);
 
-      // Ghi đồng bộ các giao dịch bị thay đổi, lịch sử thanh toán, báo cáo và tổng công nợ.
-      if (debtPaymentMode === 'partial') {
-        const affectedIds = new Set([...oldAllocationMap.keys(), ...allocations.map(a => a.transactionId)]);
-        for (const id of affectedIds) {
-          const transaction = candidatesById.get(id);
-          if (!transaction) continue;
-          const total = Math.max(0, Number(transaction.total) || 0);
-          const nextRemaining = Math.max(0, Math.min(total, plannedRemaining.get(id) ?? getOrderRemainingDebt(transaction)));
-          const allocation = allocations.find(a => a.transactionId === id);
-          const generatedNote = allocation?.note || `Đã hoàn phân bổ khoản thanh toán trước vào ${isCus ? 'đơn hàng' : 'phiếu nhập'} ${transaction.invoiceCode || transaction.receiptCode || transaction.code || transaction.id} ngày ${paymentDateText}${userNote ? `; Ghi chú: ${userNote}` : ''}`;
-          batch.update(doc(db, 'stores', storeId, collectionName, id), {
-            remainingDebt: nextRemaining,
-            paidAmount: Math.max(0, total - nextRemaining),
-            status: nextRemaining > 0 ? 'DEBT' : 'PAID',
-            debtUpdatedAt: nowIso,
-            debtPaymentNote: generatedNote
-          });
-        }
+      if (transactionUpdates.size > 495) {
+        throw new Error('Giao dịch liên quan quá nhiều đơn/phiếu để lưu an toàn cùng lúc. Vui lòng liên hệ quản trị viên; chưa có thay đổi nào được ghi.');
       }
-      batch.set(paymentRef, editingDebtPayment?.id ? paymentPayload : { ...paymentPayload, createdAt: nowIso }, { merge: true });
+      for (const [transactionId, update] of transactionUpdates) {
+        batch.update(doc(db, 'stores', storeId, collectionName, transactionId), {
+          remainingDebt: update.remaining,
+          paidAmount: Math.max(0, update.total - update.remaining),
+          status: update.remaining > 0 ? 'DEBT' : 'PAID',
+          debtUpdatedAt: nowIso,
+          debtPaymentNote: update.note
+        });
+      }
+      batch.set(paymentRef, { ...paymentPayload, ...(editingDebtPayment?.id ? {} : { createdAt: nowIso }) }, { merge: true });
       batch.set(reportRef, {
         ...paymentPayload,
-        id: `${type}_${detailTarget.id}_${paymentRef.id}`,
-        sourcePaymentId: paymentRef.id,
+        id: reportId,
+        sourcePaymentId: paymentId,
         source: 'contactDebt',
         direction: type === 'customers' ? 'Khách hàng trả nợ' : 'Trả nợ nhà cung cấp',
         date: paymentPayload.date || nowIso
       }, { merge: true });
-      const remainingDebt = Math.max(0, debtBeforeEdit - amount);
-      batch.update(doc(db, 'stores', storeId, type, detailTarget.id), {
-        totalDebt: remainingDebt,
-        debtNote: note,
-        debtUpdatedAt: nowIso
-      });
+      batch.update(contactRef, { totalDebt: remainingDebt, debtNote: note, debtUpdatedAt: nowIso });
       await batch.commit();
 
       setDetailTarget(prev => prev ? { ...prev, totalDebt: remainingDebt } : prev);
-      setDebtPaymentAmount(''); setDebtPaymentMode('partial'); setDebtPaymentMethod('cash'); setDebtPaymentNote(''); setEditingDebtPayment(null);
+      setDebtPaymentAmount('');
+      setDebtPaymentMode('partial');
+      setDebtPaymentMethod('cash');
+      setDebtPaymentNote('');
+      setEditingDebtPayment(null);
       showToast(editingDebtPayment ? 'Đã cập nhật giao dịch công nợ' : 'Đã ghi nhận trừ công nợ');
     } catch (err) {
-      console.error('handleDebtPaymentSave failed:', err);
-      showToast('Không thể lưu giao dịch công nợ: ' + (err?.message || 'Vui lòng kiểm tra kết nối và quyền Firebase'), 'error');
+      const code = err?.code ? ` (${err.code})` : '';
+      const message = err?.message || 'Lỗi không xác định';
+      showToast(`Không thể lưu giao dịch công nợ${code}: ${message}`, 'error');
     } finally {
       setSavingDebtPayment(false);
     }
