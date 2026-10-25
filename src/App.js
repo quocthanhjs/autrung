@@ -1620,7 +1620,7 @@ function ContactManager({ type, data, orders, navigationTarget, storeConfig, db,
     const targetName = normalizeName(detailTarget?.name);
     // Kết hợp cả liên kết bằng ID và tên để không bỏ sót giao dịch cũ/import Excel
     // vốn thiếu ID hoặc dùng ID khác với hồ sơ hiện tại.
-    const sourceTransactions = isCus ? (orders || []) : (imports || []);
+    const sourceTransactions = orders || []; // Parent passes orders for customers and imports for suppliers.
     const matches = sourceTransactions.filter(transaction =>
       (detailTarget?.id && transaction[idField] && transaction[idField] === detailTarget.id) ||
       (targetName && normalizeName(transaction[nameField]) === targetName)
@@ -1634,7 +1634,7 @@ function ContactManager({ type, data, orders, navigationTarget, storeConfig, db,
     // direction='reverse' returns previously allocated payments to the transaction debt;
     // direction='apply' subtracts the allocation from the transaction debt.
     for (const allocation of (allocations || [])) {
-      const sourceTransactions = isCus ? (orders || []) : (imports || []);
+      const sourceTransactions = orders || []; // Parent passes orders for customers and imports for suppliers.
       const transaction = sourceTransactions.find(o => o.id === allocation.transactionId);
       if (!transaction) continue;
       const total = Math.max(0, Number(transaction.total) || 0);
@@ -1707,7 +1707,7 @@ function ContactManager({ type, data, orders, navigationTarget, storeConfig, db,
 
       // Prepare every transaction update in memory first, then commit all Firestore
       // writes atomically so a quota/permission error cannot leave half a payment saved.
-      const sourceTransactions = isCus ? (orders || []) : (imports || []);
+      const sourceTransactions = orders || []; // Parent passes orders for customers and imports for suppliers.
       const transactionsById = new Map(sourceTransactions.map(transaction => [transaction.id, transaction]));
       const transactionUpdates = new Map();
       for (const transactionId of restoredByTransaction.keys()) {
