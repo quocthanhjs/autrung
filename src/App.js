@@ -1620,7 +1620,8 @@ function ContactManager({ type, data, orders, navigationTarget, storeConfig, db,
     const targetName = normalizeName(detailTarget?.name);
     // Kết hợp cả liên kết bằng ID và tên để không bỏ sót giao dịch cũ/import Excel
     // vốn thiếu ID hoặc dùng ID khác với hồ sơ hiện tại.
-    const matches = (orders || []).filter(transaction =>
+    const sourceTransactions = isCus ? (orders || []) : (imports || []);
+    const matches = sourceTransactions.filter(transaction =>
       (detailTarget?.id && transaction[idField] && transaction[idField] === detailTarget.id) ||
       (targetName && normalizeName(transaction[nameField]) === targetName)
     );
@@ -1633,7 +1634,8 @@ function ContactManager({ type, data, orders, navigationTarget, storeConfig, db,
     // direction='reverse' returns previously allocated payments to the transaction debt;
     // direction='apply' subtracts the allocation from the transaction debt.
     for (const allocation of (allocations || [])) {
-      const transaction = (orders || []).find(o => o.id === allocation.transactionId);
+      const sourceTransactions = isCus ? (orders || []) : (imports || []);
+      const transaction = sourceTransactions.find(o => o.id === allocation.transactionId);
       if (!transaction) continue;
       const total = Math.max(0, Number(transaction.total) || 0);
       const currentRemaining = getOrderRemainingDebt(transaction);
@@ -1705,7 +1707,8 @@ function ContactManager({ type, data, orders, navigationTarget, storeConfig, db,
 
       // Prepare every transaction update in memory first, then commit all Firestore
       // writes atomically so a quota/permission error cannot leave half a payment saved.
-      const transactionsById = new Map((orders || []).map(transaction => [transaction.id, transaction]));
+      const sourceTransactions = isCus ? (orders || []) : (imports || []);
+      const transactionsById = new Map(sourceTransactions.map(transaction => [transaction.id, transaction]));
       const transactionUpdates = new Map();
       for (const transactionId of restoredByTransaction.keys()) {
         const transaction = transactionsById.get(transactionId);
@@ -1722,9 +1725,32 @@ function ContactManager({ type, data, orders, navigationTarget, storeConfig, db,
         const transaction = transactionsById.get(transactionId);
         if (transaction) debtTransactionMap.set(transactionId, transaction);
       }
-      const debtTransactions = Array.from(debtTransactionMap.values()).map(transaction => {
+
+      // Some legacy/imported rows remain in the UI state even though their
+      // Firestore document no longer exists (or their ID came from an import).
+      // Verify documents before building batch.update operations so one stale
+      // reference cannot cancel the entire customer/supplier payment.
+      const verifiedDebtTransactionMap = new Map();
+      const missingTransactionIds = new Set();
+      for (const [transactionId, transaction] of debtTransactionMap) {
+        try {
+          const transactionRef = doc(db, 'stores', storeId, collectionName, transactionId);
+          const transactionSnapshot = await getDoc(transactionRef);
+          if (transactionSnapshot.exists()) {
+            verifiedDebtTransactionMap.set(transactionId, { ...transaction, ...transactionSnapshot.data(), id: transactionId });
+          } else {
+            missingTransactionIds.add(transactionId);
+            transactionUpdates.delete(transactionId);
+          }
+        } catch (readError) {
+          throw new Error(`Không kiểm tra được ${isCus ? 'đơn hàng' : 'phiếu nhập'} ${transactionId}: ${readError?.message || 'lỗi đọc dữ liệu'}`);
+        }
+      }
+      // Only allocate money to transaction documents that really exist. Any
+      // remaining amount is still recorded against the contact's total debt.
+      const debtTransactions = Array.from(verifiedDebtTransactionMap.values()).map(transaction => {
         const existing = transactionUpdates.get(transaction.id);
-        const total = Math.max(0, Number(transaction.total) || 0);
+        const total = Math.max(0, Number(transaction.total ?? transaction.totalAmount ?? transaction.grandTotal) || 0);
         const remaining = existing ? existing.remaining : getOrderRemainingDebt(transaction);
         return { ...transaction, total, _baseRemaining: Math.min(total, remaining) };
       }).filter(transaction => transaction._baseRemaining > 0)
@@ -1816,7 +1842,7 @@ function ContactManager({ type, data, orders, navigationTarget, storeConfig, db,
         : err?.code === 'resource-exhausted'
           ? 'Firestore đã vượt hạn mức đọc/ghi hiện tại. Chưa ghi nhận thanh toán; thử lại khi hạn mức được khôi phục.'
           : err?.code === 'not-found'
-            ? 'Không tìm thấy hồ sơ hoặc đơn/phiếu liên quan. Hãy tải lại trang và thử lại.'
+            ? 'Không tìm thấy hồ sơ khách hàng/nhà cung cấp trên Firestore. Hãy tải lại danh sách và mở lại hồ sơ; giao dịch chưa được ghi nhận.'
             : rawMessage;
       showToast(`Không thể lưu giao dịch công nợ${code}: ${message}`, 'error');
     } finally {
