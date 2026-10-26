@@ -3029,23 +3029,30 @@ function WarrantyView({ products = [], customers = [], suppliers = [], warrantyR
     const list = (requests || []).slice(0, 4);
     if (!list.length) return showToast('Vui lòng chọn ít nhất một đơn gửi bảo hành chưa hoàn thành', 'error');
     const safe = v => String(v ?? '').replace(/[&<>"']/g, c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
-    const senderName = storeConfig.name || storeConfig.storeName || 'CTY TNHH TIN HỌC ÂU TRÙNG';
-    const senderAddress = storeConfig.address || '';
-    const senderPhone = storeConfig.phone || storeConfig.mobile || '';
+    const labelCfg = storeConfig[`warrantyPrint${paperSize}`] || storeConfig[paperSize] || {};
+    const senderName = labelCfg.printStoreName ?? storeConfig.name ?? storeConfig.storeName ?? 'CTY TNHH TIN HỌC ÂU TRÙNG';
+    const senderAddress = labelCfg.printStoreAddress ?? storeConfig.address ?? '';
+    const senderPhone = labelCfg.printStorePhone ?? storeConfig.phone ?? storeConfig.mobile ?? '';
+    const addressLabel = labelCfg.printAddressLabel || 'Địa chỉ';
+    const phoneLabel = labelCfg.printPhoneLabel || 'Điện thoại';
+    const showSenderName = labelCfg.printShowStoreName !== false;
+    const showSenderAddress = labelCfg.printShowStoreAddress !== false;
+    const showSenderPhone = labelCfg.printShowStorePhone !== false;
     const labels = list.map(w => {
       const location = locations.find(l => locationName(l) === (w.warrantyLocation || '')) || suppliers.find(l => (l.name || '') === (w.warrantyLocation || '')) || {};
       const recipientName = w.warrantyLocation || w.supplierName || location.name || '';
       const recipientAddress = w.warrantyLocationAddress || w.supplierAddress || location.address || '';
       const recipientPhone = w.warrantyLocationPhone || w.supplierPhone || location.phone || '';
       if (!recipientName) return null;
-      return `<section class="label"><div class="row"><div class="tag">NƠI<br>GỬI</div><div class="details"><div class="name">${safe(senderName)}</div><div class="detail">Địa chỉ: ${safe(senderAddress)}</div><div class="detail">Điện thoại: ${safe(senderPhone)}</div></div></div><div class="row"><div class="tag">NƠI<br>NHẬN</div><div class="details"><div class="name">${safe(recipientName)}</div><div class="detail">Địa chỉ: ${recipientAddress ? safe(recipientAddress) : '................................................................'}</div><div class="detail">Điện thoại: ${recipientPhone ? safe(recipientPhone) : '........................................'}</div></div></div><div class="warning">HÀNG DỄ VỠ XIN NHẸ TAY, CÁM ƠN !!!</div></section>`;
+      return `<section class="label"><div class="row"><div class="tag">NƠI<br>GỬI</div><div class="details">${showSenderName ? `<div class="name">${safe(senderName)}</div>` : ''}${showSenderAddress && senderAddress ? `<div class="detail">${safe(addressLabel)}: ${safe(senderAddress)}</div>` : ''}${showSenderPhone && senderPhone ? `<div class="detail">${safe(phoneLabel)}: ${safe(senderPhone)}</div>` : ''}</div></div><div class="row"><div class="tag">NƠI<br>NHẬN</div><div class="details"><div class="name">${safe(recipientName)}</div>${recipientAddress ? `<div class="detail">${safe(recipientAddress).replace(/\r?\n/g, '<br>')}</div>` : `<div class="detail">Địa chỉ: ................................................................</div>`}${recipientPhone ? `<div class="detail">${safe(phoneLabel)}: ${safe(recipientPhone)}</div>` : `<div class="detail">${safe(phoneLabel)}: ........................................</div>`}</div></div><div class="warning">HÀNG DỄ VỠ XIN NHẸ TAY, CÁM ƠN !!!</div></section>`;
     });
     if (labels.some(x => x === null)) return showToast('Có đơn gửi bảo hành chưa có tên nơi nhận. Vui lòng bổ sung trước khi in.', 'error');
     const win = window.open('', '_blank');
     if (!win) return showToast('Trình duyệt đã chặn cửa sổ in. Vui lòng cho phép cửa sổ bật lên rồi thử lại.', 'error');
+    const labelMarkup = labels.join('<div class=\"cut-line\" aria-hidden=\"true\"></div>');
     win.document.write(`<!doctype html><html lang="vi"><head><meta charset="utf-8"><title>Những nhãn gửi bảo hành</title><style>
-      @page{size:A4 portrait;margin:0}*{box-sizing:border-box}html,body{margin:0;padding:0;color:#000;font-family:Arial,Helvetica,sans-serif}.sheet{width:210mm;margin:0 auto}.label{width:210mm;height:54.25mm;margin:10mm 0;border:1.2mm solid #000;display:flex;flex-direction:column;overflow:hidden;break-inside:avoid;page-break-inside:avoid}.row{display:grid;grid-template-columns:21% 79%;border-bottom:1mm solid #000;min-height:0;flex:1}.tag{border-right:1mm solid #000;display:flex;align-items:center;justify-content:center;text-align:center;font-size:17pt;font-weight:900;padding:2mm;line-height:1.05}.details{padding:2mm 3mm;display:flex;flex-direction:column;justify-content:center;gap:1mm;min-width:0}.name{font-size:17pt;line-height:1.02;font-weight:900;text-transform:uppercase;overflow-wrap:anywhere;margin-bottom:.5mm}.detail{font-size:10pt;line-height:1.1;overflow-wrap:anywhere}.warning{min-height:12mm;display:flex;align-items:center;justify-content:center;text-align:center;padding:1.5mm 2mm;font-size:17pt;line-height:1.02;font-weight:900;border-top:1mm solid #000}.dots{letter-spacing:.3px}@media print{.label{break-after:avoid-page}body{-webkit-print-color-adjust:exact;print-color-adjust:exact}}
-      </style></head><body><main class="sheet">${labels.join('')}</main><script>window.onload=()=>window.print()</script></body></html>`);
+      @page{size:A4 portrait;margin:0}*{box-sizing:border-box}html,body{margin:0;padding:0;color:#000;font-family:Arial,Helvetica,sans-serif}.sheet{width:210mm;margin:0 auto}.label{width:190mm;margin:0 auto;border:0.3mm solid #777;display:flex;flex-direction:column;overflow:visible;break-inside:avoid;page-break-inside:avoid}.row{display:grid;grid-template-columns:21% 79%;border-bottom:0.25mm solid #999;min-height:0}.row:last-of-type{border-bottom:0}.tag{border-right:0.25mm solid #999;display:flex;align-items:center;justify-content:center;text-align:center;font-size:17pt;font-weight:700;padding:3mm;line-height:1.1}.details{padding:3mm 4mm;display:flex;flex-direction:column;justify-content:center;gap:1.5mm;min-width:0}.name{font-size:17pt;line-height:1.15;font-weight:700;text-transform:uppercase;overflow-wrap:anywhere;word-break:normal;margin-bottom:0.5mm}.detail{font-size:11pt;line-height:1.25;overflow-wrap:anywhere;word-break:normal}.warning{min-height:11mm;display:flex;align-items:center;justify-content:center;text-align:center;padding:2mm;font-size:15pt;line-height:1.15;font-weight:700;border-top:0.25mm solid #999;overflow-wrap:anywhere}.cut-line{height:20mm;position:relative;break-inside:avoid;page-break-inside:avoid}.cut-line:after{content:"";position:absolute;left:0;right:0;top:50%;border-top:0.3mm dashed #555}@media print{body{-webkit-print-color-adjust:exact;print-color-adjust:exact}}
+      </style></head><body><main class="sheet">${labelMarkup}</main><script>window.onload=()=>window.print()</script></body></html>`);
     win.document.close();
   };
   const printShippingLabel = (w) => printShippingLabels([w]);
