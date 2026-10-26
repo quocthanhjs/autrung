@@ -23,7 +23,7 @@ const PERMISSION_TREE = [
   { module: 'Quản lý Bán hàng', perms: [{ id: 'ban_hang', label: 'Quản lý bán hàng & Hóa đơn' }] },
   { module: 'Hàng hóa', perms: [{ id: 'hh_danh_sach', label: 'Danh sách hàng hóa' }, { id: 'hh_gia', label: 'Thiết lập giá' }] },
   { module: 'Mua hàng', perms: [{ id: 'mua_ncc', label: 'Danh sách nhà cung cấp' }, { id: 'mua_nhap_hang', label: 'Nhập hàng' }] },
-  { module: 'Khách hàng', perms: [{ id: 'kh_danh_sach', label: 'Danh sách khách hàng' }] },
+  { module: 'Khách hàng / Nhà cung cấp', perms: [{ id: 'kh_danh_sach', label: 'Danh sách khách hàng' }, { id: 'contact_edit_detail_amounts', label: 'Cho phép sửa số tiền giao dịch/đã thanh toán/đang nợ trong chi tiết khách hàng và nhà cung cấp' }] },
   { module: 'Sổ quỹ', perms: [{ id: 'quy_so_quy', label: 'Sổ quỹ / Chi phí' }] }
 ];
 
@@ -485,8 +485,8 @@ export default function App() {
         {activeTab === 'imports' && <ImportView products={products} orders={orders} imports={imports} suppliers={suppliers} db={db} storeId={storeId} user={user} userData={userData} showToast={showToast} storeConfig={storeConfig} setActiveTab={setActiveTab} />}
         {activeTab === 'products' && <InventoryView products={products} orders={orders} imports={imports} warrantyRequests={warrantyRequests} customers={customers} suppliers={suppliers} navigationTarget={navigationTarget} storeConfig={storeConfig} db={db} storeId={storeId} showToast={showToast} />}
         {activeTab === 'warranty' && <WarrantyView products={products} customers={customers} suppliers={suppliers} warrantyRequests={warrantyRequests} storeConfig={storeConfig} db={db} storeId={storeId} showToast={showToast} />}
-        {activeTab === 'customers' && <ContactManager type="customers" data={customers} products={products} orders={orders} navigationTarget={navigationTarget} storeConfig={storeConfig} db={db} storeId={storeId} showToast={showToast} />}
-        {activeTab === 'suppliers' && <ContactManager type="suppliers" data={suppliers} products={products} orders={imports} navigationTarget={navigationTarget} storeConfig={storeConfig} db={db} storeId={storeId} showToast={showToast} />}
+        {activeTab === 'customers' && <ContactManager type="customers" data={customers} products={products} orders={orders} navigationTarget={navigationTarget} storeConfig={storeConfig} db={db} storeId={storeId} showToast={showToast} userData={userData} />}
+        {activeTab === 'suppliers' && <ContactManager type="suppliers" data={suppliers} products={products} orders={imports} navigationTarget={navigationTarget} storeConfig={storeConfig} db={db} storeId={storeId} showToast={showToast} userData={userData} />}
         {activeTab === 'expenses' && <ExpenseView expenses={expenses} db={db} storeId={storeId} showToast={showToast} />}
         {activeTab === 'settings' && <SettingsView db={db} storeId={storeId} showToast={showToast} storeConfig={storeConfig} />}
       </main>
@@ -1610,7 +1610,8 @@ function StaffManagerView({ db, showToast }) {
   );
 }
 
-function ContactManager({ type, data, orders, products = [], navigationTarget, storeConfig, db, storeId, showToast }) {
+function ContactManager({ type, data, orders, products = [], navigationTarget, storeConfig, db, storeId, showToast, userData = {} }) {
+  const canEditDetailAmounts = userData.role === 'admin' || userData.perms?.contact_edit_detail_amounts === true;
   const isCus = type === 'customers'; const title = isCus ? "Khách Hàng" : "Nhà Cung Cấp";
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [form, setForm] = useState({});
@@ -1634,6 +1635,7 @@ function ContactManager({ type, data, orders, products = [], navigationTarget, s
   // Keep these handlers inside ContactManager so the customer/supplier detail
   // buttons use this component's own state and selected contact.
   const handleEditDetailStat = (key, label, currentValue) => {
+    if (!(userData.role === 'admin' || userData.perms?.contact_edit_detail_amounts === true)) { showToast('Bạn chưa được cấp quyền sửa số tiền.', 'error'); return; }
     if (!detailTarget?.id || savingDebtPayment) return;
     const value = Math.max(0, Number(currentValue) || 0);
     setEditDetailStat({ key, label, currentValue: value, newValue: String(value), note: '' });
@@ -1641,6 +1643,7 @@ function ContactManager({ type, data, orders, products = [], navigationTarget, s
 
   const handleSaveDetailStat = async (e) => {
     e.preventDefault();
+    if (!(userData.role === 'admin' || userData.perms?.contact_edit_detail_amounts === true)) { showToast('Bạn chưa được cấp quyền sửa số tiền.', 'error'); return; }
     if (!editDetailStat || !detailTarget?.id || savingDebtPayment) return;
     const { key, label, currentValue } = editDetailStat;
     const rawValue = String(editDetailStat.newValue ?? '').trim();
@@ -2270,9 +2273,9 @@ function ContactManager({ type, data, orders, products = [], navigationTarget, s
               </div>
             </div>
             <div className="grid grid-cols-3 gap-3 text-center">
-              <div className="bg-blue-50 p-2.5 rounded-lg border border-blue-100"><p className="text-[10px] text-blue-600 font-bold uppercase">Tổng Giao Dịch</p><p className="text-sm font-bold text-blue-800">{formatCurrency(detailData.totalAmount)}</p><button type="button" onClick={()=>handleEditDetailStat('totalAmount','Tổng Giao Dịch',detailData.totalAmount)} className="mt-1 text-[10px] text-blue-700 underline">Sửa số tiền</button></div>
-              <div className="bg-green-50 p-2.5 rounded-lg border border-green-100"><p className="text-[10px] text-green-600 font-bold uppercase">Đã Thanh Toán</p><p className="text-sm font-bold text-green-700">{formatCurrency(detailData.totalPaid)}</p><button type="button" onClick={()=>handleEditDetailStat('totalPaid','Đã Thanh Toán',detailData.totalPaid)} className="mt-1 text-[10px] text-green-700 underline">Sửa số tiền</button></div>
-              <div className="bg-orange-50 p-2.5 rounded-lg border border-orange-100"><p className="text-[10px] text-orange-600 font-bold uppercase">Đang Nợ</p><p className="text-sm font-bold text-orange-700">{formatCurrency(detailData.totalDebtRemain)}</p><button type="button" onClick={()=>handleEditDetailStat('totalDebt','Đang Nợ',detailData.totalDebtRemain)} className="mt-1 text-[10px] text-orange-700 underline">Sửa số tiền</button></div>
+              <div className="bg-blue-50 p-2.5 rounded-lg border border-blue-100"><p className="text-[10px] text-blue-600 font-bold uppercase">Tổng Giao Dịch</p><p className="text-sm font-bold text-blue-800">{formatCurrency(detailData.totalAmount)}</p>{canEditDetailAmounts && <button type="button" onClick={()=>handleEditDetailStat('totalAmount','Tổng Giao Dịch',detailData.totalAmount)} className="mt-1 text-[10px] text-blue-700 underline">Sửa số tiền</button>}</div>
+              <div className="bg-green-50 p-2.5 rounded-lg border border-green-100"><p className="text-[10px] text-green-600 font-bold uppercase">Đã Thanh Toán</p><p className="text-sm font-bold text-green-700">{formatCurrency(detailData.totalPaid)}</p>{canEditDetailAmounts && <button type="button" onClick={()=>handleEditDetailStat('totalPaid','Đã Thanh Toán',detailData.totalPaid)} className="mt-1 text-[10px] text-green-700 underline">Sửa số tiền</button>}</div>
+              <div className="bg-orange-50 p-2.5 rounded-lg border border-orange-100"><p className="text-[10px] text-orange-600 font-bold uppercase">Đang Nợ</p><p className="text-sm font-bold text-orange-700">{formatCurrency(detailData.totalDebtRemain)}</p>{canEditDetailAmounts && <button type="button" onClick={()=>handleEditDetailStat('totalDebt','Đang Nợ',detailData.totalDebtRemain)} className="mt-1 text-[10px] text-orange-700 underline">Sửa số tiền</button>}</div>
             </div>
             <section className="border rounded-xl bg-white p-4 space-y-3">
               <div className="flex flex-wrap justify-between items-center gap-2"><h3 className="font-bold text-gray-800">Trừ công nợ</h3><span className="text-sm font-bold text-blue-600">Còn nợ: {formatCurrency(Math.max(0, Number(detailTarget.totalDebt) || 0))}</span></div>
