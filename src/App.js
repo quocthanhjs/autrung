@@ -3697,6 +3697,9 @@ function SettingsView({ db, storeId, showToast, storeConfig }) {
   const [contactDebtBusy, setContactDebtBusy] = useState(false);
   const [duplicateRepairPreview, setDuplicateRepairPreview] = useState(null);
   const [duplicateRepairBusy, setDuplicateRepairBusy] = useState(false);
+  const [zipBusy, setZipBusy] = useState(false);
+  const [zipRestorePreview, setZipRestorePreview] = useState(null);
+  const [zipRestoreProgress, setZipRestoreProgress] = useState('');
 
   useEffect(() => {
     if (storeConfig) {
@@ -4435,6 +4438,121 @@ function SettingsView({ db, storeId, showToast, storeConfig }) {
     } finally { setStockFileBusy(false); }
   };
 
+  const ZIP_GROUPS = [
+    { key: 'orders', file: '02_Don_Hang.xlsx', label: 'Đơn hàng' },
+    { key: 'imports', file: '03_Nhap_Hang.xlsx', label: 'Nhập hàng' },
+    { key: 'products', file: '04_San_Pham.xlsx', label: 'Sản phẩm' },
+    { key: 'warrantyRequests', file: '05_Bao_Hanh.xlsx', label: 'Bảo hành' },
+    { key: 'customers', file: '06_Khach_Hang.xlsx', label: 'Khách hàng' },
+    { key: 'suppliers', file: '07_Nha_Cung_Cap.xlsx', label: 'Nhà cung cấp' },
+    { key: 'expenses', file: '08_Chi_Phi.xlsx', label: 'Chi phí' }
+  ];
+  const ensureJSZip = async () => {
+    if (window.JSZip) return window.JSZip;
+    await new Promise((resolve, reject) => {
+      const script = document.createElement('script');
+      script.src = 'https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js';
+      script.onload = resolve; script.onerror = () => reject(new Error('Không tải được thư viện ZIP'));
+      document.head.appendChild(script);
+    });
+    if (!window.JSZip) throw new Error('Thư viện ZIP chưa sẵn sàng');
+    return window.JSZip;
+  };
+  const makeZipWorkbook = (rows) => {
+    const XLSX = window.XLSX;
+    const safeRows = rows.map(row => ({ ID: row.id, 'Dữ liệu JSON': JSON.stringify(row.data) }));
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(safeRows.length ? safeRows : [{ ID: '', 'Dữ liệu JSON': '' }]), 'Data');
+    return XLSX.write(wb, { bookType: 'xlsx', type: 'array' });
+  };
+  const handleExportAllZip = async () => {
+    setZipBusy(true); setZipRestoreProgress('Đang đọc dữ liệu Firebase...');
+    try {
+      if (!window.XLSX) throw new Error('Thư viện Excel chưa sẵn sàng; hãy tải lại trang.');
+      const JSZip = await ensureJSZip();
+      const all = {};
+      for (const group of ZIP_GROUPS) {
+        const snap = await getDocs(collection(db, 'stores', storeId, group.key));
+        all[group.key] = snap.docs.map(d => ({ id: d.id, data: d.data() }));
+      }
+      const orders = all.orders || [], importsData = all.imports || [], products = all.products || [];
+      const customers = all.customers || [], suppliers = all.suppliers || [], expenses = all.expenses || [], warranties = all.warrantyRequests || [];
+      const reportRows = [
+        { 'Chỉ tiêu': 'Số đơn hàng', 'Giá trị': orders.length },
+        { 'Chỉ tiêu': 'Tổng tiền đơn hàng', 'Giá trị': orders.reduce((sum,r)=>sum+Number(r.data.total ?? r.data.totalAmount ?? 0),0) },
+        { 'Chỉ tiêu': 'Số phiếu nhập', 'Giá trị': importsData.length },
+        { 'Chỉ tiêu': 'Tổng tiền nhập', 'Giá trị': importsData.reduce((sum,r)=>sum+Number(r.data.total ?? 0),0) },
+        { 'Chỉ tiêu': 'Số sản phẩm', 'Giá trị': products.length },
+        { 'Chỉ tiêu': 'Số phiếu bảo hành', 'Giá trị': warranties.length },
+        { 'Chỉ tiêu': 'Số khách hàng', 'Giá trị': customers.length },
+        { 'Chỉ tiêu': 'Tổng công nợ khách hàng', 'Giá trị': customers.reduce((sum,r)=>sum+Number(r.data.totalDebt||0),0) },
+        { 'Chỉ tiêu': 'Số nhà cung cấp', 'Giá trị': suppliers.length },
+        { 'Chỉ tiêu': 'Tổng công nợ nhà cung cấp', 'Giá trị': suppliers.reduce((sum,r)=>sum+Number(r.data.totalDebt||0),0) },
+        { 'Chỉ tiêu': 'Số khoản chi phí', 'Giá trị': expenses.length },
+        { 'Chỉ tiêu': 'Tổng chi phí', 'Giá trị': expenses.reduce((sum,r)=>sum+Number(r.data.amount||r.data.total||0),0) }
+      ];
+      const zip = new JSZip();
+      const reportWb = window.XLSX.utils.book_new();
+      window.XLSX.utils.book_append_sheet(reportWb, window.XLSX.utils.json_to_sheet(reportRows), 'BaoCaoTongHop');
+      zip.file('01_Bao_Cao_Tong_Hop.xlsx', window.XLSX.write(reportWb,{bookType:'xlsx',type:'array'}));
+      for (const group of ZIP_GROUPS) zip.file(group.file, makeZipWorkbook(all[group.key] || []));
+      zip.file('README.txt', 'ZIP sao lưu dữ liệu QUẢN LÝ BÁN HÀNG. Mỗi file Excel có cột ID và Dữ liệu JSON để phục hồi đầy đủ trường dữ liệu. Khi nhập ZIP, ID trùng sẽ được cập nhật; ID chưa có sẽ được tạo mới. Bản ghi không nằm trong ZIP không bị xóa.');
+      const blob = await zip.generateAsync({type:'blob',compression:'DEFLATE'});
+      const url = URL.createObjectURL(blob); const a = document.createElement('a');
+      a.href = url; a.download = `Sao_Luu_Du_Lieu_${getVietnamDateKey()}.zip`; document.body.appendChild(a); a.click(); a.remove(); URL.revokeObjectURL(url);
+      setZipRestoreProgress('Đã xuất ZIP gồm 8 file Excel.');
+      showToast('Đã xuất ZIP gồm 8 file Excel.');
+    } catch (err) { console.error(err); setZipRestoreProgress(`Xuất ZIP thất bại: ${err.message||'Lỗi không xác định'}`); showToast(`Không xuất được ZIP: ${err.message||'Lỗi'}`, 'error'); }
+    finally { setZipBusy(false); }
+  };
+  const handleZipRestoreSelect = async (event) => {
+    const file = event.target.files?.[0]; event.target.value = '';
+    if (!file) return;
+    setZipBusy(true); setZipRestorePreview(null); setZipRestoreProgress('Đang đọc ZIP và đếm bản ghi; chưa ghi Firebase...');
+    try {
+      if (!window.XLSX) throw new Error('Thư viện Excel chưa sẵn sàng; hãy tải lại trang.');
+      const JSZip = await ensureJSZip(); const zip = await JSZip.loadAsync(file);
+      const entries = [];
+      for (const group of ZIP_GROUPS) {
+        const zipFile = zip.file(group.file);
+        if (!zipFile) { entries.push({...group, rows:[], missing:true}); continue; }
+        const buffer = await zipFile.async('arraybuffer');
+        const wb = window.XLSX.read(buffer,{type:'array'});
+        const sheet = wb.Sheets[wb.SheetNames[0]];
+        const raw = window.XLSX.utils.sheet_to_json(sheet,{defval:'',raw:true});
+        const rows = raw.map(row => {
+          let data = null; try { data = JSON.parse(row['Dữ liệu JSON'] || 'null'); } catch (_) {}
+          const id = String(row.ID || row.id || '').trim();
+          return id && data && typeof data === 'object' ? {id,data} : null;
+        }).filter(Boolean);
+        entries.push({...group,rows,missing:false});
+      }
+      const preview = entries.map(g=>({key:g.key,label:g.label,count:g.rows.length,missing:g.missing}));
+      setZipRestorePreview({fileName:file.name,entries,counts:preview,total:entries.reduce((n,g)=>n+g.rows.length,0)});
+      setZipRestoreProgress('Đã đọc ZIP. Chưa có dữ liệu nào được ghi vào Firebase.');
+    } catch (err) { setZipRestoreProgress(`Không đọc được ZIP: ${err.message||'File không hợp lệ'}`); showToast(`Không đọc được ZIP: ${err.message||'File không hợp lệ'}`, 'error'); }
+    finally { setZipBusy(false); }
+  };
+  const confirmZipRestore = async () => {
+    if (!zipRestorePreview || zipBusy) return;
+    const summary = zipRestorePreview.counts.map(g=>`${g.label}: ${g.count}${g.missing?' (không có file)':''}`).join('\n');
+    if (!window.confirm(`XÁC NHẬN PHỤC HỒI ZIP\n${summary}\n\nTổng bản ghi hợp lệ: ${zipRestorePreview.total}. Bản ghi có cùng ID sẽ được cập nhật, ID chưa có sẽ được tạo. Bản ghi hiện có không nằm trong ZIP sẽ KHÔNG bị xóa. Tiếp tục ghi Firebase?`)) return;
+    setZipBusy(true); let written = 0;
+    try {
+      for (const group of zipRestorePreview.entries) {
+        for (let i=0;i<group.rows.length;i+=400) {
+          const batch = writeBatch(db);
+          group.rows.slice(i,i+400).forEach(row => { batch.set(doc(db,'stores',storeId,group.key,row.id),row.data,{merge:false}); });
+          await batch.commit(); written += Math.min(400,group.rows.length-i);
+          setZipRestoreProgress(`Đang phục hồi ${group.label}: ${written}/${zipRestorePreview.total} bản ghi...`);
+        }
+      }
+      setZipRestoreProgress(`Hoàn tất phục hồi ${written} bản ghi. Không xóa bản ghi nào nằm ngoài ZIP.`);
+      showToast(`Đã phục hồi ${written} bản ghi từ ZIP. Bản ghi không có trong ZIP được giữ nguyên.`); setZipRestorePreview(null);
+    } catch (err) { console.error(err); setZipRestoreProgress(`Phục hồi bị gián đoạn sau ${written} bản ghi. Kiểm tra dữ liệu trước khi chạy lại: ${err.message||'Lỗi Firebase'}`); showToast('Phục hồi chưa hoàn tất; hãy kiểm tra Firebase trước khi chạy lại.', 'error'); }
+    finally { setZipBusy(false); }
+  };
+
   const handleExport = async (type) => {
     if (!window.XLSX) return showToast("Hệ thống chưa sẵn sàng", "error");
     setLoadingFile(true);
@@ -4783,6 +4901,22 @@ function SettingsView({ db, storeId, showToast, storeConfig }) {
                 <div className="flex flex-col sm:flex-row gap-2"><button type="button" onClick={handleApplyStockExcel} disabled={stockFileBusy} className="rounded-xl bg-amber-600 hover:bg-amber-700 text-white font-bold px-4 py-3 disabled:opacity-50">Đối chiếu và cập nhật tồn kho</button><button type="button" onClick={()=>{setStockPreview(null);setStockImportProgress('Đã hủy file xem trước; chưa thay đổi dữ liệu.');}} disabled={stockFileBusy} className="rounded-xl border bg-white px-4 py-3 font-bold text-gray-700">Hủy</button></div>
               </div>}
               <p className="text-xs text-gray-500 mt-3">Lưu ý: đây là cập nhật số tồn hiện tại, không tái dựng lịch sử tồn theo từng lần nhập/bán. Hãy sao lưu và kiểm tra file trước khi xác nhận. Nếu Firestore ngắt giữa các lô, kiểm tra tồn kho trước khi chạy lại.</p>
+            </div>
+            <div className="bg-white p-6 rounded-2xl border border-violet-200 shadow-sm mb-4">
+              <h3 className="font-bold text-gray-800 flex items-center gap-2"><Database className="text-violet-600"/> Sao lưu / Phục hồi toàn bộ dữ liệu bằng ZIP</h3>
+              <p className="text-sm text-gray-600 mt-2 mb-4">Xuất một file ZIP gồm đúng 8 file Excel: Báo cáo tổng hợp, Đơn hàng, Nhập hàng, Sản phẩm, Bảo hành, Khách hàng, Nhà cung cấp và Chi phí. Khi nhập ZIP, hệ thống đọc trước và đếm bản ghi từng nhóm; chỉ ghi Firebase sau khi bạn xác nhận. ID trùng sẽ được cập nhật; bản ghi không có trong ZIP không bị xóa.</p>
+              <div className="flex flex-col sm:flex-row gap-3">
+                <button type="button" onClick={handleExportAllZip} disabled={zipBusy} className="inline-flex items-center justify-center gap-2 rounded-xl bg-violet-600 hover:bg-violet-700 text-white font-bold px-4 py-3 disabled:opacity-50"><Download size={17}/> {zipBusy?'Đang xử lý...':'Xuất tất cả dữ liệu thành ZIP'}</button>
+                <label className={`relative overflow-hidden cursor-pointer inline-flex items-center justify-center gap-2 rounded-xl border border-violet-300 bg-white text-violet-700 font-bold px-4 py-3 ${zipBusy?'opacity-50 pointer-events-none':''}`}><Upload size={17}/> Chọn ZIP để phục hồi<input type="file" accept=".zip,application/zip" onChange={handleZipRestoreSelect} disabled={zipBusy} className="absolute inset-0 opacity-0 cursor-pointer"/></label>
+              </div>
+              {zipRestoreProgress && <div className="mt-3 rounded-lg bg-gray-50 border p-3 text-sm text-gray-700" role="status">{zipRestoreProgress}</div>}
+              {zipRestorePreview && <div className="mt-4 rounded-xl border border-amber-200 bg-amber-50 p-4 space-y-3">
+                <div className="font-bold text-amber-900">Xem trước ZIP: {zipRestorePreview.fileName}</div>
+                <div className="text-sm text-amber-900">Tổng cộng {zipRestorePreview.total} bản ghi hợp lệ. Chưa ghi dữ liệu vào Firebase.</div>
+                <div className="overflow-auto rounded-lg border bg-white"><table className="w-full text-sm"><thead className="bg-gray-100"><tr><th className="p-2 text-left">Nhóm dữ liệu</th><th className="p-2 text-right">Số bản ghi</th><th className="p-2 text-left">Trạng thái file</th></tr></thead><tbody>{zipRestorePreview.counts.map(g=><tr key={g.key} className="border-t"><td className="p-2">{g.label}</td><td className="p-2 text-right font-semibold">{g.count}</td><td className="p-2">{g.missing?'Không có file trong ZIP': 'Đã đọc'}</td></tr>)}</tbody></table></div>
+                <p className="text-xs text-amber-900">Khi xác nhận, bản ghi cùng ID sẽ được thay bằng dữ liệu trong ZIP. Bản ghi hiện có không xuất hiện trong ZIP sẽ được giữ nguyên. File Báo cáo tổng hợp chỉ để xem, không được nhập vào Firebase.</p>
+                <div className="flex flex-col sm:flex-row justify-end gap-2"><button type="button" onClick={()=>setZipRestorePreview(null)} disabled={zipBusy} className="rounded-xl border bg-white px-4 py-3 font-bold">Hủy</button><button type="button" onClick={confirmZipRestore} disabled={zipBusy||!zipRestorePreview.total} className="rounded-xl bg-violet-600 text-white px-4 py-3 font-bold disabled:opacity-50">{zipBusy?'Đang phục hồi...':'Xác nhận phục hồi vào Firebase'}</button></div>
+              </div>}
             </div>
             <div className="bg-white p-6 rounded-2xl border shadow-sm">
               <h3 className="font-bold border-b pb-3 mb-2 text-gray-800 flex items-center gap-2"><FileText className="text-green-600"/> Nhập / Xuất File Excel</h3><p className="text-xs text-gray-500 mb-5">Đọc toàn bộ dòng dữ liệu trong sheet, không giới hạn 200 dòng. Khi nhập sẽ hỏi xác nhận số dòng trước khi ghi. Đơn hàng đối chiếu theo mã hóa đơn; chi phí chỉ chống trùng khi có mã phiếu, không tự bỏ giao dịch chỉ vì trùng ngày hoặc số tiền.</p>
