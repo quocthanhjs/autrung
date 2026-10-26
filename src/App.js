@@ -3772,33 +3772,81 @@ function SettingsView({ db, storeId, showToast, storeConfig }) {
     }));
   };
 
-  // Kiểm tra và sửa các dòng sản phẩm lặp trong cùng một giao dịch.
-  // Chỉ gộp dòng trùng sản phẩm + đơn giá/giá nhập; giữ nguyên tổng tiền,
-  // công nợ và tồn kho; lưu bản sao dữ liệu gốc trước khi cập nhật.
+  // Rà và sửa chi tiết sản phẩm trùng trong cùng hoặc giữa các giao dịch.
+  // Chỉ xem là trùng khi khớp đối tượng (khách/NCC), sản phẩm, thời điểm,
+  // số lượng và đơn giá. Không đụng đến tổng tiền, công nợ hoặc tồn kho.
   const findDuplicateProductDetails = async () => {
     setDuplicateRepairBusy(true);
     try {
-      const found = [];
+      const foundByDoc = new Map();
+      const seenDetails = new Map();
+      const normalize = value => String(value ?? '').trim().toLocaleLowerCase('vi').replace(/\s+/g, ' ');
+      const normalizeTime = value => {
+        if (value === undefined || value === null || value === '') return '';
+        let parsed;
+        if (typeof value?.toDate === 'function') parsed = value.toDate();
+        else if (value instanceof Date) parsed = value;
+        else if (typeof value === 'number') parsed = new Date(value);
+        else {
+          const raw = String(value).trim();
+          // Hỗ trợ định dạng hiển thị kiểu 14:14:59 20/10/26.
+          const local = raw.match(/^(?:(\d{1,2}):(\d{2})(?::(\d{2}))?\s+)?(\d{1,2})[\/. -](\d{1,2})[\/. -](\d{2,4})$/);
+          if (local) {
+            const hour = Number(local[1] || 0), minute = Number(local[2] || 0), second = Number(local[3] || 0);
+            const day = Number(local[4]), month = Number(local[5]);
+            let year = Number(local[6]); if (year < 100) year += year >= 70 ? 1900 : 2000;
+            parsed = new Date(Date.UTC(year, month - 1, day, hour, minute, second));
+          } else parsed = new Date(raw);
+        }
+        return parsed && !Number.isNaN(parsed.getTime()) ? String(parsed.getTime()) : normalize(value);
+      };
+      const normalizeNumber = value => {
+        if (typeof value === 'number') return Number.isFinite(value) ? value : NaN;
+        let raw = String(value ?? '0').trim().replace(/[^0-9,.-]/g, '');
+        if (!raw) return 0;
+        if (raw.includes('.') && raw.includes(',')) raw = raw.lastIndexOf(',') > raw.lastIndexOf('.') ? raw.replace(/\./g, '').replace(',', '.') : raw.replace(/,/g, '');
+        else if (raw.includes(',') && !raw.includes('.')) raw = /,\d{1,2}$/.test(raw) ? raw.replace(',', '.') : raw.replace(/,/g, '');
+        else if ((raw.match(/\./g) || []).length > 1 || /\.\d{3}$/.test(raw)) raw = raw.replace(/\./g, '');
+        return Number(raw);
+      };
       for (const type of ['orders', 'imports']) {
         const snap = await getDocs(collection(db, 'stores', storeId, type));
-        snap.docs.forEach(d => {
-          const data = d.data();
+        const docs = snap.docs.map(d => ({ id: d.id, data: d.data() }));
+        // Sort deterministically so one canonical detail is retained.
+        docs.sort((a, b) => String(a.data.date || a.data.createdAt || a.id).localeCompare(String(b.data.date || b.data.createdAt || b.id)));
+        for (const entry of docs) {
+          const { id, data } = entry;
           const items = Array.isArray(data.items) ? data.items : [];
-          const groups = new Map();
           items.forEach((it, index) => {
-            const productKey = String(it.productId || it.id || it.code || it.name || '').trim().toLocaleLowerCase('vi');
+            const productKey = normalize(it.productId || it.productCode || it.code || it.name || it.productName || it.product);
             if (!productKey) return;
-            const price = type === 'orders' ? Number(it.salePrice ?? it.price ?? 0) : Number(it.importCost ?? it.cost ?? 0);
-            const key = `${productKey}::${price}`;
-            if (!groups.has(key)) groups.set(key, []);
-            groups.get(key).push({ ...it, __sourceIndex: index });
+            const contactKey = type === 'orders'
+              ? normalize(data.customerId || data.customerCode || data.customerName || data.customer || '')
+              : normalize(data.supplierId || data.supplierCode || data.supplierName || data.supplier || '');
+            const rawTime = it.transactionTime || it.date || it.createdAt || data.date || data.createdAt || data.importDate || data.time || '';
+            const timeKey = normalizeTime(rawTime);
+            const qty = normalizeNumber(it.qty ?? it.quantity ?? it.count ?? 0);
+            const price = normalizeNumber(type === 'orders' ? (it.salePrice ?? it.price ?? it.unitPrice ?? 0) : (it.importCost ?? it.cost ?? it.importPrice ?? it.price ?? 0));
+            // Không có thời gian/đối tượng/số lượng thì không đủ cơ sở để xóa an toàn.
+            if (!contactKey || !timeKey || !Number.isFinite(qty) || qty <= 0 || !Number.isFinite(price)) return;
+            const signature = [type, contactKey, productKey, timeKey, qty, price].join('::');
+            if (!seenDetails.has(signature)) {
+              seenDetails.set(signature, { id, index });
+              return;
+            }
+            const docKey = `${type}::${id}`;
+            if (!foundByDoc.has(docKey)) foundByDoc.set(docKey, { type, id, data, duplicateIndexes: [], duplicateSignatures: {}, duplicateLineCount: 0 });
+            const record = foundByDoc.get(docKey);
+            record.duplicateIndexes.push(index);
+            record.duplicateSignatures[index] = signature;
+            record.duplicateLineCount++;
           });
-          const duplicateGroups = [...groups.values()].filter(g => g.length > 1);
-          if (duplicateGroups.length) found.push({ type, id: d.id, data, duplicateGroups: duplicateGroups.map(g => g.map(x => x.__sourceIndex)), duplicateLineCount: duplicateGroups.reduce((n,g)=>n+g.length-1,0) });
-        });
+        }
       }
+      const found = [...foundByDoc.values()];
       setDuplicateRepairPreview({ records: found, scannedAt: new Date().toISOString() });
-      showToast(found.length ? `Tìm thấy ${found.length} giao dịch có dòng sản phẩm trùng. Chưa thay đổi dữ liệu.` : 'Không tìm thấy dòng sản phẩm trùng trong đơn hàng hoặc phiếu nhập. Chưa thay đổi dữ liệu.');
+      const total = found.reduce((n, r) => n + r.duplicateLineCount, 0);
+      showToast(total ? `Tìm thấy ${total} chi tiết trùng trong ${found.length} giao dịch (bao gồm trùng giữa các giao dịch). Chưa thay đổi dữ liệu.` : 'Không tìm thấy chi tiết trùng đủ điều kiện: cần khớp khách/NCC, sản phẩm, thời gian, số lượng và đơn giá. Chưa thay đổi dữ liệu.');
     } catch (err) {
       console.error(err);
       showToast('Không thể rà dữ liệu trùng: ' + (err?.message || 'Lỗi Firestore'), 'error');
@@ -3808,58 +3856,77 @@ function SettingsView({ db, storeId, showToast, storeConfig }) {
   const applyDuplicateProductRepair = async () => {
     if (!duplicateRepairPreview || duplicateRepairBusy) return;
     const records = duplicateRepairPreview.records || [];
-    if (!records.length) { showToast('Không có dữ liệu trùng để xử lý.'); return; }
-    if (!window.confirm(`Sẽ sao lưu ${records.length} giao dịch vào repairArchive, sau đó gộp các dòng sản phẩm trùng. Tổng tiền, công nợ và tồn kho sẽ không bị cập nhật bởi chức năng này. Tiếp tục?`)) return;
+    const totalLines = records.reduce((n, r) => n + (r.duplicateIndexes || []).length, 0);
+    if (!totalLines) { showToast('Không có dữ liệu trùng để xử lý.'); return; }
+    if (!window.confirm(`Tìm thấy ${totalLines} chi tiết trùng trong ${records.length} giao dịch. Hệ thống sẽ sao lưu dữ liệu gốc vào repairArchive và chỉ loại bỏ các dòng trùng đã khớp khách/NCC, sản phẩm, thời gian, số lượng, đơn giá. Không xóa cả hóa đơn và không ghi đè tổng tiền, công nợ hoặc tồn kho. Tiếp tục?`)) return;
     setDuplicateRepairBusy(true);
-    let repaired = 0;
+    let repaired = 0, removedLines = 0;
     try {
       for (const record of records) {
-        const collectionName = record.type;
-        const sourceRef = doc(db, 'stores', storeId, collectionName, record.id);
+        const sourceRef = doc(db, 'stores', storeId, record.type, record.id);
         const latestSnap = await getDoc(sourceRef);
         if (!latestSnap.exists()) continue;
         const current = latestSnap.data();
         const items = Array.isArray(current.items) ? current.items : [];
-        const merged = [];
-        const indexByKey = new Map();
-        items.forEach(it => {
-          const productKey = String(it.productId || it.id || it.code || it.name || '').trim().toLocaleLowerCase('vi');
-          const price = collectionName === 'orders' ? Number(it.salePrice ?? it.price ?? 0) : Number(it.importCost ?? it.cost ?? 0);
-          const key = productKey ? `${productKey}::${price}` : `__unique__${merged.length}`;
-          if (!indexByKey.has(key)) {
-            const clean = { ...it };
-            delete clean.__sourceIndex;
-            indexByKey.set(key, merged.length);
-            merged.push(clean);
-          } else {
-            const idx = indexByKey.get(key), previous = merged[idx];
-            const qtyKey = previous.qty !== undefined && previous.quantity === undefined ? 'qty' : 'quantity';
-            const oldQty = Number(previous.qty ?? previous.quantity ?? 0);
-            const addQty = Number(it.qty ?? it.quantity ?? 0);
-            const nextQty = oldQty + addQty;
-            merged[idx] = { ...previous, [qtyKey]: nextQty };
-            if (previous.qty !== undefined) merged[idx].qty = nextQty;
-            if (previous.quantity !== undefined) merged[idx].quantity = nextQty;
-            if (previous.lineTotal !== undefined || it.lineTotal !== undefined) merged[idx].lineTotal = Number(previous.lineTotal || 0) + Number(it.lineTotal || 0);
-            if (previous.total !== undefined || it.total !== undefined) merged[idx].total = Number(previous.total || 0) + Number(it.total || 0);
+        // Xác minh lại chữ ký từng dòng; không xóa nếu dữ liệu đã thay đổi sau bước rà.
+        const normalizeNow = value => String(value ?? '').trim().toLocaleLowerCase('vi').replace(/\s+/g, ' ');
+        const normalizeTimeNow = value => {
+          if (value === undefined || value === null || value === '') return '';
+          let parsed;
+          if (typeof value?.toDate === 'function') parsed = value.toDate();
+          else if (value instanceof Date) parsed = value;
+          else if (typeof value === 'number') parsed = new Date(value);
+          else {
+            const raw = String(value).trim();
+            const local = raw.match(/^(?:(\d{1,2}):(\d{2})(?::(\d{2}))?\s+)?(\d{1,2})[\/. -](\d{1,2})[\/. -](\d{2,4})$/);
+            if (local) { const h=Number(local[1]||0),m=Number(local[2]||0),sec=Number(local[3]||0),day=Number(local[4]),month=Number(local[5]); let year=Number(local[6]); if(year<100)year+=year>=70?1900:2000; parsed=new Date(Date.UTC(year,month-1,day,h,m,sec)); }
+            else parsed = new Date(raw);
           }
-        });
-        if (merged.length === items.length) continue;
-        // Lưu bản gốc trước khi sửa để có thể phục hồi nếu cần.
+          return parsed && !Number.isNaN(parsed.getTime()) ? String(parsed.getTime()) : normalizeNow(value);
+        };
+        const normalizeNumberNow = value => {
+          if (typeof value === 'number') return Number.isFinite(value) ? value : NaN;
+          let raw=String(value ?? '0').trim().replace(/[^0-9,.-]/g,''); if(!raw)return 0;
+          if(raw.includes('.')&&raw.includes(','))raw=raw.lastIndexOf(',')>raw.lastIndexOf('.')?raw.replace(/\./g,'').replace(',','.'):raw.replace(/,/g,'');
+          else if(raw.includes(',')&&!raw.includes('.'))raw=/,\d{1,2}$/.test(raw)?raw.replace(',','.'):raw.replace(/,/g,'');
+          else if((raw.match(/\./g)||[]).length>1||/\.\d{3}$/.test(raw))raw=raw.replace(/\./g,'');
+          return Number(raw);
+        };
+        const contactNow = record.type === 'orders' ? normalizeNow(current.customerId || current.customerCode || current.customerName || current.customer || '') : normalizeNow(current.supplierId || current.supplierCode || current.supplierName || current.supplier || '');
+        const timeNow = normalizeTimeNow(current.date || current.createdAt || current.importDate || current.time || '');
+        const indexes = [...new Set(record.duplicateIndexes || [])].filter(i => {
+          if (!Number.isInteger(i) || i < 0 || i >= items.length) return false;
+          const it = items[i];
+          const product = normalizeNow(it.productId || it.productCode || it.code || it.name || it.productName || it.product);
+          const itemTime = normalizeTimeNow(it.transactionTime || it.date || it.createdAt || current.date || current.createdAt || current.importDate || current.time || '');
+          const qty = normalizeNumberNow(it.qty ?? it.quantity ?? it.count ?? 0);
+          const price = normalizeNumberNow(record.type === 'orders' ? (it.salePrice ?? it.price ?? it.unitPrice ?? 0) : (it.importCost ?? it.cost ?? it.importPrice ?? it.price ?? 0));
+          const signature = [record.type, contactNow, product, itemTime, qty, price].join('::');
+          return signature === record.duplicateSignatures?.[i];
+        }).sort((a,b)=>a-b);
+        if (!indexes.length) continue;
         const archiveRef = doc(collection(db, 'stores', storeId, 'repairArchive'));
-        await setDoc(archiveRef, { sourceCollection: collectionName, sourceId: record.id, originalData: current, archivedAt: new Date().toISOString(), reason: 'duplicate-product-detail-repair' });
-        const patch = { items: merged, duplicateRepairArchiveId: archiveRef.id, duplicateRepairAt: new Date().toISOString() };
-        if (!current.invoiceCode) {
-          const orderSnap = await getDocs(collection(db, 'stores', storeId, 'orders'));
-          const allOrders = orderSnap.docs.map(x => ({ id: x.id, ...x.data() }));
-          patch.invoiceCode = generateInvoiceCode(allOrders, current.date ? new Date(current.date) : new Date());
-        }
-        // Không ghi các trường total/paidAmount/debt/stock/customer/supplier.
-        await updateDoc(sourceRef, patch);
+        await setDoc(archiveRef, {
+          sourceCollection: record.type,
+          sourceId: record.id,
+          originalData: current,
+          archivedAt: new Date().toISOString(),
+          reason: 'duplicate-product-detail-repair-cross-transaction',
+          removedIndexes: indexes
+        });
+        const indexSet = new Set(indexes);
+        const keptItems = items.filter((_, index) => !indexSet.has(index));
+        // Chỉ cập nhật mảng chi tiết và dấu vết sao lưu. Các trường tổng tiền/công nợ/tồn kho giữ nguyên.
+        await updateDoc(sourceRef, {
+          items: keptItems,
+          duplicateRepairArchiveId: archiveRef.id,
+          duplicateRepairAt: new Date().toISOString()
+        });
         repaired++;
+        removedLines += indexes.length;
       }
       setDuplicateRepairPreview(null);
-      showToast(`Đã sửa ${repaired} giao dịch. Đã lưu bản gốc vào repairArchive; tổng tiền, công nợ và tồn kho không bị chức năng này ghi đè.`);
+      showToast(`Đã loại bỏ ${removedLines} chi tiết trùng trong ${repaired} giao dịch. Bản gốc đã lưu vào repairArchive; tổng tiền, công nợ và tồn kho không bị ghi đè.`);
     } catch (err) {
       console.error(err);
       showToast(`Đã xử lý ${repaired} giao dịch trước khi gặp lỗi. Kiểm tra repairArchive trước khi chạy lại: ${err?.message || 'Lỗi Firestore'}`, 'error');
@@ -4868,9 +4935,9 @@ function SettingsView({ db, storeId, showToast, storeConfig }) {
           <div className="max-w-3xl mx-auto space-y-6">
             <div className="bg-amber-50 p-6 rounded-2xl border border-amber-200 shadow-sm">
               <h3 className="text-lg font-black text-amber-900 mb-2 flex items-center gap-2"><Search size={20}/> RÀ SOÁT CHI TIẾT SẢN PHẨM TRÙNG</h3>
-              <p className="text-sm text-amber-900 mb-4">Rà các dòng sản phẩm trùng trong cùng đơn hàng và phiếu nhập theo mã/tên sản phẩm cùng đơn giá. Khi sửa, các dòng trùng được gộp; giữ nguyên thời gian, thông tin giao dịch và tổng tiền đã lưu. Tồn kho, công nợ khách hàng/nhà cung cấp không bị cập nhật. Bản gốc được sao lưu vào repairArchive trước khi sửa.</p>
+              <p className="text-sm text-amber-900 mb-4">Rà chi tiết trùng trong cùng hoặc giữa nhiều đơn hàng/phiếu nhập khi khớp khách hàng hoặc nhà cung cấp, sản phẩm, thời gian, số lượng và đơn giá. Chỉ xóa dòng chi tiết trùng; không xóa hóa đơn, không ghi đè tổng tiền, công nợ hoặc tồn kho. Bản gốc được sao lưu vào repairArchive trước khi sửa.</p>
               <div className="flex flex-wrap gap-3"><button type="button" onClick={findDuplicateProductDetails} disabled={duplicateRepairBusy} className="rounded-xl bg-amber-600 hover:bg-amber-700 text-white font-bold px-4 py-3 disabled:opacity-50">{duplicateRepairBusy ? 'Đang rà dữ liệu...' : 'Rà chi tiết trùng'}</button>{duplicateRepairPreview && <button type="button" onClick={applyDuplicateProductRepair} disabled={duplicateRepairBusy || !duplicateRepairPreview.records.length} className="rounded-xl bg-blue-600 hover:bg-blue-700 text-white font-bold px-4 py-3 disabled:opacity-50">{duplicateRepairBusy ? 'Đang xử lý...' : 'Sao lưu và sửa chi tiết trùng'}</button>}</div>
-              {duplicateRepairPreview && <div className="mt-4 rounded-xl border bg-white p-4"><p className="font-bold text-gray-800">Kết quả rà soát: {duplicateRepairPreview.records.length} giao dịch có dòng trùng</p>{duplicateRepairPreview.records.length === 0 ? <p className="text-sm text-gray-600 mt-2">Không có dòng trùng phù hợp. Không có dữ liệu nào bị thay đổi.</p> : <div className="mt-3 max-h-64 overflow-auto"><table className="w-full text-sm"><thead className="bg-gray-100 sticky top-0"><tr><th className="p-2 text-left">Loại</th><th className="p-2 text-left">Mã giao dịch</th><th className="p-2 text-left">Tên khách/NCC</th><th className="p-2 text-left">Thời gian</th><th className="p-2 text-right">Dòng trùng cần gộp</th></tr></thead><tbody>{duplicateRepairPreview.records.map(r=><tr key={`${r.type}-${r.id}`} className="border-t"><td className="p-2">{r.type === 'orders' ? 'Đơn hàng' : 'Nhập hàng'}</td><td className="p-2">{r.data.invoiceCode || r.data.receiptCode || r.id}</td><td className="p-2">{r.data.customerName || r.data.supplierName || '—'}</td><td className="p-2">{r.data.date || '—'}</td><td className="p-2 text-right">{r.duplicateLineCount}</td></tr>)}</tbody></table></div>}<p className="text-xs text-gray-500 mt-3">Lưu ý: chỉ xử lý dòng trùng bên trong cùng giao dịch; không tự xóa các đơn hàng độc lập chỉ vì trùng thời gian hoặc sản phẩm.</p></div>}
+              {duplicateRepairPreview && <div className="mt-4 rounded-xl border bg-white p-4"><p className="font-bold text-gray-800">Kết quả rà soát: {duplicateRepairPreview.records.length} giao dịch có dòng trùng</p>{duplicateRepairPreview.records.length === 0 ? <p className="text-sm text-gray-600 mt-2">Không có dòng trùng phù hợp. Không có dữ liệu nào bị thay đổi.</p> : <div className="mt-3 max-h-64 overflow-auto"><table className="w-full text-sm"><thead className="bg-gray-100 sticky top-0"><tr><th className="p-2 text-left">Loại</th><th className="p-2 text-left">Mã giao dịch</th><th className="p-2 text-left">Tên khách/NCC</th><th className="p-2 text-left">Thời gian</th><th className="p-2 text-right">Dòng trùng cần gộp</th></tr></thead><tbody>{duplicateRepairPreview.records.map(r=><tr key={`${r.type}-${r.id}`} className="border-t"><td className="p-2">{r.type === 'orders' ? 'Đơn hàng' : 'Nhập hàng'}</td><td className="p-2">{r.data.invoiceCode || r.data.receiptCode || r.id}</td><td className="p-2">{r.data.customerName || r.data.supplierName || '—'}</td><td className="p-2">{r.data.date || '—'}</td><td className="p-2 text-right">{r.duplicateLineCount}</td></tr>)}</tbody></table></div>}<p className="text-xs text-gray-500 mt-3">Lưu ý: chỉ xử lý khi khớp khách/NCC, sản phẩm, thời gian, số lượng và đơn giá. Không xóa cả hóa đơn; các trường tổng tiền, công nợ và tồn kho được giữ nguyên.</p></div>}
             </div>
             <div className="bg-blue-50 p-6 rounded-2xl border border-blue-200 shadow-sm relative overflow-hidden">
               <div className="absolute -right-4 -top-4 text-blue-100 rotate-12"><HardDrive size={120} /></div>
