@@ -1462,15 +1462,21 @@ function StaffManagerView({ db, showToast }) {
     finally { setSavingDebtPayment(false); }
   };
 
-  const handleEditDetailStat = async (key, label, currentValue) => {
+  const handleEditDetailStat = (key, label, currentValue) => {
     if (!detailTarget?.id || savingDebtPayment) return;
-    const raw = window.prompt(`Nhập số tiền mới cho "${label}" (VNĐ):`, String(Math.max(0, Number(currentValue) || 0)));
-    if (raw === null) return;
-    const nextValue = Number(String(raw).replace(/[,\s]/g, ''));
-    if (!Number.isFinite(nextValue) || nextValue < 0) { showToast('Số tiền không hợp lệ. Vui lòng nhập số từ 0 trở lên.', 'error'); return; }
-    const note = window.prompt('Ghi chú lý do điều chỉnh (bắt buộc):', '');
-    if (note === null) return;
-    if (!note.trim()) { showToast('Vui lòng nhập ghi chú để lưu lịch sử điều chỉnh.', 'error'); return; }
+    const value = Math.max(0, Number(currentValue) || 0);
+    setEditDetailStat({ key, label, currentValue: value, newValue: String(value), note: '' });
+  };
+
+  const handleSaveDetailStat = async (e) => {
+    e.preventDefault();
+    if (!editDetailStat || !detailTarget?.id || savingDebtPayment) return;
+    const { key, label, currentValue } = editDetailStat;
+    const rawValue = String(editDetailStat.newValue ?? '').trim();
+    const nextValue = Number(rawValue.replace(/[ ,\s]/g, ''));
+    if (!rawValue || !Number.isFinite(nextValue) || nextValue < 0) { showToast('Số tiền không hợp lệ. Vui lòng nhập số từ 0 trở lên.', 'error'); return; }
+    const note = String(editDetailStat.note || '').trim();
+    if (!note) { showToast('Vui lòng nhập ghi chú để lưu lịch sử điều chỉnh.', 'error'); return; }
     setSavingDebtPayment(true);
     try {
       const now = new Date().toISOString();
@@ -1480,15 +1486,16 @@ function StaffManagerView({ db, showToast }) {
         ...(key === 'totalPaid' ? { manualTotalPaid: nextValue } : {}),
         ...(key === 'totalDebt' ? { totalDebt: nextValue } : {}),
         debtUpdatedAt: now,
-        lastManualAdjustmentNote: `${label}: ${formatCurrency(currentValue)} → ${formatCurrency(nextValue)}. Lý do: ${note.trim()}`,
+        lastManualAdjustmentNote: `${label}: ${formatCurrency(currentValue)} → ${formatCurrency(nextValue)}. Lý do: ${note}`,
         lastManualAdjustmentAt: now
       };
       await setDoc(contactRef, update, { merge: true });
       await addDoc(collection(db, 'stores', storeId, type, detailTarget.id, 'debtAdjustments'), {
-        field: key, label, oldValue: Math.max(0, Number(currentValue) || 0), newValue: nextValue,
-        note: note.trim(), date: now, createdAt: now
+        field: key, label, oldValue: currentValue, newValue: nextValue,
+        note, date: now, createdAt: now
       });
       setDetailTarget(prev => prev ? { ...prev, ...update } : prev);
+      setEditDetailStat(null);
       showToast(`Đã điều chỉnh ${label}; ghi chú đã được lưu.`);
     } catch (err) {
       showToast('Không thể điều chỉnh số liệu: ' + (err?.message || 'Lỗi không xác định'), 'error');
@@ -1622,6 +1629,58 @@ function ContactManager({ type, data, orders, products = [], navigationTarget, s
   const [debtPaymentNote, setDebtPaymentNote] = useState('');
   const [editingDebtPayment, setEditingDebtPayment] = useState(null);
   const [savingDebtPayment, setSavingDebtPayment] = useState(false);
+  const [editDetailStat, setEditDetailStat] = useState(null);
+
+  // Keep these handlers inside ContactManager so the customer/supplier detail
+  // buttons use this component's own state and selected contact.
+  const handleEditDetailStat = (key, label, currentValue) => {
+    if (!detailTarget?.id || savingDebtPayment) return;
+    const value = Math.max(0, Number(currentValue) || 0);
+    setEditDetailStat({ key, label, currentValue: value, newValue: String(value), note: '' });
+  };
+
+  const handleSaveDetailStat = async (e) => {
+    e.preventDefault();
+    if (!editDetailStat || !detailTarget?.id || savingDebtPayment) return;
+    const { key, label, currentValue } = editDetailStat;
+    const rawValue = String(editDetailStat.newValue ?? '').trim();
+    const nextValue = Number(rawValue.replace(/[ ,\s]/g, ''));
+    if (!rawValue || !Number.isFinite(nextValue) || nextValue < 0) {
+      showToast('Số tiền không hợp lệ. Vui lòng nhập số từ 0 trở lên.', 'error');
+      return;
+    }
+    const note = String(editDetailStat.note || '').trim();
+    if (!note) {
+      showToast('Vui lòng nhập ghi chú để lưu lịch sử điều chỉnh.', 'error');
+      return;
+    }
+    setSavingDebtPayment(true);
+    try {
+      const now = new Date().toISOString();
+      const contactRef = doc(db, 'stores', storeId, type, detailTarget.id);
+      const update = {
+        ...(key === 'totalAmount' ? { manualTotalAmount: nextValue } : {}),
+        ...(key === 'totalPaid' ? { manualTotalPaid: nextValue } : {}),
+        ...(key === 'totalDebt' ? { totalDebt: nextValue } : {}),
+        debtUpdatedAt: now,
+        lastManualAdjustmentNote: `${label}: ${formatCurrency(currentValue)} → ${formatCurrency(nextValue)}. Lý do: ${note}`,
+        lastManualAdjustmentAt: now
+      };
+      await setDoc(contactRef, update, { merge: true });
+      await addDoc(collection(db, 'stores', storeId, type, detailTarget.id, 'debtAdjustments'), {
+        field: key, label, oldValue: currentValue, newValue: nextValue,
+        note, date: now, createdAt: now
+      });
+      setDetailTarget(prev => prev ? { ...prev, ...update } : prev);
+      setEditDetailStat(null);
+      showToast(`Đã điều chỉnh ${label}; ghi chú đã được lưu.`);
+    } catch (err) {
+      showToast('Không thể điều chỉnh số liệu: ' + (err?.message || 'Lỗi không xác định'), 'error');
+    } finally {
+      setSavingDebtPayment(false);
+    }
+  };
+
   useEffect(() => {
     if (!detailTarget?.id) { setDebtPayments([]); return; }
     const paymentsRef = collection(db, 'stores', storeId, type, detailTarget.id, 'debtPayments');
@@ -2281,6 +2340,13 @@ function ContactManager({ type, data, orders, products = [], navigationTarget, s
             </div>
           </div>
         </div>}
+      <Modal isOpen={!!editDetailStat} onClose={() => { if (!savingDebtPayment) setEditDetailStat(null); }} title={editDetailStat ? `Sửa số tiền: ${editDetailStat.label}` : 'Sửa số tiền'}>
+        {editDetailStat && <form onSubmit={handleSaveDetailStat} className="space-y-4">
+          <div><label className="block text-sm font-semibold text-gray-700 mb-1">Số tiền mới (VNĐ)</label><input autoFocus type="number" min="0" step="1" inputMode="numeric" required value={editDetailStat.newValue} onChange={e=>setEditDetailStat(v=>({...v,newValue:e.target.value}))} className="w-full p-3 border rounded-xl outline-none focus:ring-2 focus:ring-blue-500" placeholder="Nhập số tiền" /></div>
+          <div><label className="block text-sm font-semibold text-gray-700 mb-1">Ghi chú lý do điều chỉnh (bắt buộc)</label><textarea required rows={3} value={editDetailStat.note} onChange={e=>setEditDetailStat(v=>({...v,note:e.target.value}))} className="w-full p-3 border rounded-xl outline-none focus:ring-2 focus:ring-blue-500" placeholder="Nhập lý do điều chỉnh" /></div>
+          <div className="flex gap-2"><button type="button" disabled={savingDebtPayment} onClick={()=>setEditDetailStat(null)} className="flex-1 border rounded-xl p-3 font-semibold disabled:opacity-50">Hủy</button><button type="submit" disabled={savingDebtPayment} className="flex-1 bg-blue-600 text-white rounded-xl p-3 font-bold disabled:opacity-50">{savingDebtPayment ? 'Đang lưu...' : 'Lưu điều chỉnh'}</button></div>
+        </form>}
+      </Modal>
       <Modal isOpen={isModalOpen} onClose={() => setIsModalOpen(false)} title={form.id ? `Cập nhật ${title}` : `Thêm ${title}`}>
         <form onSubmit={handleSave} className="space-y-4">
           <input required placeholder="Tên *" value={form.name||''} onChange={e=>setForm({...form,name:e.target.value})} className="w-full p-2.5 border rounded-lg outline-none"/>
