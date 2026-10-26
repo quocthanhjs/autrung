@@ -1462,6 +1462,39 @@ function StaffManagerView({ db, showToast }) {
     finally { setSavingDebtPayment(false); }
   };
 
+  const handleEditDetailStat = async (key, label, currentValue) => {
+    if (!detailTarget?.id || savingDebtPayment) return;
+    const raw = window.prompt(`Nhập số tiền mới cho "${label}" (VNĐ):`, String(Math.max(0, Number(currentValue) || 0)));
+    if (raw === null) return;
+    const nextValue = Number(String(raw).replace(/[,\s]/g, ''));
+    if (!Number.isFinite(nextValue) || nextValue < 0) { showToast('Số tiền không hợp lệ. Vui lòng nhập số từ 0 trở lên.', 'error'); return; }
+    const note = window.prompt('Ghi chú lý do điều chỉnh (bắt buộc):', '');
+    if (note === null) return;
+    if (!note.trim()) { showToast('Vui lòng nhập ghi chú để lưu lịch sử điều chỉnh.', 'error'); return; }
+    setSavingDebtPayment(true);
+    try {
+      const now = new Date().toISOString();
+      const contactRef = doc(db, 'stores', storeId, type, detailTarget.id);
+      const update = {
+        ...(key === 'totalAmount' ? { manualTotalAmount: nextValue } : {}),
+        ...(key === 'totalPaid' ? { manualTotalPaid: nextValue } : {}),
+        ...(key === 'totalDebt' ? { totalDebt: nextValue } : {}),
+        debtUpdatedAt: now,
+        lastManualAdjustmentNote: `${label}: ${formatCurrency(currentValue)} → ${formatCurrency(nextValue)}. Lý do: ${note.trim()}`,
+        lastManualAdjustmentAt: now
+      };
+      await setDoc(contactRef, update, { merge: true });
+      await addDoc(collection(db, 'stores', storeId, type, detailTarget.id, 'debtAdjustments'), {
+        field: key, label, oldValue: Math.max(0, Number(currentValue) || 0), newValue: nextValue,
+        note: note.trim(), date: now, createdAt: now
+      });
+      setDetailTarget(prev => prev ? { ...prev, ...update } : prev);
+      showToast(`Đã điều chỉnh ${label}; ghi chú đã được lưu.`);
+    } catch (err) {
+      showToast('Không thể điều chỉnh số liệu: ' + (err?.message || 'Lỗi không xác định'), 'error');
+    } finally { setSavingDebtPayment(false); }
+  };
+
   const handleSave = async (e) => {
     e.preventDefault();
     if (form.password && form.password !== form.confirmPassword) { showToast("Mật khẩu và Xác nhận mật khẩu không khớp!", "error"); return; }
@@ -1949,17 +1982,29 @@ function ContactManager({ type, data, orders, products = [], navigationTarget, s
       // Một số giao dịch cũ vẫn hiện trong danh sách nhưng tài liệu Firestore đã bị xóa/mất.
       // Dùng set + merge để có thể lưu trạng thái lại từ bản ghi đang hiển thị, thay vì
       // updateDoc/batch.update gây lỗi 'No document to update'. Không cập nhật tồn kho.
-      const { id: ignoredTransactionId, ...transactionSnapshot } = ord;
-      batch.set(doc(db, 'stores', storeId, collectionName, ord.id), {
-        ...transactionSnapshot,
-        remainingDebt: nextRemaining,
-        paidAmount: Math.max(0, total - nextRemaining),
-        status: nextRemaining > 0 ? 'DEBT' : 'PAID',
-        debtUpdatedAt: new Date().toISOString(),
-        lastPaymentAt: delta < 0 ? new Date().toISOString() : (ord.lastPaymentAt || ord.paidAt || null),
-        paidAt: nextRemaining === 0 && oldRemaining > 0 ? new Date().toISOString() : (ord.paidAt || null),
-        debtPaymentNote: autoDebtNote
-      }, { merge: true });
+      const transactionRef = doc(db, 'stores', storeId, collectionName, ord.id);
+      const transactionSnap = await getDoc(transactionRef);
+      if (transactionSnap.exists()) {
+        batch.set(transactionRef, {
+          remainingDebt: nextRemaining,
+          paidAmount: Math.max(0, total - nextRemaining),
+          status: nextRemaining > 0 ? 'DEBT' : 'PAID',
+          debtUpdatedAt: new Date().toISOString(),
+          lastPaymentAt: delta < 0 ? new Date().toISOString() : (ord.lastPaymentAt || ord.paidAt || null),
+          paidAt: nextRemaining === 0 && oldRemaining > 0 ? new Date().toISOString() : (ord.paidAt || null),
+          debtPaymentNote: autoDebtNote
+        }, { merge: true });
+      } else {
+        // Giao dịch không còn trong Firestore: không tạo lại để tránh sinh đơn trùng.
+        // Chỉ điều chỉnh số dư trên hồ sơ và ghi chú lịch sử điều chỉnh.
+        await addDoc(collection(db, 'stores', storeId, type, detailTarget.id, 'debtAdjustments'), {
+          field: 'totalDebt', label: 'Điều chỉnh công nợ do giao dịch thiếu',
+          oldValue: Math.max(0, Number(detailTarget.totalDebt) || 0),
+          newValue: Math.max(0, (Number(detailTarget.totalDebt) || 0) + delta),
+          note: `${autoDebtNote}. Không tìm thấy giao dịch ${ord.id}; không tạo lại đơn/phiếu nhập.`,
+          transactionId: ord.id, date: new Date().toISOString()
+        });
+      }
       if (delta !== 0) batch.set(doc(db, 'stores', storeId, type, detailTarget.id), {
         totalDebt: Math.max(0, (Number(detailTarget.totalDebt) || 0) + delta),
         ...(detailTarget.name ? { name: detailTarget.name } : {}),
@@ -2086,9 +2131,13 @@ function ContactManager({ type, data, orders, products = [], navigationTarget, s
       const matchTime = validDate && (filterYear === 'ALL' || d.getFullYear().toString() === filterYear);
       return matchTime;
     }).sort((a,b) => new Date(b.date) - new Date(a.date));
-    let totalAmount = matched.reduce((s, o) => s + (Number(o.total) || 0), 0);
-    let totalPaid = matched.reduce((s, o) => s + (Number(o.paidAmount) || (o.status === 'PAID' ? (Number(o.total) || 0) : 0)), 0);
-    // Số nợ hiện tại lấy từ hồ sơ khách hàng/nhà cung cấp; không cộng lại nợ từ giao dịch cũ đã thanh toán/xóa.
+    let totalAmount = detailTarget.manualTotalAmount !== undefined
+      ? Math.max(0, Number(detailTarget.manualTotalAmount) || 0)
+      : matched.reduce((s, o) => s + (Number(o.total) || 0), 0);
+    let totalPaid = detailTarget.manualTotalPaid !== undefined
+      ? Math.max(0, Number(detailTarget.manualTotalPaid) || 0)
+      : matched.reduce((s, o) => s + (Number(o.paidAmount) || (o.status === 'PAID' ? (Number(o.total) || 0) : 0)), 0);
+    // Công nợ hiển thị theo số dư hồ sơ đã xác nhận, không cộng lại giao dịch cũ.
     let totalDebtRemain = Math.max(0, Number(detailTarget.totalDebt) || 0);
     return { list: matched, totalAmount, totalPaid, totalDebtRemain };
   }, [detailTarget, orders, filterYear, isCus]);
@@ -2162,9 +2211,9 @@ function ContactManager({ type, data, orders, products = [], navigationTarget, s
               </div>
             </div>
             <div className="grid grid-cols-3 gap-3 text-center">
-              <div className="bg-blue-50 p-2.5 rounded-lg border border-blue-100"><p className="text-[10px] text-blue-600 font-bold uppercase">Tổng Giao Dịch</p><p className="text-sm font-bold text-blue-800">{formatCurrency(detailData.totalAmount)}</p></div>
-              <div className="bg-green-50 p-2.5 rounded-lg border border-green-100"><p className="text-[10px] text-green-600 font-bold uppercase">Đã Thanh Toán</p><p className="text-sm font-bold text-green-700">{formatCurrency(detailData.totalPaid)}</p></div>
-              <div className="bg-orange-50 p-2.5 rounded-lg border border-orange-100"><p className="text-[10px] text-orange-600 font-bold uppercase">Đang Nợ</p><p className="text-sm font-bold text-orange-700">{formatCurrency(detailData.totalDebtRemain)}</p></div>
+              <div className="bg-blue-50 p-2.5 rounded-lg border border-blue-100"><p className="text-[10px] text-blue-600 font-bold uppercase">Tổng Giao Dịch</p><p className="text-sm font-bold text-blue-800">{formatCurrency(detailData.totalAmount)}</p><button type="button" onClick={()=>handleEditDetailStat('totalAmount','Tổng Giao Dịch',detailData.totalAmount)} className="mt-1 text-[10px] text-blue-700 underline">Sửa số tiền</button></div>
+              <div className="bg-green-50 p-2.5 rounded-lg border border-green-100"><p className="text-[10px] text-green-600 font-bold uppercase">Đã Thanh Toán</p><p className="text-sm font-bold text-green-700">{formatCurrency(detailData.totalPaid)}</p><button type="button" onClick={()=>handleEditDetailStat('totalPaid','Đã Thanh Toán',detailData.totalPaid)} className="mt-1 text-[10px] text-green-700 underline">Sửa số tiền</button></div>
+              <div className="bg-orange-50 p-2.5 rounded-lg border border-orange-100"><p className="text-[10px] text-orange-600 font-bold uppercase">Đang Nợ</p><p className="text-sm font-bold text-orange-700">{formatCurrency(detailData.totalDebtRemain)}</p><button type="button" onClick={()=>handleEditDetailStat('totalDebt','Đang Nợ',detailData.totalDebtRemain)} className="mt-1 text-[10px] text-orange-700 underline">Sửa số tiền</button></div>
             </div>
             <section className="border rounded-xl bg-white p-4 space-y-3">
               <div className="flex flex-wrap justify-between items-center gap-2"><h3 className="font-bold text-gray-800">Trừ công nợ</h3><span className="text-sm font-bold text-blue-600">Còn nợ: {formatCurrency(Math.max(0, Number(detailTarget.totalDebt) || 0))}</span></div>
