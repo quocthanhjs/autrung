@@ -1626,6 +1626,7 @@ function ContactManager({ type, data, orders, products = [], navigationTarget, s
   const [selectedTransactionIds, setSelectedTransactionIds] = useState([]);
   const [debtPaymentMode, setDebtPaymentMode] = useState('partial');
   const [debtPaymentAmount, setDebtPaymentAmount] = useState('');
+  const [debtPaymentDate, setDebtPaymentDate] = useState(() => getVietnamDateKey(new Date()));
   const [debtPaymentMethod, setDebtPaymentMethod] = useState('cash');
   const [debtPaymentNote, setDebtPaymentNote] = useState('');
   const [editingDebtPayment, setEditingDebtPayment] = useState(null);
@@ -1850,7 +1851,14 @@ function ContactManager({ type, data, orders, products = [], navigationTarget, s
 
       const now = new Date();
       const nowIso = now.toISOString();
-      const paymentDateText = now.toLocaleString('vi-VN', { timeZone: 'Asia/Ho_Chi_Minh' });
+      const selectedPaymentDate = String(debtPaymentDate || getVietnamDateKey(now));
+      if (!/^\d{4}-\d{2}-\d{2}$/.test(selectedPaymentDate) || Number.isNaN(new Date(`${selectedPaymentDate}T12:00:00+07:00`).getTime())) {
+        showToast('Ngày thanh toán không hợp lệ.', 'error');
+        return;
+      }
+      // Lưu ngày do người dùng chọn theo múi giờ Việt Nam; dùng 12:00 để tránh lệch ngày khi hiển thị.
+      const paymentDateIso = new Date(`${selectedPaymentDate}T12:00:00+07:00`).toISOString();
+      const paymentDateText = new Intl.DateTimeFormat('vi-VN', { timeZone: 'Asia/Ho_Chi_Minh', dateStyle: 'short' }).format(new Date(paymentDateIso));
       const userNote = String(debtPaymentNote || '').trim();
       const collectionName = isCus ? 'orders' : 'imports';
       const oldAllocations = Array.isArray(editingDebtPayment?.allocations) ? editingDebtPayment.allocations : [];
@@ -1940,7 +1948,7 @@ function ContactManager({ type, data, orders, products = [], navigationTarget, s
         mode: debtPaymentMode,
         note,
         allocations: debtPaymentMode === 'partial' ? allocations : [],
-        date: editingDebtPayment?.date || nowIso,
+        date: paymentDateIso,
         updatedAt: nowIso,
         contactId: detailTarget.id,
         contactName: detailTarget.name,
@@ -1966,8 +1974,8 @@ function ContactManager({ type, data, orders, products = [], navigationTarget, s
           paidAmount: Math.max(0, update.total - update.remaining),
           status: update.remaining > 0 ? 'DEBT' : 'PAID',
           debtUpdatedAt: nowIso,
-          lastPaymentAt: nowIso,
-          paidAt: update.remaining === 0 ? nowIso : null,
+          lastPaymentAt: paymentDateIso,
+          paidAt: update.remaining === 0 ? paymentDateIso : null,
           debtPaymentNote: update.note
         });
       }
@@ -1995,6 +2003,7 @@ function ContactManager({ type, data, orders, products = [], navigationTarget, s
 
       setDetailTarget(prev => prev ? { ...prev, totalDebt: remainingDebt } : prev);
       setDebtPaymentAmount('');
+      setDebtPaymentDate(getVietnamDateKey(new Date()));
       setDebtPaymentMode('partial');
       setDebtPaymentMethod('cash');
       setDebtPaymentNote('');
@@ -2293,14 +2302,15 @@ function ContactManager({ type, data, orders, products = [], navigationTarget, s
               <form onSubmit={handleDebtPaymentSave} className="grid grid-cols-1 md:grid-cols-4 gap-3 items-end">
                 <label className="text-xs font-semibold text-gray-600">Cách trừ công nợ<select value={debtPaymentMode} onChange={e=>{setDebtPaymentMode(e.target.value); if(e.target.value==='all') setDebtPaymentAmount('');}} className="mt-1 w-full border rounded-lg p-2 bg-white text-sm"><option value="partial">Trừ từng phần</option><option value="all">Trừ trên tổng nợ</option></select></label>
                 <label className="text-xs font-semibold text-gray-600">Số tiền (VNĐ)<input type="number" min="1" step="any" value={debtPaymentMode==='all' ? Math.max(0, Number(detailTarget.totalDebt)||0) : debtPaymentAmount} onChange={e=>setDebtPaymentAmount(e.target.value)} disabled={debtPaymentMode==='all'} required={debtPaymentMode==='partial'} className="mt-1 w-full border rounded-lg p-2 text-sm disabled:bg-gray-100" placeholder="Nhập số tiền" /></label>
+                <label className="text-xs font-semibold text-gray-600">Ngày thanh toán<input type="date" value={debtPaymentDate} onChange={e=>setDebtPaymentDate(e.target.value)} required className="mt-1 w-full border rounded-lg p-2 bg-white text-sm" /></label>
                 <label className="text-xs font-semibold text-gray-600">Phương thức<select value={debtPaymentMethod} onChange={e=>setDebtPaymentMethod(e.target.value)} className="mt-1 w-full border rounded-lg p-2 bg-white text-sm"><option value="cash">Tiền mặt</option><option value="transfer">Chuyển khoản</option></select></label>
                 <label className="text-xs font-semibold text-gray-600 md:col-span-3">Ghi chú giao dịch<textarea value={debtPaymentNote} onChange={e=>setDebtPaymentNote(e.target.value)} rows={2} className="mt-1 w-full border rounded-lg p-2 text-sm" placeholder="Ví dụ: trừ từng phần / trừ tổng nợ, nội dung đối chiếu..." /></label>
                 <button type="submit" disabled={savingDebtPayment || (Math.max(0, Number(detailTarget.totalDebt) || 0)<=0 && !editingDebtPayment)} className="bg-blue-600 hover:bg-blue-700 disabled:opacity-50 text-white font-bold rounded-lg p-2.5 text-sm">{savingDebtPayment ? 'Đang lưu...' : editingDebtPayment ? 'Lưu chỉnh sửa' : 'Xác nhận trừ nợ'}</button>
               </form>
-              {editingDebtPayment && <button type="button" onClick={()=>{setEditingDebtPayment(null);setDebtPaymentAmount('');setDebtPaymentMode('partial');setDebtPaymentMethod('cash');}} className="text-xs text-gray-600 underline">Hủy chỉnh sửa</button>}
+              {editingDebtPayment && <button type="button" onClick={()=>{setEditingDebtPayment(null);setDebtPaymentAmount('');setDebtPaymentDate(getVietnamDateKey(new Date()));setDebtPaymentMode('partial');setDebtPaymentMethod('cash');}} className="text-xs text-gray-600 underline">Hủy chỉnh sửa</button>}
               {selectedPaymentIds.length > 0 && <div className="flex items-center justify-between gap-2 bg-red-50 border border-red-200 rounded-lg p-2 text-xs"><span>Đã chọn {selectedPaymentIds.length} lần thanh toán</span><button type="button" disabled={savingDebtPayment} onClick={handleDeleteSelectedPayments} className="bg-red-600 text-white rounded px-3 py-1.5 font-bold disabled:opacity-50">Xóa lần thanh toán đã chọn</button></div>}
               <div className="border rounded-lg overflow-x-auto"><table className="w-full text-xs text-left"><thead className="bg-gray-100"><tr><th className="p-2">Chọn</th><th className="p-2">Thời gian thanh toán</th><th className="p-2">Số tiền</th><th className="p-2">Cách trừ</th><th className="p-2">Phương thức</th><th className="p-2">Ghi chú</th><th className="p-2">Thao tác</th></tr></thead><tbody>
-                {debtPayments.map(payment => <tr key={payment.id} className="border-t"><td className="p-2"><input type="checkbox" checked={selectedPaymentIds.includes(payment.id)} onChange={e=>setSelectedPaymentIds(prev=>e.target.checked?[...prev,payment.id]:prev.filter(id=>id!==payment.id))} aria-label="Chọn lần thanh toán" /></td><td className="p-2 whitespace-nowrap">{formatDate(payment.date || payment.createdAt)}</td><td className="p-2 font-bold">{formatCurrency(payment.amount)}</td><td className="p-2">{payment.mode==='all'?'Trừ trên tổng nợ':'Trừ từng phần'}</td><td className="p-2">{payment.method==='transfer'?'Chuyển khoản':'Tiền mặt'}</td><td className="p-2 min-w-[180px]">{payment.note || '—'}</td><td className="p-2"><div className="flex flex-wrap gap-2"><button type="button" onClick={()=>{setEditingDebtPayment(payment);setDebtPaymentMode(payment.mode==='all'?'all':'partial');setDebtPaymentAmount(String(payment.amount||''));setDebtPaymentMethod(payment.method||'cash');setDebtPaymentNote(payment.note||'');}} className="text-blue-600 underline font-semibold">Chỉnh sửa</button><button type="button" disabled={savingDebtPayment} onClick={()=>handleUndoDebtPayment(payment)} className="text-red-600 underline font-semibold disabled:opacity-50">Hoàn tác</button></div></td></tr>)}
+                {debtPayments.map(payment => <tr key={payment.id} className="border-t"><td className="p-2"><input type="checkbox" checked={selectedPaymentIds.includes(payment.id)} onChange={e=>setSelectedPaymentIds(prev=>e.target.checked?[...prev,payment.id]:prev.filter(id=>id!==payment.id))} aria-label="Chọn lần thanh toán" /></td><td className="p-2 whitespace-nowrap">{formatDate(payment.date || payment.createdAt)}</td><td className="p-2 font-bold">{formatCurrency(payment.amount)}</td><td className="p-2">{payment.mode==='all'?'Trừ trên tổng nợ':'Trừ từng phần'}</td><td className="p-2">{payment.method==='transfer'?'Chuyển khoản':'Tiền mặt'}</td><td className="p-2 min-w-[180px]">{payment.note || '—'}</td><td className="p-2"><div className="flex flex-wrap gap-2"><button type="button" onClick={()=>{setEditingDebtPayment(payment);setDebtPaymentMode(payment.mode==='all'?'all':'partial');setDebtPaymentAmount(String(payment.amount||''));setDebtPaymentDate(payment.date ? getVietnamDateKey(new Date(payment.date)) : getVietnamDateKey(new Date()));setDebtPaymentMethod(payment.method||'cash');setDebtPaymentNote(payment.note||'');}} className="text-blue-600 underline font-semibold">Chỉnh sửa</button><button type="button" disabled={savingDebtPayment} onClick={()=>handleUndoDebtPayment(payment)} className="text-red-600 underline font-semibold disabled:opacity-50">Hoàn tác</button></div></td></tr>)}
                 {debtPayments.length===0 && <tr><td colSpan="7" className="p-3 text-center text-gray-400">Chưa có giao dịch trừ công nợ</td></tr>}
               </tbody></table></div>
             </section>
