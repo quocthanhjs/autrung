@@ -354,132 +354,15 @@ function LoginView({ onLoginSuccess }) {
 }
 
 
-const getRequestedDetailRoute = () => {
-  if (typeof window === 'undefined') return null;
-  const params = new URLSearchParams(window.location.search);
-  const tab = params.get('detailTab') || '';
-  const id = params.get('detailId') || '';
-  const name = params.get('detailName') || '';
-  return ['products', 'customers', 'suppliers'].includes(tab) && (id || name) ? { tab, id, name, nonce: Date.now() } : null;
-};
-const openEntityInNewTab = (tab, entity, entityName = '') => {
-  if (typeof window === 'undefined') return;
-  const target = typeof entity === 'string' ? { id: entity, name: entityName } : (entity || {});
-  const url = new URL(window.location.href);
-  url.searchParams.set('detailTab', tab);
-  if (target.id) url.searchParams.set('detailId', String(target.id)); else url.searchParams.delete('detailId');
-  if (target.name) url.searchParams.set('detailName', String(target.name)); else url.searchParams.delete('detailName');
-  window.open(url.toString(), '_blank', 'noopener,noreferrer');
-};
-const navigateMainTab = (tab, entity = null, entityName = '') => {
-  if (typeof window === 'undefined') return;
-  const target = typeof entity === 'string' ? { id: entity, name: entityName } : entity;
-  if (target && ['products', 'customers', 'suppliers'].includes(tab)) { openEntityInNewTab(tab, target); return; }
-  const detail = { tab, entity: target, recordId: target?.id || '', recordName: target?.name || '' };
-  window.history.pushState({ ...(window.history.state || {}), appPopupNavigation: { tab, entity: target || null } }, '');
-  window.dispatchEvent(new CustomEvent('app:navigate-tab', { detail }));
-  window.setTimeout(() => window.dispatchEvent(new CustomEvent('app:navigate-tab', { detail })), 80);
-};
-
-const DATA_EXCEL_TYPES = {
-  sales_history: { key: 'orders', label: 'Đơn hàng', file: 'Don_Hang.xlsx' },
-  imports: { key: 'imports', label: 'Nhập hàng', file: 'Nhap_Hang.xlsx' },
-  products: { key: 'products', label: 'Sản phẩm', file: 'San_Pham.xlsx' },
-  warranty: { key: 'warrantyRequests', label: 'Bảo hành', file: 'Bao_Hanh.xlsx' },
-  customers: { key: 'customers', label: 'Khách hàng', file: 'Khach_Hang.xlsx' },
-  suppliers: { key: 'suppliers', label: 'Nhà cung cấp', file: 'Nha_Cung_Cap.xlsx' },
-  expenses: { key: 'expenses', label: 'Chi phí', file: 'Chi_Phi.xlsx' }
-};
-const DATA_EXCEL_PAYLOAD = '__DU_LIEU_PHUC_HOI__';
-const ensureXLSXLibrary = () => new Promise((resolve, reject) => {
-  if (typeof window !== 'undefined' && window.XLSX) return resolve(window.XLSX);
-  const existing = document.querySelector('script[data-app-xlsx="1"]');
-  if (existing) { existing.addEventListener('load', () => resolve(window.XLSX), { once: true }); existing.addEventListener('error', () => reject(new Error('Không tải được thư viện Excel.')), { once: true }); return; }
-  const script = document.createElement('script');
-  script.src = 'https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js';
-  script.dataset.appXlsx = '1';
-  script.onload = () => window.XLSX ? resolve(window.XLSX) : reject(new Error('Thư viện Excel chưa sẵn sàng.'));
-  script.onerror = () => reject(new Error('Không tải được thư viện Excel.'));
-  document.head.appendChild(script);
-});
-const flattenExcelDisplay = (data, prefix = '', output = {}) => {
-  Object.entries(data || {}).forEach(([key, value]) => {
-    if (value === undefined) return;
-    const path = prefix ? `${prefix}.${key}` : key;
-    if (value && typeof value === 'object' && !Array.isArray(value) && !(value instanceof Date) && prefix.split('.').length < 1) flattenExcelDisplay(value, path, output);
-    else if (Array.isArray(value)) output[path] = value.map(item => item && typeof item === 'object' ? Object.entries(item).filter(([,v])=>v==null||typeof v!=='object').map(([k,v])=>`${k}: ${v ?? ''}`).join(' | ') : String(item ?? '')).join(' ; ');
-    else if (value && typeof value === 'object') output[path] = Object.entries(value).filter(([,v])=>v==null||typeof v!=='object').map(([k,v])=>`${k}: ${v ?? ''}`).join(' | ');
-    else output[path] = value == null ? '' : value;
-  });
-  return output;
-};
-function DataExcelToolbar({ activeTab, db, storeId, showToast }) {
-  const [busy, setBusy] = useState(false);
-  const [status, setStatus] = useState('');
-  const config = DATA_EXCEL_TYPES[activeTab];
-  if (!config) return null;
-  const exportExcel = async () => {
-    if (busy) return;
-    setBusy(true); setStatus('Đang xuất dữ liệu...');
-    try {
-      const XLSX = await ensureXLSXLibrary();
-      const snap = await getDocs(collection(db, 'stores', storeId, config.key));
-      const records = snap.docs.map(d => ({ id: d.id, data: d.data() }));
-      const rows = records.map(({id,data}) => ({ ID: id, ...flattenExcelDisplay(data), [DATA_EXCEL_PAYLOAD]: JSON.stringify(data) }));
-      const keys = Array.from(new Set(rows.flatMap(r => Object.keys(r))));
-      const orderedKeys = ['ID', ...keys.filter(k => k !== 'ID' && k !== DATA_EXCEL_PAYLOAD), DATA_EXCEL_PAYLOAD];
-      const ws = XLSX.utils.json_to_sheet(rows.length ? rows : [{ ID: '', [DATA_EXCEL_PAYLOAD]: '' }], { header: orderedKeys });
-      ws['!cols'] = orderedKeys.map(k => k === DATA_EXCEL_PAYLOAD ? { wch: 0, hidden: true } : { wch: Math.min(34, Math.max(12, k.length + 2)) });
-      ws['!autofilter'] = { ref: XLSX.utils.encode_range({ s: { r: 0, c: 0 }, e: { r: Math.max(0, rows.length), c: orderedKeys.length - 1 } }) };
-      ws['!freeze'] = { xSplit: 0, ySplit: 1, topLeftCell: 'A2', activePane: 'bottomLeft', state: 'frozen' };
-      const wb = XLSX.utils.book_new(); XLSX.utils.book_append_sheet(wb, ws, config.label.slice(0,31));
-      XLSX.writeFile(wb, config.file);
-      setStatus(`Đã xuất ${records.length} bản ghi ${config.label} ra Excel.`);
-      showToast(`Đã xuất Excel ${config.label}.`);
-    } catch (err) { setStatus(`Xuất Excel thất bại: ${err.message || 'Lỗi không xác định'}`); showToast(`Không xuất được Excel: ${err.message || 'Lỗi'}`, 'error'); }
-    finally { setBusy(false); }
-  };
-  const importExcel = async event => {
-    const file = event.target.files?.[0]; event.target.value = '';
-    if (!file || busy) return;
-    setBusy(true); setStatus('Đang đọc file Excel...');
-    try {
-      const XLSX = await ensureXLSXLibrary();
-      const wb = XLSX.read(await file.arrayBuffer(), { type: 'array', cellDates: true });
-      const sheet = wb.Sheets[wb.SheetNames[0]];
-      const rows = XLSX.utils.sheet_to_json(sheet, { defval: '', raw: true });
-      const parsed = rows.map(row => {
-        const id = String(row.ID || row.id || '').trim();
-        let data = null;
-        try { data = JSON.parse(row[DATA_EXCEL_PAYLOAD] || row['__DỮ_LIỆU_PHỤC_HỒI__'] || 'null'); } catch (_) {}
-        return id && data && typeof data === 'object' && !Array.isArray(data) ? { id, data } : null;
-      }).filter(Boolean);
-      if (!parsed.length) throw new Error('File không có dữ liệu phục hồi hợp lệ. Hãy dùng file Excel được xuất từ chính thẻ này.');
-      const deduped = Array.from(new Map(parsed.map(row => [row.id, row])).values());
-      const ok = window.confirm(`Nhập Excel ${config.label}\nFile: ${file.name}\nBản ghi hợp lệ: ${parsed.length}\nID trùng trong file đã gộp: ${parsed.length - deduped.length}\n\nID đã tồn tại sẽ được cập nhật; ID mới sẽ được thêm. Bản ghi không có trong file sẽ được giữ nguyên. Tiếp tục?`);
-      if (!ok) { setStatus('Đã hủy nhập; Firebase chưa thay đổi.'); return; }
-      let saved = 0;
-      for (let i = 0; i < deduped.length; i += 400) {
-        const batch = writeBatch(db);
-        deduped.slice(i, i + 400).forEach(row => { const clean = { ...row.data }; delete clean.id; batch.set(doc(db, 'stores', storeId, config.key, row.id), clean); });
-        await batch.commit(); saved += Math.min(400, deduped.length - i);
-        setStatus(`Đã ghi ${saved}/${deduped.length} bản ghi...`);
-      }
-      setStatus(`Đã nhập ${saved} bản ghi ${config.label}. Bản ghi khác không bị xóa.`);
-      showToast(`Đã nhập ${saved} bản ghi ${config.label}.`);
-    } catch (err) { setStatus(`Nhập Excel thất bại: ${err.message || 'Lỗi không xác định'}`); showToast(`Không nhập được Excel: ${err.message || 'Lỗi'}`, 'error'); }
-    finally { setBusy(false); }
-  };
-  return <section className="mx-3 mt-3 md:mx-5 bg-white border border-blue-100 rounded-xl p-3 flex flex-col sm:flex-row sm:items-center gap-3 shadow-sm"><div className="flex-1 min-w-0"><div className="font-bold text-gray-800 text-sm">Nhập / xuất Excel · {config.label}</div><div className="text-xs text-gray-500 mt-1">Excel có tiêu đề cột và dữ liệu chi tiết; có thể nhập lại file đã xuất để khôi phục bản ghi.</div>{status && <div className="text-xs text-blue-700 mt-1" role="status">{status}</div>}</div><div className="flex gap-2"><label className={`relative overflow-hidden inline-flex items-center justify-center gap-2 px-3 py-2 rounded-lg border font-semibold text-sm cursor-pointer ${busy?'opacity-50 pointer-events-none':'hover:bg-blue-50'}`}><Upload size={15}/> Nhập Excel<input type="file" accept=".xlsx,.xls" onChange={importExcel} disabled={busy} className="absolute inset-0 opacity-0 cursor-pointer"/></label><button type="button" onClick={exportExcel} disabled={busy} className="inline-flex items-center justify-center gap-2 px-3 py-2 rounded-lg bg-green-600 text-white font-semibold text-sm disabled:opacity-50"><Download size={15}/> Xuất Excel</button></div></section>;
-}
+const navigateMainTab = (tab, entity = null, entityName = '') => { if (typeof window !== 'undefined') { const target = typeof entity === 'string' ? { id: entity, name: entityName } : entity; const detail = { tab, entity: target, recordId: target?.id || '', recordName: target?.name || '' }; window.history.pushState({ ...(window.history.state || {}), appPopupNavigation: { tab, entity: target || null } }, ''); window.dispatchEvent(new CustomEvent('app:navigate-tab', { detail })); window.setTimeout(() => window.dispatchEvent(new CustomEvent('app:navigate-tab', { detail })), 80); } };
 
 export default function App() {
   const [user, setUser] = useState(null);
   const [userData, setUserData] = useState({ role: null, name: '', perms: {} });
-  const [activeTab, setActiveTab] = useState(() => getRequestedDetailRoute()?.tab || 'pos');
+  const [activeTab, setActiveTab] = useState('pos');
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const [debtPaymentReports, setDebtPaymentReports] = useState([]);
-  const [navigationTarget, setNavigationTarget] = useState(() => getRequestedDetailRoute());
+  const [navigationTarget, setNavigationTarget] = useState(null);
   useEffect(() => { const handlePopupNavigate = (event) => { const tab = event?.detail?.tab; if (['products','customers','suppliers','warranty','sales_history','imports'].includes(tab)) { setNavigationTarget({ tab, id: event?.detail?.entity?.id || event?.detail?.recordId || '', name: event?.detail?.entity?.name || event?.detail?.recordName || '', nonce: Date.now() }); setActiveTab(tab); } }; const handleBrowserBack = (event) => { const nav = event.state?.appPopupNavigation; if (nav?.tab) { const detail = { tab: nav.tab, entity: nav.entity || null, recordId: nav.entity?.id || '', recordName: nav.entity?.name || '' }; window.dispatchEvent(new CustomEvent('app:navigate-tab', { detail })); } else { window.dispatchEvent(new CustomEvent('app:close-popups')); } }; window.addEventListener('app:navigate-tab', handlePopupNavigate); window.addEventListener('popstate', handleBrowserBack); return () => { window.removeEventListener('app:navigate-tab', handlePopupNavigate); window.removeEventListener('popstate', handleBrowserBack); }; }, []);
   const [storeConfig, setStoreConfig] = useState({
     name: 'QUẢN LÝ BÁN HÀNG', address: '', phone: '', logo: '', costCalcMethod: 'LATEST',
@@ -511,7 +394,7 @@ export default function App() {
           const data = userDoc.data();
           setUser(currentUser);
           setUserData({ role: data.role, name: data.name || data.username, perms: data.permissions || {} });
-          setActiveTab(getRequestedDetailRoute()?.tab || (data.role === 'admin' ? 'dashboard' : 'pos'));
+          setActiveTab(data.role === 'admin' ? 'dashboard' : 'pos');
         }
       }
       setLoading(false);
@@ -551,7 +434,7 @@ export default function App() {
   const showToast = (msg, type = 'success') => { setToast({ msg, type }); setTimeout(() => setToast(null), 3000); };
 
   if (loading) return <div className="min-h-screen flex items-center justify-center bg-gray-50"><div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600"></div></div>;
-  if (!user) return <LoginView onLoginSuccess={(userInfo) => { setUser(userInfo); setUserData({ role: userInfo.role, name: userInfo.name, perms: userInfo.perms }); setActiveTab(getRequestedDetailRoute()?.tab || (userInfo.role === 'admin' ? 'dashboard' : 'pos')); }} />;
+  if (!user) return <LoginView onLoginSuccess={(userInfo) => { setUser(userInfo); setUserData({ role: userInfo.role, name: userInfo.name, perms: userInfo.perms }); setActiveTab(userInfo.role === 'admin' ? 'dashboard' : 'pos'); }} />;
 
   const allTabs = [
     { id: 'dashboard', icon: LayoutDashboard, label: 'Tổng quan', permId: 'tong_quan_xem' },
@@ -589,13 +472,12 @@ export default function App() {
       <nav className={`${mobileMenuOpen ? 'flex' : 'hidden'} md:flex bg-white text-gray-700 px-2 md:px-3 py-2 md:py-1 items-stretch md:items-center flex-col md:flex-row gap-1 md:gap-1 overflow-x-visible md:overflow-x-auto scrollbar-hide shadow-sm shrink-0`}>
         {visibleTabs.map(tab => {
           const activeClass = activeTab === tab.id ? 'bg-blue-800 text-white shadow ring-1 ring-blue-300' : 'bg-blue-600 text-white hover:bg-blue-700 shadow-sm';
-          return <button key={tab.id} onClick={() => { setActiveTab(tab.id); setMobileMenuOpen(false); }} className={'box-border w-full md:w-auto flex items-center justify-start md:justify-center gap-3 px-5 md:px-[19px] py-4 md:py-[12.5px] min-h-[58px] md:min-h-[60px] rounded-lg whitespace-nowrap font-semibold text-lg md:text-[15px] transition-all duration-150 border border-white/40 ' + activeClass}><tab.icon size={22}/><span>{tab.label}</span></button>;
+          return <button key={tab.id} onClick={() => { setActiveTab(tab.id); setMobileMenuOpen(false); }} className={'box-border w-full md:w-auto flex items-center justify-start md:justify-center gap-2 px-4 md:px-[14.4px] py-2.5 md:py-[9.6px] min-h-[44px] md:min-h-[46px] rounded-lg whitespace-nowrap font-semibold text-xs transition-all duration-150 border border-white/40 ' + activeClass}><tab.icon size={15}/><span>{tab.label}</span></button>;
         })}
-        <button onClick={() => { setActiveTab('pos'); setMobileMenuOpen(false); }} className="box-border w-full md:w-auto md:ml-auto flex items-center justify-start md:justify-center gap-3 px-5 md:px-[19px] py-4 md:py-[12.5px] min-h-[58px] md:min-h-[60px] rounded-lg bg-yellow-400 text-yellow-950 hover:bg-yellow-300 font-extrabold whitespace-nowrap shadow-sm border border-yellow-200 text-lg md:text-[15px]"><ShoppingCart size={22}/> Bán hàng</button>
+        <button onClick={() => { setActiveTab('pos'); setMobileMenuOpen(false); }} className="box-border w-full md:w-auto md:ml-auto flex items-center justify-start md:justify-center gap-2 px-4 md:px-[14.4px] py-2.5 md:py-[9.6px] min-h-[44px] md:min-h-[46px] rounded-lg bg-yellow-400 text-yellow-950 hover:bg-yellow-300 font-extrabold whitespace-nowrap shadow-sm border border-yellow-200 text-xs"><ShoppingCart size={15}/> Bán hàng</button>
       </nav>
       <main className="flex-1 min-w-0 overflow-auto flex flex-col min-h-[calc(100vh-104px)] relative">
         {toast && <div className={"fixed top-4 right-4 z-50 px-6 py-3.5 rounded-xl shadow-xl flex items-center gap-2 text-white animate-in slide-in-from-top-2 " + (toast.type === 'success' ? 'bg-emerald-600' : 'bg-blue-600')}><div className="bg-white/20 p-1 rounded-full">{toast.type === 'success' ? <Check size={16} /> : <AlertCircle size={16} />}</div><span className="font-bold text-sm tracking-wide">{toast.msg}</span></div>}
-        {['sales_history','imports','products','warranty','customers','suppliers','expenses'].includes(activeTab) && <DataExcelToolbar activeTab={activeTab} db={db} storeId={storeId} showToast={showToast} />}
         {activeTab === 'reports' && <ReportsView orders={orders} imports={imports} expenses={expenses} debtPaymentReports={debtPaymentReports} />}
         {activeTab === 'dashboard' && <DashboardView orders={orders} imports={imports} expenses={expenses} customers={customers} suppliers={suppliers} products={products} warrantyRequests={warrantyRequests} showToast={showToast} userData={userData} />}
         {activeTab === 'pos' && <POSView products={products} orders={orders} customers={customers} db={db} storeId={storeId} user={user} storeConfig={storeConfig} showToast={showToast} userData={userData} />}
@@ -1135,7 +1017,7 @@ function POSView({ products, orders = [], customers, db, storeId, user, storeCon
 function SalesHistoryView({ orders, imports = [], products, customers, storeConfig, db, storeId, user, userData, showToast }) {
   const currentDate = new Date();
   const currentVietnamDate = getVietnamDateParts(currentDate);
-  const [filterType, setFilterType] = useState('day');
+  const [filterType, setFilterType] = useState('month');
   const [selectedDate, setSelectedDate] = useState(getVietnamDateKey(currentDate));
   const [filterMonth, setFilterMonth] = useState(currentVietnamDate.month.toString());
   const [filterYear, setFilterYear] = useState(currentVietnamDate.year.toString());
@@ -1178,9 +1060,24 @@ function SalesHistoryView({ orders, imports = [], products, customers, storeConf
     return (orders || []).filter(o => {
       const d = getVietnamDateParts(new Date(o.date));
       let matchTime = true;
-      if (filterType === 'day') { matchTime = getVietnamDateKey(new Date(o.date)) === selectedDate; }
-      else if (filterType === 'month') { matchTime = d.year.toString() === filterYear; }
-      else if (filterType === 'year') { matchTime = d.year.toString() === filterYear; }
+      const orderDateKey = getVietnamDateKey(new Date(o.date));
+      if (filterType === 'day') {
+        matchTime = orderDateKey === selectedDate;
+      } else if (filterType === 'week') {
+        const selectedUtc = new Date(`${selectedDate}T00:00:00Z`);
+        const dayOfWeek = selectedUtc.getUTCDay();
+        const daysFromMonday = (dayOfWeek + 6) % 7;
+        const weekStart = new Date(selectedUtc);
+        weekStart.setUTCDate(selectedUtc.getUTCDate() - daysFromMonday);
+        const weekEnd = new Date(weekStart);
+        weekEnd.setUTCDate(weekStart.getUTCDate() + 6);
+        const toDateKey = date => `${date.getUTCFullYear()}-${String(date.getUTCMonth() + 1).padStart(2, '0')}-${String(date.getUTCDate()).padStart(2, '0')}`;
+        matchTime = orderDateKey >= toDateKey(weekStart) && orderDateKey <= toDateKey(weekEnd);
+      } else if (filterType === 'month') {
+        matchTime = String(d.year) === filterYear && String(d.month) === filterMonth;
+      } else if (filterType === 'year') {
+        matchTime = String(d.year) === filterYear;
+      }
       const matchSearch = (o.customerName && o.customerName.toLowerCase().includes(searchTerm.toLowerCase())) || ((o.invoiceCode || o.id || '').toLowerCase().includes(searchTerm.toLowerCase()));
       return matchTime && matchSearch;
     }).sort((a, b) => new Date(b.date) - new Date(a.date));
@@ -1333,12 +1230,15 @@ function SalesHistoryView({ orders, imports = [], products, customers, storeConf
       <div className="bg-white p-4 rounded-2xl border shadow-sm mb-4 flex flex-col lg:flex-row justify-between items-start lg:items-center gap-4">
         <div className="flex flex-wrap items-center gap-2 bg-gray-100 p-1 rounded-xl">
           <button onClick={() => { setFilterType('day'); setSalesCurrentPage(1); }} className={"px-4 py-2 rounded-lg text-sm font-bold transition-all " + (filterType==='day'?'bg-white text-blue-600 shadow-sm':'text-gray-600 hover:bg-white/50')}>Ngày</button>
+          <button onClick={() => { setFilterType('week'); setSalesCurrentPage(1); }} className={"px-4 py-2 rounded-lg text-sm font-bold transition-all " + (filterType==='week'?'bg-white text-blue-600 shadow-sm':'text-gray-600 hover:bg-white/50')}>Tuần</button>
+          <button onClick={() => { setFilterType('month'); setSalesCurrentPage(1); }} className={"px-4 py-2 rounded-lg text-sm font-bold transition-all " + (filterType==='month'?'bg-white text-blue-600 shadow-sm':'text-gray-600 hover:bg-white/50')}>Tháng</button>
           <button onClick={() => { setFilterType('year'); setSalesCurrentPage(1); }} className={"px-4 py-2 rounded-lg text-sm font-bold transition-all " + (filterType==='year'?'bg-white text-blue-600 shadow-sm':'text-gray-600 hover:bg-white/50')}>Năm</button>
           <button onClick={() => { setFilterType('all'); setSalesCurrentPage(1); }} className={"px-4 py-2 rounded-lg text-sm font-bold transition-all " + (filterType==='all'?'bg-white text-blue-600 shadow-sm':'text-gray-600 hover:bg-white/50')}>Tất cả</button>
         </div>
-        <div className="flex items-center gap-2">
-          {filterType === 'day' && (<input type="date" value={selectedDate} onChange={e=>{ setSelectedDate(e.target.value); setSalesCurrentPage(1); }} className="p-2 border rounded-xl text-sm bg-gray-50 font-bold outline-none"/>)}
-          {filterType === 'year' && (<select value={filterYear} onChange={e=>{ setFilterYear(e.target.value); setSalesCurrentPage(1); }} className="p-2.5 border rounded-xl text-sm bg-gray-50 font-bold outline-none">{Array.from({length: 5}, (_, i) => currentDate.getFullYear() - i).map(y => <option key={y} value={y}>Năm {y}</option>)}</select>)}
+        <div className="flex items-center gap-2 flex-wrap">
+          {(filterType === 'day' || filterType === 'week') && (<input type="date" value={selectedDate} onChange={e=>{ setSelectedDate(e.target.value); setSalesCurrentPage(1); }} className="p-2 border rounded-xl text-sm bg-gray-50 font-bold outline-none"/>)}
+          {filterType === 'month' && (<><select value={filterMonth} onChange={e=>{ setFilterMonth(e.target.value); setSalesCurrentPage(1); }} className="p-2.5 border rounded-xl text-sm bg-gray-50 font-bold outline-none">{Array.from({length: 12}, (_, i) => i + 1).map(m => <option key={m} value={String(m)}>Tháng {m}</option>)}</select><select value={filterYear} onChange={e=>{ setFilterYear(e.target.value); setSalesCurrentPage(1); }} className="p-2.5 border rounded-xl text-sm bg-gray-50 font-bold outline-none">{Array.from({length: 5}, (_, i) => currentVietnamDate.year - i).map(y => <option key={y} value={String(y)}>Năm {y}</option>)}</select></>)}
+          {filterType === 'year' && (<select value={filterYear} onChange={e=>{ setFilterYear(e.target.value); setSalesCurrentPage(1); }} className="p-2.5 border rounded-xl text-sm bg-gray-50 font-bold outline-none">{Array.from({length: 5}, (_, i) => currentVietnamDate.year - i).map(y => <option key={y} value={String(y)}>Năm {y}</option>)}</select>)}
         </div>
         <div className="grid grid-cols-3 gap-3 w-full lg:w-auto">
           <div className="bg-blue-50 px-4 py-2 rounded-xl border border-blue-100 text-center"><p className="text-[10px] text-blue-600 font-bold uppercase">Tổng Hóa Đơn</p><p className="text-base font-black text-blue-800">{summaryStats.count}</p></div>
@@ -1825,6 +1725,7 @@ function ContactManager({ type, data, orders, products = [], navigationTarget, s
   const currentDate = new Date();
   const [filterMonth, setFilterMonth] = useState('ALL');
   const [filterYear, setFilterYear] = useState('ALL');
+  const [contactStatsPeriod, setContactStatsPeriod] = useState('month');
   const [rowsPerPage, setRowsPerPage] = useState('10');
   const [currentPage, setCurrentPage] = useState(1);
   useEffect(() => { if (navigationTarget?.tab === type && (navigationTarget.id || navigationTarget.name)) { const match = (data || []).find(item => navigationTarget.id && item.id === navigationTarget.id) || (data || []).find(item => navigationTarget.name && (item.name || '').trim().toLocaleLowerCase('vi') === navigationTarget.name.trim().toLocaleLowerCase('vi')); if (match) { setDetailTarget(match); setDetailRowsPerPage('5'); setDetailCurrentPage(1); setSearchTerm(''); setCurrentPage(1); } } }, [navigationTarget?.nonce, navigationTarget?.tab, navigationTarget?.id, navigationTarget?.name, type, data]);
@@ -2271,15 +2172,31 @@ function ContactManager({ type, data, orders, products = [], navigationTarget, s
   };
 
   const bannerStats = useMemo(() => {
+    const todayKey = getVietnamDateKey(new Date());
+    const today = new Date(`${todayKey}T12:00:00+07:00`);
+    const weekday = (today.getDay() + 6) % 7;
+    const weekStart = new Date(today); weekStart.setDate(today.getDate() - weekday);
+    const weekStartKey = getVietnamDateKey(weekStart);
+    const weekEnd = new Date(weekStart); weekEnd.setDate(weekStart.getDate() + 6);
+    const weekEndKey = getVietnamDateKey(weekEnd);
+    const year = getVietnamDateParts(today).year;
+    const month = getVietnamDateParts(today).month;
     const filteredOrders = (orders || []).filter(o => {
-      const d = new Date(o.date);
-      return filterYear === 'ALL' || d.getFullYear().toString() === filterYear;
+      if (!o.date) return false;
+      const date = new Date(o.date);
+      if (Number.isNaN(date.getTime())) return false;
+      const key = getVietnamDateKey(date);
+      const parts = getVietnamDateParts(date);
+      if (contactStatsPeriod === 'week') return key >= weekStartKey && key <= weekEndKey;
+      if (contactStatsPeriod === 'month') return parts.year === year && parts.month === month;
+      if (contactStatsPeriod === 'year') return parts.year === year;
+      return key === todayKey;
     });
     const totalDebt = data.reduce((s, i) => s + (Number(i.totalDebt) || 0), 0);
     const totalTraded = filteredOrders.reduce((s, o) => s + (Number(o.total) || 0), 0);
-    const totalPaid = filteredOrders.filter(o => o.status === 'PAID').reduce((s, o) => s + (Number(o.total) || 0), 0);
-    return { totalDebt, totalTraded, totalPaid, balance: totalTraded - totalPaid };
-  }, [data, orders, filterYear]);
+    const totalPaid = filteredOrders.reduce((s, o) => s + (Number(o.paidAmount ?? (o.status === 'PAID' ? o.total : 0)) || 0), 0);
+    return { totalDebt, totalTraded, totalPaid, balance: totalTraded - totalPaid, transactionCount: filteredOrders.length };
+  }, [data, orders, contactStatsPeriod]);
 
   const filteredData = useMemo(() => {
     return data.filter(i => {
@@ -2355,14 +2272,17 @@ function ContactManager({ type, data, orders, products = [], navigationTarget, s
         </div>
       </div>
       <div className="bg-white p-4 rounded-2xl border shadow-sm mb-4 flex flex-col lg:flex-row justify-between items-start lg:items-center gap-4">
-        <div className="grid grid-cols-2 sm:grid-cols-4 gap-4 flex-1 w-full">
-          <div className="bg-blue-50 p-3 rounded-xl border border-blue-100"><p className="text-xs text-blue-600 font-bold uppercase">Tổng Nợ</p><p className="text-lg font-bold text-blue-800">{formatCurrency(bannerStats.totalDebt)}</p></div>
-          <div className="bg-gray-50 p-3 rounded-xl border border-gray-200"><p className="text-xs text-gray-500 font-bold uppercase">Tổng Giao Dịch</p><p className="text-lg font-bold text-gray-800">{formatCurrency(bannerStats.totalTraded)}</p></div>
-          <div className="bg-green-50 p-3 rounded-xl border border-green-100"><p className="text-xs text-green-600 font-bold uppercase">Đã Thanh Toán</p><p className="text-lg font-bold text-green-700">{formatCurrency(bannerStats.totalPaid)}</p></div>
-          <div className="bg-orange-50 p-3 rounded-xl border border-orange-100"><p className="text-xs text-orange-600 font-bold uppercase">Số Dư Còn Lại</p><p className="text-lg font-bold text-orange-700">{formatCurrency(bannerStats.balance)}</p></div>
+        <div className="flex flex-col gap-3 flex-1 w-full">
+          <div className="flex items-center justify-between gap-2"><span className="text-xs font-bold text-gray-500">Thống kê giao dịch</span><select aria-label="Khoảng thời gian thống kê" value={contactStatsPeriod} onChange={e=>setContactStatsPeriod(e.target.value)} className="bg-white border rounded-lg px-3 py-2 text-sm font-semibold"><option value="day">Ngày</option><option value="week">Tuần</option><option value="month">Tháng</option><option value="year">Năm</option></select></div>
+          <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
+            <div className="bg-blue-50 p-3 rounded-xl border border-blue-100"><p className="text-xs text-blue-600 font-bold uppercase">Tổng Nợ</p><p className="text-lg font-bold text-blue-800">{formatCurrency(bannerStats.totalDebt)}</p></div>
+            <div className="bg-gray-50 p-3 rounded-xl border border-gray-200"><p className="text-xs text-gray-500 font-bold uppercase">Tổng Giao Dịch ({bannerStats.transactionCount})</p><p className="text-lg font-bold text-gray-800">{formatCurrency(bannerStats.totalTraded)}</p></div>
+            <div className="bg-green-50 p-3 rounded-xl border border-green-100"><p className="text-xs text-green-600 font-bold uppercase">Đã Thanh Toán</p><p className="text-lg font-bold text-green-700">{formatCurrency(bannerStats.totalPaid)}</p></div>
+            <div className="bg-orange-50 p-3 rounded-xl border border-orange-100"><p className="text-xs text-orange-600 font-bold uppercase">Số Dư Còn Lại</p><p className="text-lg font-bold text-orange-700">{formatCurrency(bannerStats.balance)}</p></div>
+          </div>
         </div>
         <div className="flex items-center gap-2 bg-gray-50 p-2 rounded-xl border shrink-0">
-          <select value={filterYear} onChange={e=>setFilterYear(e.target.value)} className="bg-transparent text-sm font-medium outline-none">{Array.from({length: 5}, (_, i) => new Date().getFullYear() - i).map(y => (<option key={y} value={y}>Năm {y}</option>))}</select>
+          <select value={filterYear} onChange={e=>setFilterYear(e.target.value)} className="bg-transparent text-sm font-medium outline-none">{Array.from({length: 5}, (_, i) => new Date().getFullYear() - i).map(y => (<option key={y} value={y}>Năm {y}</option>))}<option value="ALL">Tất cả năm</option></select>
         </div>
       </div>
       {selectedIds.length > 0 && (
@@ -2383,10 +2303,10 @@ function ContactManager({ type, data, orders, products = [], navigationTarget, s
               {paginatedData.map(i => {
                 const textDebtClass = i.totalDebt > 0 ? (isCus ? 'text-blue-600' : 'text-orange-600') : 'text-gray-400';
                 return (
-                  <tr key={i.id} className="border-b hover:bg-blue-50/50 cursor-pointer" onClick={() => openEntityInNewTab(type, { id: i.id, name: i.name })}>
+                  <tr key={i.id} className="border-b hover:bg-blue-50/50 cursor-pointer" onClick={() => setDetailTarget(i)}>
                     <td className="p-4" onClick={e=>e.stopPropagation()}><input type="checkbox" checked={selectedIds.includes(i.id)} onChange={() => setSelectedIds(prev => prev.includes(i.id) ? prev.filter(x=>x!==i.id) : [...prev, i.id])} className="w-4 h-4"/></td>
                     <td className="p-4 font-medium text-blue-600 underline">{i.name}</td><td className="p-4 text-gray-600">{i.phone}</td><td className={"p-4 font-bold " + textDebtClass}>{formatCurrency(i.totalDebt)}</td>
-                    <td className="p-4 text-right flex justify-end gap-1" onClick={e=>e.stopPropagation()}><button onClick={() => openEntityInNewTab(type, { id: i.id, name: i.name })} title="Xem chi tiết giao dịch" className="text-gray-600 bg-gray-100 p-2 rounded-lg hover:bg-gray-200"><Eye size={16}/></button><button onClick={() => {setForm(i);setIsModalOpen(true);}} className="text-blue-600 bg-blue-50 p-2 rounded-lg hover:bg-blue-100"><Edit size={16}/></button><button onClick={() => handleDelete(i.id)} className="text-blue-600 bg-blue-50 p-2 rounded-lg hover:bg-blue-100"><Trash2 size={16}/></button></td>
+                    <td className="p-4 text-right flex justify-end gap-1" onClick={e=>e.stopPropagation()}><button onClick={() => setDetailTarget(i)} title="Xem chi tiết giao dịch" className="text-gray-600 bg-gray-100 p-2 rounded-lg hover:bg-gray-200"><Eye size={16}/></button><button onClick={() => {setForm(i);setIsModalOpen(true);}} className="text-blue-600 bg-blue-50 p-2 rounded-lg hover:bg-blue-100"><Edit size={16}/></button><button onClick={() => handleDelete(i.id)} className="text-blue-600 bg-blue-50 p-2 rounded-lg hover:bg-blue-100"><Trash2 size={16}/></button></td>
                   </tr>
                 );
               })}
@@ -2398,7 +2318,7 @@ function ContactManager({ type, data, orders, products = [], navigationTarget, s
       </div>
       </>}
       {detailTarget && <div className="flex-1 overflow-y-auto bg-gray-50/50 border rounded-xl p-4 md:p-6 space-y-4">
-        <div className="flex flex-wrap items-center justify-between gap-3 bg-white border rounded-xl p-3"><h2 className="text-xl font-bold text-gray-800">Chi tiết: {detailTarget.name}</h2><div className="flex gap-2"><button type="button" onClick={() => { if (window.history.state?.appPopupNavigation?.tab === type) window.history.back(); else setDetailTarget(null); }} className="border rounded-lg px-3 py-2 text-sm font-semibold">← Lùi</button><button type="button" onClick={() => window.history.forward()} className="border rounded-lg px-3 py-2 text-sm font-semibold">Tiến →</button><button type="button" onClick={() => { setDetailTarget(null); const url = new URL(window.location.href); ['detailTab','detailId','detailName'].forEach(k=>url.searchParams.delete(k)); window.history.replaceState({ ...(window.history.state || {}), appPopupNavigation: { tab: type, entity: null } }, '', url.toString()); }} className="bg-gray-700 text-white rounded-lg px-3 py-2 text-sm font-semibold">Danh sách {isCus ? 'khách hàng' : 'nhà cung cấp'}</button></div></div>
+        <div className="flex flex-wrap items-center justify-between gap-3 bg-white border rounded-xl p-3"><h2 className="text-xl font-bold text-gray-800">Chi tiết: {detailTarget.name}</h2><div className="flex gap-2"><button type="button" onClick={() => { if (window.history.state?.appPopupNavigation?.tab === type) window.history.back(); else setDetailTarget(null); }} className="border rounded-lg px-3 py-2 text-sm font-semibold">← Lùi</button><button type="button" onClick={() => window.history.forward()} className="border rounded-lg px-3 py-2 text-sm font-semibold">Tiến →</button><button type="button" onClick={() => { setDetailTarget(null); window.history.replaceState({ ...(window.history.state || {}), appPopupNavigation: { tab: type, entity: null } }, ''); }} className="bg-gray-700 text-white rounded-lg px-3 py-2 text-sm font-semibold">Danh sách {isCus ? 'khách hàng' : 'nhà cung cấp'}</button></div></div>
           <div className="space-y-4">
             <div className="flex justify-between items-center bg-gray-50 p-3 rounded-xl border">
               <div><p className="text-xs text-gray-500">SĐT:</p><p className="font-bold">{detailTarget.phone || 'Trống'}</p></div>
@@ -2574,18 +2494,17 @@ function InventoryView({ products, orders, imports, warrantyRequests = [], custo
     window.addEventListener('app:close-popups', onCloseProductPage);
     return () => { window.removeEventListener('app:navigate-tab', onNavigate); window.removeEventListener('app:close-popups', onCloseProductPage); };
   }, [products]);
-  useEffect(() => {
-    if (navigationTarget?.tab !== 'products' || !(navigationTarget.id || navigationTarget.name)) return;
-    const match = (products || []).find(row => navigationTarget.id && row.id === navigationTarget.id) || (products || []).find(row => navigationTarget.name && String(row.name || '').trim().toLocaleLowerCase('vi') === navigationTarget.name.trim().toLocaleLowerCase('vi'));
-    if (match) { setSearchTerm(''); setInvCurrentPage(1); setDetailProduct(match); setProductImportYear(String(getVietnamDateParts(new Date()).year)); setShowAllDetailSales(true); }
-  }, [navigationTarget?.nonce, navigationTarget?.tab, navigationTarget?.id, navigationTarget?.name, products]);
   const [showAllDetailSales, setShowAllDetailSales] = useState(false);
   const [productSalesRows, setProductSalesRows] = useState('5');
   const [productSalesPage, setProductSalesPage] = useState(1);
   const [productImportRows, setProductImportRows] = useState('5');
   const [productImportPage, setProductImportPage] = useState(1);
-  const openProductHistory = (product) => {
-    openEntityInNewTab('products', { id: product.id, name: product.name });
+  const openProductHistory = (product, showAll = false) => {
+    if (typeof window !== 'undefined') window.history.pushState({ ...(window.history.state || {}), appPopupNavigation: { tab: 'products', entity: { id: product.id, name: product.name } } }, '');
+    setDetailProduct(product);
+    setProductImportYear(String(getVietnamDateParts(new Date()).year));
+    setShowAllDetailSales(showAll);
+    setProductSalesRows('5'); setProductSalesPage(1); setProductImportRows('5'); setProductImportPage(1);
   };
   const currentDate = new Date();
   const currentVietnamDate = getVietnamDateParts(currentDate);
@@ -2648,7 +2567,17 @@ function InventoryView({ products, orders, imports, warrantyRequests = [], custo
     const rows = (imports || []).filter(im => {
       if (!im.date) return false;
       const d = getVietnamDateParts(new Date(im.date));
-      if (stockTotalPeriod === 'day') return getVietnamDateKey(new Date(im.date)) === stockTotalDay;
+      const importDate = new Date(im.date);
+      const importKey = getVietnamDateKey(importDate);
+      if (stockTotalPeriod === 'day') return importKey === stockTotalDay;
+      if (stockTotalPeriod === 'week') {
+        const todayKey = getVietnamDateKey(new Date());
+        const today = new Date(`${todayKey}T12:00:00+07:00`);
+        const weekStart = new Date(today); weekStart.setDate(today.getDate() - ((today.getDay() + 6) % 7));
+        const weekStartKey = getVietnamDateKey(weekStart);
+        const weekEnd = new Date(weekStart); weekEnd.setDate(weekStart.getDate() + 6);
+        return importKey >= weekStartKey && importKey <= getVietnamDateKey(weekEnd);
+      }
       if (stockTotalPeriod === 'year') return String(d.year) === stockTotalYear;
       return String(d.month) === stockTotalMonth && String(d.year) === stockTotalYear;
     });
@@ -2756,7 +2685,7 @@ function InventoryView({ products, orders, imports, warrantyRequests = [], custo
         <div className="bg-white p-4 rounded-2xl border shadow-sm"><p className="text-xs text-gray-500 font-bold uppercase">Tổng Số Sản Phẩm</p><p className="text-xl font-bold text-gray-800">{bannerStats.count}</p></div>
         <div className="bg-white p-4 rounded-2xl border shadow-sm"><p className="text-xs text-blue-600 font-bold uppercase">Tổng Tồn Kho</p><p className="text-xl font-bold text-blue-600">{bannerStats.totalStock}</p></div>
         <div className="bg-white p-4 rounded-2xl border shadow-sm"><p className="text-xs text-green-600 font-bold uppercase">Tổng Giá Vốn Tồn Kho</p><p className="text-xl font-bold text-green-600">{formatCurrency(bannerStats.totalValue)}</p></div>
-        <div className="bg-white p-4 rounded-2xl border shadow-sm"><div className="flex items-center justify-between gap-2"><p className="text-xs text-purple-600 font-bold uppercase">Tổng tiền nhập hàng</p><select value={stockTotalPeriod} onChange={e=>setStockTotalPeriod(e.target.value)} className="text-xs border rounded p-1"><option value="year">Năm</option></select></div><div className="flex gap-1 mt-2"><select value={stockTotalYear} onChange={e=>setStockTotalYear(e.target.value)} className="text-xs border rounded p-1 flex-1">{Array.from({length:8},(_,i)=>getVietnamDateParts(new Date()).year-i).map(y=><option key={y} value={String(y)}>{y}</option>)}</select></div><p className="text-xl font-bold text-purple-700 mt-1">{formatCurrency(stockImportTotals.amount)}</p><p className="text-[11px] text-gray-500">{stockImportTotals.count} phiếu nhập</p></div>
+        <div className="bg-white p-4 rounded-2xl border shadow-sm"><div className="flex items-center justify-between gap-2"><p className="text-xs text-purple-600 font-bold uppercase">Tổng tiền nhập hàng</p><select value={stockTotalPeriod} onChange={e=>setStockTotalPeriod(e.target.value)} className="text-xs border rounded p-1"><option value="day">Ngày</option><option value="week">Tuần</option><option value="month">Tháng</option><option value="year">Năm</option></select></div><div className="flex gap-1 mt-2"><select value={stockTotalYear} onChange={e=>setStockTotalYear(e.target.value)} className="text-xs border rounded p-1 flex-1">{Array.from({length:8},(_,i)=>getVietnamDateParts(new Date()).year-i).map(y=><option key={y} value={String(y)}>{y}</option>)}</select></div><p className="text-xl font-bold text-purple-700 mt-1">{formatCurrency(stockImportTotals.amount)}</p><p className="text-[11px] text-gray-500">{stockImportTotals.count} phiếu nhập</p></div>
       </div>
       {selectedIds.length > 0 && (
         <div className="bg-blue-50 border border-blue-200 p-2.5 rounded-xl mb-3 flex justify-between items-center"><span className="text-xs font-bold text-blue-700">Đã chọn {selectedIds.length} mục</span><button onClick={handleBatchDelete} className="bg-blue-600 hover:bg-blue-700 text-white px-3 py-1 rounded-lg text-xs font-bold flex items-center gap-1"><Trash2 size={14}/> Xóa đã chọn</button></div>
@@ -2795,7 +2724,7 @@ function InventoryView({ products, orders, imports, warrantyRequests = [], custo
       {detailProduct && <div className="flex-1 overflow-y-auto bg-gray-50/50 p-4 md:p-6 space-y-4">
         <div className="flex flex-wrap items-center justify-between gap-3 bg-white border rounded-xl p-3">
           <div><h2 className="text-xl font-bold text-gray-800">Lịch sử: {detailProduct.name || ''}</h2><p className="text-sm text-gray-500">Chi tiết sản phẩm</p></div>
-          <div className="flex gap-2"><button type="button" onClick={() => { if (window.history.state?.appPopupNavigation?.tab === 'products') window.history.back(); else setDetailProduct(null); }} className="border rounded-lg px-3 py-2 text-sm font-semibold hover:bg-gray-100">← Lùi</button><button type="button" onClick={() => window.history.forward()} className="border rounded-lg px-3 py-2 text-sm font-semibold hover:bg-gray-100">Tiến →</button><button type="button" onClick={() => { setDetailProduct(null); const url = new URL(window.location.href); ['detailTab','detailId','detailName'].forEach(k=>url.searchParams.delete(k)); window.history.replaceState({ ...(window.history.state || {}), appPopupNavigation: { tab: 'products', entity: null } }, '', url.toString()); }} className="bg-gray-700 text-white rounded-lg px-3 py-2 text-sm font-semibold">Danh sách sản phẩm</button></div>
+          <div className="flex gap-2"><button type="button" onClick={() => { if (window.history.state?.appPopupNavigation?.tab === 'products') window.history.back(); else setDetailProduct(null); }} className="border rounded-lg px-3 py-2 text-sm font-semibold hover:bg-gray-100">← Lùi</button><button type="button" onClick={() => window.history.forward()} className="border rounded-lg px-3 py-2 text-sm font-semibold hover:bg-gray-100">Tiến →</button><button type="button" onClick={() => { setDetailProduct(null); window.history.replaceState({ ...(window.history.state || {}), appPopupNavigation: { tab: 'products', entity: null } }, ''); }} className="bg-gray-700 text-white rounded-lg px-3 py-2 text-sm font-semibold">Danh sách sản phẩm</button></div>
         </div>
         {detailProduct && <div className="px-1 pt-2"><button type="button" onClick={() => { setDetailProduct(null); navigateMainTab('products'); }} className="text-blue-700 underline text-sm font-semibold">Mở thẻ lưu sản phẩm</button></div>}
         {detailProduct && (
@@ -3471,7 +3400,7 @@ function ImportView({ products, orders = [], imports = [], suppliers, db, storeI
   const [historyFromDate, setHistoryFromDate] = useState('');
   const [historyToDate, setHistoryToDate] = useState('');
   const handleHistorySort = (field) => setHistorySort(prev => ({ field, direction: prev.field === field && prev.direction === 'desc' ? 'asc' : 'desc' }));
-  const [importTotalPeriod, setImportTotalPeriod] = useState('month');
+  const [importTotalPeriod, setImportTotalPeriod] = useState('day');
   const [importTotalMonth, setImportTotalMonth] = useState(String(getVietnamDateParts(new Date()).month));
   const [importTotalYear, setImportTotalYear] = useState(String(getVietnamDateParts(new Date()).year));
   const [importTotalDay, setImportTotalDay] = useState(getVietnamDateKey(new Date()));
@@ -3702,10 +3631,19 @@ function ImportView({ products, orders = [], imports = [], suppliers, db, storeI
   const totalHistoryPages = historyRowsPerPage === 'all' ? 1 : Math.ceil(filteredHistoryImports.length / (Number(historyRowsPerPage) || 10));
   const importPeriodRows = sortedImports.filter(im => {
     if (!im.date) return false;
-    const d = getVietnamDateParts(new Date(im.date));
-    if (importTotalPeriod === 'day') return getVietnamDateKey(new Date(im.date)) === importTotalDay;
-    if (importTotalPeriod === 'year') return String(d.year) === importTotalYear;
-    return String(d.month) === importTotalMonth && String(d.year) === importTotalYear;
+    const date = new Date(im.date);
+    if (Number.isNaN(date.getTime())) return false;
+    const key = getVietnamDateKey(date);
+    const parts = getVietnamDateParts(date);
+    const todayKey = getVietnamDateKey(new Date());
+    const today = new Date(`${todayKey}T12:00:00+07:00`);
+    if (importTotalPeriod === 'day') return key === todayKey;
+    if (importTotalPeriod === 'week') {
+      const start = new Date(today); start.setDate(today.getDate() - ((today.getDay() + 6) % 7));
+      const end = new Date(start); end.setDate(start.getDate() + 6);
+      return key >= getVietnamDateKey(start) && key <= getVietnamDateKey(end);
+    }
+    return parts.year === getVietnamDateParts(today).year && parts.month === getVietnamDateParts(today).month;
   });
   const importPeriodTotal = importPeriodRows.reduce((sum, im) => sum + (Number(im.total) || 0), 0);
 
@@ -3719,7 +3657,7 @@ function ImportView({ products, orders = [], imports = [], suppliers, db, storeI
       {activeImportTab === 'history' ? (
         <div className="flex-1 overflow-auto p-4 md:p-6 space-y-4">
           <div className="flex flex-wrap items-center justify-between gap-3"><div><h2 className="text-xl font-bold text-gray-800">Lịch sử nhập hàng</h2><p className="text-sm text-gray-500 mt-1">Danh sách các phiếu nhập hàng đã ghi nhận, bao gồm phiếu nhập từ Excel.</p></div><div className="flex flex-wrap gap-2"><button onClick={() => setActiveImportTab('create')} className="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2.5 rounded-xl text-sm font-bold flex items-center gap-2"><Plus size={16}/> Tạo phiếu nhập</button></div></div>
-          <div className="bg-white rounded-xl border shadow-sm p-4"><div className="flex flex-wrap items-center gap-2 mb-2"><span className="font-bold text-sm text-purple-700">Tổng tiền nhập theo</span><select value={importTotalPeriod} onChange={e=>setImportTotalPeriod(e.target.value)} className="border rounded p-1.5 text-sm"><option value="year">Năm</option></select><select value={importTotalYear} onChange={e=>setImportTotalYear(e.target.value)} className="border rounded p-1.5 text-sm">{Array.from({length:8},(_,i)=>getVietnamDateParts(new Date()).year-i).map(y=><option key={y} value={String(y)}>{y}</option>)}</select></div><div className="text-2xl font-extrabold text-purple-700">{formatCurrency(importPeriodTotal)}</div><div className="text-xs text-gray-500">{importPeriodRows.length} phiếu nhập trong khoảng đã chọn · mặc định tháng hiện tại</div></div>
+          <div className="bg-white rounded-xl border shadow-sm p-4"><div className="flex flex-wrap items-center gap-2 mb-2"><span className="font-bold text-sm text-purple-700">Thống kê nhập hàng</span><select value={importTotalPeriod} onChange={e=>setImportTotalPeriod(e.target.value)} className="border rounded p-1.5 text-sm"><option value="day">Ngày</option><option value="week">Tuần</option><option value="month">Tháng</option><option value="year">Năm</option></select></div><div className="text-2xl font-extrabold text-purple-700">{formatCurrency(importPeriodTotal)}</div><div className="text-xs text-gray-500">{importPeriodRows.length} phiếu nhập · tổng tiền trong {importTotalPeriod === 'day' ? 'ngày hôm nay' : importTotalPeriod === 'week' ? 'tuần hiện tại' : 'tháng hiện tại'}</div></div>
           <div className="bg-white rounded-xl border shadow-sm overflow-hidden"><div className="p-3 border-b bg-gray-50 grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-2"><div className="relative"><Search size={16} className="absolute left-3 top-3 text-gray-400"/><input value={historySearch} onChange={e=>{setHistorySearch(e.target.value);setHistoryCurrentPage(1);}} placeholder="Tìm mã phiếu, nhà cung cấp, chi tiết hàng hóa..." className="w-full pl-9 pr-3 py-2 border rounded-lg bg-white text-sm"/></div><select value={historySupplierFilter} onChange={e=>{setHistorySupplierFilter(e.target.value);setHistoryCurrentPage(1);}} className="p-2 border rounded-lg bg-white text-sm"><option value="ALL">Tất cả nhà cung cấp</option>{suppliers.map(s=><option key={s.id} value={s.id}>{s.name}</option>)}</select><label className="flex items-center gap-2 text-xs font-semibold">Từ ngày<input type="date" value={historyFromDate} onChange={e=>{setHistoryFromDate(e.target.value);setHistoryCurrentPage(1);}} className="min-w-0 flex-1 p-2 border rounded-lg bg-white"/></label><label className="flex items-center gap-2 text-xs font-semibold">Đến ngày<input type="date" value={historyToDate} onChange={e=>{setHistoryToDate(e.target.value);setHistoryCurrentPage(1);}} className="min-w-0 flex-1 p-2 border rounded-lg bg-white"/></label></div><div className="overflow-auto"><table className="w-full text-left text-sm min-w-[850px]"><thead className="bg-gray-100 text-gray-600"><tr><th className="p-3 cursor-pointer hover:bg-gray-200 whitespace-nowrap" onClick={() => handleHistorySort('date')}>Ngày nhập {historySort.field==='date' ? (historySort.direction==='asc' ? '↑' : '↓') : '↕'}</th><th className="p-3 cursor-pointer hover:bg-gray-200" onClick={() => handleHistorySort('code')}>Mã phiếu {historySort.field==='code' ? (historySort.direction==='asc' ? '↑' : '↓') : '↕'}</th><th className="p-3 cursor-pointer hover:bg-gray-200" onClick={() => handleHistorySort('supplier')}>Nhà cung cấp {historySort.field==='supplier' ? (historySort.direction==='asc' ? '↑' : '↓') : '↕'}</th><th className="p-3 cursor-pointer hover:bg-gray-200" onClick={() => handleHistorySort('items')}>Chi tiết hàng hóa {historySort.field==='items' ? (historySort.direction==='asc' ? '↑' : '↓') : '↕'}</th><th className="p-3 text-right cursor-pointer hover:bg-gray-200" onClick={() => handleHistorySort('total')}>Tổng tiền {historySort.field==='total' ? (historySort.direction==='asc' ? '↑' : '↓') : '↕'}</th><th className="p-3 cursor-pointer hover:bg-gray-200" onClick={() => handleHistorySort('status')}>Trạng thái {historySort.field==='status' ? (historySort.direction==='asc' ? '↑' : '↓') : '↕'}</th>{importColumns.actions && <th className="p-3 text-right">Thao tác</th>}</tr></thead><tbody>{paginatedImports.map((im, idx) => <tr key={im.id || idx} className="border-t hover:bg-gray-50 align-top"><td className="p-3 whitespace-nowrap">{im.date ? formatDate(im.date) : '—'}</td><td className="p-3 font-semibold">{im.invoiceCode || im.receiptCode || (im.id ? im.id.slice(0, 8) : '—')}</td><td className="p-3">{im.supplierName || 'Chưa rõ nhà cung cấp'}</td><td className="p-3">{(im.items || []).length ? <div className="space-y-1">{im.items.map((it, i) => <div key={i}>{it.name || 'Sản phẩm'} × {Number(it.qty ?? it.quantity ?? 0)}</div>)}</div> : 'Không có chi tiết hàng hóa'}</td><td className="p-3 text-right font-bold whitespace-nowrap">{formatCurrency(Number(im.total) || 0)}</td><td className="p-3"><span className={`px-2 py-1 rounded-lg text-xs font-bold ${im.status === 'DEBT' ? 'bg-orange-50 text-orange-700' : 'bg-green-50 text-green-700'}`}>{im.status === 'DEBT' ? 'Ghi nợ' : 'Đã thanh toán'}</span></td>{importColumns.actions && <td className="p-3"><div className="flex justify-end gap-1"><button onClick={() => setDetailImport(im)} className="text-gray-600 bg-gray-100 p-2 rounded-lg hover:bg-gray-200" title="Xem chi tiết phiếu nhập"><Eye size={15}/></button><button onClick={() => { setEditingImport(im); setSupplierId(im.supplierId || suppliers.find(x => x.name === im.supplierName)?.id || ''); setCart((im.items || []).map(it => ({...it, id: it.id || it.productId, qty: Number(it.qty ?? it.quantity ?? 1), importCost: Number(it.importCost ?? it.cost ?? 0)}))); setIsDebt(im.status === 'DEBT'); setActiveImportTab('create'); }} className="text-blue-600 bg-blue-50 p-2 rounded-lg hover:bg-blue-100" title="Sửa phiếu nhập"><Edit size={15}/></button><button onClick={async () => { if (!window.confirm('Xóa phiếu nhập này? Tồn kho và công nợ nhà cung cấp sẽ được điều chỉnh lại.')) return; try { const batch = writeBatch(db); (im.items || []).forEach(it => { const pid = it.id || it.productId; const p = products.find(prod => prod.id === pid); if (p) batch.update(doc(db, 'stores', storeId, 'products', pid), { stock: Number(p.stock || 0) - Number(it.qty ?? it.quantity ?? 0) }); }); const sup = suppliers.find(x => x.id === im.supplierId); if (im.status === 'DEBT' && sup) batch.update(doc(db, 'stores', storeId, 'suppliers', sup.id), { totalDebt: Math.max(0, Number(sup.totalDebt || 0) - Number(im.total || 0)) }); batch.delete(doc(db, 'stores', storeId, 'imports', im.id)); await batch.commit(); showToast('Đã xóa phiếu nhập'); } catch (err) { showToast('Không xóa được phiếu nhập: ' + err.message, 'error'); } }} className="text-blue-600 bg-blue-50 p-2 rounded-lg hover:bg-blue-100" title="Xóa phiếu nhập"><Trash2 size={15}/></button></div></td>}</tr>)}{paginatedImports.length === 0 && <tr><td colSpan={7} className="p-10 text-center text-gray-400">Chưa có lịch sử nhập hàng.</td></tr>}</tbody></table><PaginationControls currentPage={historyCurrentPage} totalPages={totalHistoryPages} rowsPerPage={historyRowsPerPage} onPageChange={setHistoryCurrentPage} onRowsChange={r=>{setHistoryRowsPerPage(r);setHistoryCurrentPage(1);}} totalItems={filteredHistoryImports.length}/></div></div>
         </div>
       ) : activeImportTab === 'bulk' ? (
@@ -5210,7 +5148,21 @@ function SettingsView({ db, storeId, showToast, storeConfig }) {
                 <div className="flex flex-col sm:flex-row justify-end gap-2"><button type="button" onClick={()=>setZipRestorePreview(null)} disabled={zipBusy} className="rounded-xl border bg-white px-4 py-3 font-bold">Hủy</button><button type="button" onClick={confirmZipRestore} disabled={zipBusy||!zipRestorePreview.total} className="rounded-xl bg-violet-600 text-white px-4 py-3 font-bold disabled:opacity-50">{zipBusy?'Đang phục hồi...':'Xác nhận phục hồi vào Firebase'}</button></div>
               </div>}
             </div>
-
+            <div className="bg-white p-6 rounded-2xl border shadow-sm">
+              <h3 className="font-bold border-b pb-3 mb-2 text-gray-800 flex items-center gap-2"><FileText className="text-green-600"/> Nhập / Xuất File Excel</h3><p className="text-xs text-gray-500 mb-5">Đọc toàn bộ dòng dữ liệu trong sheet, không giới hạn 200 dòng. Khi nhập sẽ hỏi xác nhận số dòng trước khi ghi. Đơn hàng đối chiếu theo mã hóa đơn; chi phí chỉ chống trùng khi có mã phiếu, không tự bỏ giao dịch chỉ vì trùng ngày hoặc số tiền.</p>
+              {loadingFile && <div className="mb-4 text-blue-600 font-bold flex items-center gap-2"><div className="animate-spin h-5 w-5 border-2 border-blue-600 border-t-transparent rounded-full"></div> Đang xử lý file, vui lòng đợi...</div>}
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                {menuItems.map(item => (
+                  <div key={item.id} className="border border-gray-200 p-4 rounded-xl flex flex-col gap-3 bg-gray-50/50 hover:bg-gray-50 transition-colors">
+                    <span className="font-bold text-gray-800">{item.label}</span>
+                    <div className="flex gap-2 w-full">
+                      <div className="relative overflow-hidden bg-white text-gray-700 px-3 py-2 rounded-lg border shadow-sm hover:border-blue-400 flex items-center gap-2 cursor-pointer flex-1 justify-center transition-colors font-medium text-sm"> <Upload size={16} className="text-blue-500"/> Tải File Lên (Nhập) <input type="file" accept=".xls,.xlsx" onChange={(e) => handleImport(e, item.id)} disabled={loadingFile} className="absolute inset-0 opacity-0 cursor-pointer"/> </div>
+                      <button onClick={() => handleExport(item.id)} disabled={loadingFile} className="bg-white hover:bg-green-50 text-gray-700 px-3 py-2 rounded-lg border shadow-sm hover:border-green-400 flex items-center gap-2 flex-1 justify-center transition-colors font-medium text-sm"> <Download size={16} className="text-green-600"/> Tải Xuống (Xuất) </button>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
           </div>
         )}
             {contactDebtPreview && (
