@@ -2813,6 +2813,11 @@ function WarrantyView({ products = [], customers = [], suppliers = [], warrantyR
   const [warrantyLocation, setWarrantyLocation] = useState('');
   const [carrierName, setCarrierName] = useState('');
   const [newCarrierName, setNewCarrierName] = useState('');
+  const [editingCarrierName, setEditingCarrierName] = useState('');
+  const [editingWarrantyCustomerId, setEditingWarrantyCustomerId] = useState('');
+  const [editingWarrantyCustomerName, setEditingWarrantyCustomerName] = useState('');
+  const [editingWarrantyCustomerAddress, setEditingWarrantyCustomerAddress] = useState('');
+  const [editingWarrantyCustomerPhone, setEditingWarrantyCustomerPhone] = useState('');
   const [newLocation, setNewLocation] = useState('');
   const [newLocationAddress, setNewLocationAddress] = useState('');
   const [newLocationPhone, setNewLocationPhone] = useState('');
@@ -2829,6 +2834,7 @@ function WarrantyView({ products = [], customers = [], suppliers = [], warrantyR
   const [paperSize, setPaperSize] = useState(storeConfig.warrantyPrintSize || 'A4');
   const locations = Array.isArray(storeConfig.warrantyLocations) ? storeConfig.warrantyLocations : [];
   const carriers = Array.isArray(storeConfig.warrantyCarriers) ? storeConfig.warrantyCarriers : [];
+  const warrantyAddedCustomers = (customers || []).filter(c => c.warrantyCardCreated === true);
   const locationName = l => typeof l === 'string' ? l : (l?.name || '');
   const selectedLocation = locations.find(l => locationName(l) === warrantyLocation);
   // Chỉ lấy khách hàng từ phiếu thẻ khách hàng còn đang bảo hành; phiếu đã hoàn thành không xuất hiện.
@@ -2864,13 +2870,22 @@ function WarrantyView({ products = [], customers = [], suppliers = [], warrantyR
     const name = String(value ?? newCarrierName).trim();
     if (!name) return showToast('Vui lòng nhập tên nhà vận chuyển', 'error');
     const found = carriers.find(c => String(typeof c === 'string' ? c : c?.name || '').trim().toLocaleLowerCase('vi') === name.toLocaleLowerCase('vi'));
-    const next = found ? carriers : [...carriers, { name, createdAt: new Date().toISOString() }];
+    const next = editingCarrierName ? carriers.map(c => String(typeof c === 'string' ? c : c?.name || '') === editingCarrierName ? { ...(typeof c === 'object' ? c : {}), name } : c) : (found ? carriers : [...carriers, { name, createdAt: new Date().toISOString(), warrantyCardCreated: true }]);
     try {
       await setDoc(doc(db, 'stores', storeId), { warrantyCarriers: next }, { merge: true });
-      setCarrierName(name); setNewCarrierName('');
-      showToast(found ? 'Đã chọn nhà vận chuyển đã lưu' : 'Đã thêm nhà vận chuyển');
+      setCarrierName(name); setNewCarrierName(''); setEditingCarrierName('');
+      showToast(editingCarrierName ? 'Đã sửa nhà vận chuyển' : (found ? 'Đã chọn nhà vận chuyển đã lưu' : 'Đã thêm nhà vận chuyển'));
     } catch (e) { showToast('Không lưu được nhà vận chuyển', 'error'); }
   };
+  const editWarrantyCarrier = (carrier) => { const name = String(typeof carrier === 'string' ? carrier : carrier?.name || ''); setEditingCarrierName(name); setNewCarrierName(name); };
+  const deleteWarrantyCarrier = async (carrier) => {
+    const name = String(typeof carrier === 'string' ? carrier : carrier?.name || '');
+    if (!name || !window.confirm(`Xóa nhà vận chuyển “${name}” khỏi danh mục riêng của thẻ bảo hành? Phiếu đã lưu không bị xóa.`)) return;
+    try { await setDoc(doc(db, 'stores', storeId), { warrantyCarriers: carriers.filter(c => String(typeof c === 'string' ? c : c?.name || '') !== name) }, { merge: true }); if (carrierName === name) setCarrierName(''); if (editingCarrierName === name) { setEditingCarrierName(''); setNewCarrierName(''); } showToast('Đã xóa nhà vận chuyển khỏi thẻ bảo hành'); } catch(e) { showToast('Không xóa được nhà vận chuyển', 'error'); }
+  };
+  const editWarrantyCustomer = (customer) => { setEditingWarrantyCustomerId(customer.id); setEditingWarrantyCustomerName(customer.name || ''); setEditingWarrantyCustomerAddress(customer.address || ''); setEditingWarrantyCustomerPhone(customer.phone || ''); };
+  const saveWarrantyCustomerEdit = async () => { if (!editingWarrantyCustomerName.trim()) return showToast('Vui lòng nhập tên khách hàng', 'error'); try { await updateDoc(doc(db, 'stores', storeId, 'customers', editingWarrantyCustomerId), { name: editingWarrantyCustomerName.trim(), address: editingWarrantyCustomerAddress.trim(), phone: editingWarrantyCustomerPhone.trim() }); if (customerName === customers.find(c => c.id === editingWarrantyCustomerId)?.name) { setCustomerName(editingWarrantyCustomerName.trim()); setCustomerAddress(editingWarrantyCustomerAddress.trim()); setPhone(editingWarrantyCustomerPhone.trim()); } setEditingWarrantyCustomerId(''); showToast('Đã sửa khách hàng được tạo từ thẻ bảo hành'); } catch(e) { showToast('Không sửa được khách hàng', 'error'); } };
+  const deleteWarrantyCustomer = async (customer) => { if (!window.confirm(`Xóa khách hàng “${customer.name}” được tạo từ thẻ bảo hành?`)) return; try { await deleteDoc(doc(db, 'stores', storeId, 'customers', customer.id)); if (customerName === customer.name) { setCustomerName(''); setCustomerAddress(''); setPhone(''); } if (editingWarrantyCustomerId === customer.id) setEditingWarrantyCustomerId(''); showToast('Đã xóa khách hàng khỏi dữ liệu được tạo từ thẻ bảo hành'); } catch(e) { showToast('Không xóa được khách hàng', 'error'); } };
   const addLocation = async () => {
     const name = newLocation.trim();
     if (!name || !newLocationAddress.trim() || !newLocationPhone.trim()) {
@@ -2909,7 +2924,7 @@ function WarrantyView({ products = [], customers = [], suppliers = [], warrantyR
         const found = customers.find(c => (c.name || '').trim().toLowerCase() === name.toLowerCase());
         let saved = found;
         if (!found) {
-          const ref = await addDoc(collection(db, 'stores', storeId, 'customers'), { name, address: quickAddAddress.trim(), phone: quickAddPhone.trim(), totalDebt: 0, createdAt: new Date().toISOString() });
+          const ref = await addDoc(collection(db, 'stores', storeId, 'customers'), { name, address: quickAddAddress.trim(), phone: quickAddPhone.trim(), totalDebt: 0, createdAt: new Date().toISOString(), warrantyCardCreated: true });
           saved = { id: ref.id, name, address: quickAddAddress.trim(), phone: quickAddPhone.trim() };
         }
         setCustomerName(saved.name); setCustomerAddress(saved.address || ''); setPhone(saved.phone || '');
@@ -2954,6 +2969,8 @@ function WarrantyView({ products = [], customers = [], suppliers = [], warrantyR
     const requestToUpdate = existingRequest || linkedCustomerRequest;
     const payload = {
       recordType, customerName: customerName.trim(),
+      createdByName: requestToUpdate?.createdByName || auth.currentUser?.displayName || auth.currentUser?.email || 'Không rõ tài khoản',
+      createdByUid: requestToUpdate?.createdByUid || auth.currentUser?.uid || '',
       customerAddress: recordType === 'customer' ? customerAddress.trim() : (requestToUpdate?.customerAddress || customerAddress.trim()),
       phone: recordType === 'customer' ? phone.trim() : (requestToUpdate?.phone || phone.trim()),
       supplierName: '',
@@ -3113,6 +3130,7 @@ function WarrantyView({ products = [], customers = [], suppliers = [], warrantyR
   return <div className="flex-1 flex flex-col p-4 md:p-6 bg-gray-50 overflow-hidden h-full">
     <div className="flex flex-col sm:flex-row justify-between gap-3 mb-4"><div><h2 className="text-2xl font-bold text-gray-800 flex items-center gap-2"><ShieldAlert className="text-purple-600"/> Bảo hành</h2><p className="text-sm text-gray-500">Lập, chỉnh sửa, in lại phiếu bảo hành theo thẻ khách hàng hoặc nơi nhận bảo hành.</p></div><button onClick={()=>{if(showForm){resetForm();setShowForm(false)}else{resetForm();setShowForm(true)}}} className="bg-purple-600 text-white px-4 py-2 rounded-xl font-bold flex items-center gap-2"><Plus size={18}/>{showForm?'Đóng biểu mẫu':'Lập phiếu bảo hành'}</button></div>
     <section className="bg-white rounded-2xl border shadow-sm p-4 mb-4 space-y-3"><div><h3 className="text-lg font-bold text-gray-800">Địa chỉ bảo hành</h3><p className="text-sm text-gray-500">Quản lý tên, địa chỉ và số điện thoại nơi nhận bảo hành.</p></div><div className="grid grid-cols-1 md:grid-cols-3 gap-2"><input value={newLocation} onChange={e=>setNewLocation(e.target.value)} className="p-2 border rounded-lg" placeholder="Tên nơi bảo hành"/><input value={newLocationAddress} onChange={e=>setNewLocationAddress(e.target.value)} className="p-2 border rounded-lg" placeholder="Địa chỉ"/><input value={newLocationPhone} onChange={e=>setNewLocationPhone(e.target.value)} className="p-2 border rounded-lg" placeholder="Số điện thoại"/></div><div className="flex flex-wrap gap-2"><button type="button" onClick={addLocation} className="px-4 py-2 rounded-lg bg-purple-600 text-white font-bold">{editingLocationName?'Lưu chỉnh sửa':'Thêm nơi bảo hành'}</button>{editingLocationName&&<button type="button" onClick={()=>{setEditingLocationName('');setNewLocation('');setNewLocationAddress('');setNewLocationPhone('');}} className="px-4 py-2 rounded-lg border font-bold">Hủy sửa</button>}</div>{locations.length>0&&<div className="overflow-x-auto"><table className="w-full text-sm text-left"><thead className="bg-gray-100"><tr><th className="p-2">Tên nơi bảo hành</th><th className="p-2">Địa chỉ</th><th className="p-2">Số điện thoại</th><th className="p-2">Thao tác</th></tr></thead><tbody>{locations.map((loc,i)=><tr key={locationName(loc)||i} className="border-t"><td className="p-2 font-semibold">{locationName(loc)}</td><td className="p-2">{loc?.address||'—'}</td><td className="p-2">{loc?.phone||'—'}</td><td className="p-2"><div className="flex gap-2"><button type="button" onClick={()=>editWarrantyLocation(loc)} className="px-3 py-1 rounded border font-bold"><Edit size={13} className="inline mr-1"/>Sửa</button><button type="button" onClick={()=>deleteWarrantyLocation(loc)} className="px-3 py-1 rounded border border-blue-200 text-blue-600 font-bold"><Trash2 size={13} className="inline mr-1"/>Xóa</button></div></td></tr>)}</tbody></table></div>}</section>
+    <section className="bg-white rounded-2xl border shadow-sm p-4 mb-4 space-y-4"><div><h3 className="text-lg font-bold">Sửa / xóa dữ liệu thêm mới trong thẻ bảo hành</h3><p className="text-sm text-gray-500">Chỉ quản lý mục được tạo mới từ thẻ bảo hành. Xóa danh mục không xóa phiếu đã lưu và không thay đổi thẻ khác.</p></div><div><h4 className="font-bold mb-2">Khách hàng thêm mới</h4>{warrantyAddedCustomers.length===0?<p className="text-sm text-gray-400">Chưa có khách hàng mới được đánh dấu là tạo từ thẻ bảo hành.</p>:warrantyAddedCustomers.map(c=><div key={c.id} className="border rounded-lg p-3 mb-2">{editingWarrantyCustomerId===c.id?<div className="grid grid-cols-1 md:grid-cols-3 gap-2"><input className="p-2 border rounded" value={editingWarrantyCustomerName} onChange={e=>setEditingWarrantyCustomerName(e.target.value)} placeholder="Tên"/><input className="p-2 border rounded" value={editingWarrantyCustomerAddress} onChange={e=>setEditingWarrantyCustomerAddress(e.target.value)} placeholder="Địa chỉ"/><input className="p-2 border rounded" value={editingWarrantyCustomerPhone} onChange={e=>setEditingWarrantyCustomerPhone(e.target.value)} placeholder="Số điện thoại"/><button type="button" onClick={saveWarrantyCustomerEdit} className="px-3 py-1 bg-purple-600 text-white rounded">Lưu</button><button type="button" onClick={()=>setEditingWarrantyCustomerId('')} className="px-3 py-1 border rounded">Hủy</button></div>:<div className="flex flex-wrap items-center justify-between gap-2"><div><b>{c.name}</b><div className="text-xs text-gray-500">{c.phone||'—'} · {c.address||'—'}</div></div><div className="flex gap-2"><button type="button" onClick={()=>editWarrantyCustomer(c)} className="px-3 py-1 border rounded">Sửa</button><button type="button" onClick={()=>deleteWarrantyCustomer(c)} className="px-3 py-1 border border-red-200 text-red-600 rounded">Xóa</button></div></div>}</div>)}</div><div><h4 className="font-bold mb-2">Nhà vận chuyển thêm mới</h4>{carriers.filter(c=>typeof c==='object'&&c?.warrantyCardCreated).length===0?<p className="text-sm text-gray-400">Chưa có nhà vận chuyển mới được đánh dấu là tạo từ thẻ bảo hành.</p>:carriers.filter(c=>typeof c==='object'&&c?.warrantyCardCreated).map((c,i)=><div key={c.name||i} className="flex items-center justify-between gap-2 border rounded-lg p-3 mb-2">{editingCarrierName===c.name?<div className="flex flex-1 gap-2"><input className="p-2 border rounded flex-1" value={newCarrierName} onChange={e=>setNewCarrierName(e.target.value)}/><button type="button" onClick={()=>addCarrier(newCarrierName)} className="px-3 py-1 bg-purple-600 text-white rounded">Lưu</button><button type="button" onClick={()=>{setEditingCarrierName('');setNewCarrierName('')}} className="px-3 py-1 border rounded">Hủy</button></div>:<><b>{c.name}</b><div className="flex gap-2"><button type="button" onClick={()=>editWarrantyCarrier(c)} className="px-3 py-1 border rounded">Sửa</button><button type="button" onClick={()=>deleteWarrantyCarrier(c)} className="px-3 py-1 border border-red-200 text-red-600 rounded">Xóa</button></div></>}</div>)}</div></section>
     {showForm&&<form onSubmit={saveRequest} className="bg-white p-4 rounded-2xl border shadow-sm mb-4 space-y-3 overflow-y-auto max-h-[55vh]">
       <div className="flex gap-2"><button type="button" onClick={()=>setRecordType('customer')} className={`px-4 py-2 rounded-lg font-bold ${recordType==='customer'?'bg-purple-600 text-white':'border'}`}>Thẻ khách hàng</button><button type="button" onClick={()=>setRecordType('location')} className={`px-4 py-2 rounded-lg font-bold ${recordType==='location'?'bg-blue-600 text-white':'border'}`}>Thẻ nơi gửi bảo hành</button></div>
       {recordType==='customer'?<div className="grid grid-cols-1 md:grid-cols-2 gap-3"><div><label className="text-sm font-bold">Tên khách hàng</label><div className="mt-1 flex gap-2"><WarrantyAutocomplete value={customerName} options={customers} onChange={setCustomerName} onSelect={c=>{setCustomerName(c.name||'');setCustomerAddress(c.address||'');setPhone(c.phone||'');}} required placeholder="Gõ để tìm khách hàng đã lưu" className="min-w-0 w-full p-2 border rounded-lg font-normal"/><button type="button" onClick={()=>{setQuickAddType('customer');setQuickAddName(customerName);setQuickAddAddress(customerAddress);setQuickAddPhone(phone);}} className="px-3 rounded-lg border text-purple-700 font-bold whitespace-nowrap">+ Thêm mới</button></div></div><label className="text-sm font-bold">Số điện thoại khách hàng<input value={phone} onChange={e=>setPhone(e.target.value)} className="mt-1 w-full p-2 border rounded-lg font-normal" placeholder="Số điện thoại"/></label><label className="text-sm font-bold md:col-span-2">Địa chỉ khách hàng<input value={customerAddress} onChange={e=>setCustomerAddress(e.target.value)} className="mt-1 w-full p-2 border rounded-lg font-normal" placeholder="Địa chỉ"/></label></div>:<div className="grid grid-cols-1 md:grid-cols-2 gap-3"><div className="md:col-span-2"><label className="text-sm font-bold">Khách hàng liên quan (chỉ quản lý, không in)</label><div className="mt-1"><WarrantyAutocomplete value={customerName} options={availableRelatedCustomers} onChange={value=>{setCustomerName(value);if(!value.trim()){setItems([{productId:'',name:'',quantity:1,warranty:'',note:''}]);}}} onSelect={c=>{setCustomerName(c.name||'');setCustomerAddress(c.address||'');setPhone(c.phone||'');const linkedItems=(c.items||[]).map(it=>({...it,quantity:it.quantity||1}));setItems(linkedItems.length?linkedItems:[{productId:'',name:'',quantity:1,warranty:'',note:''}]);}} placeholder="Bấm chọn khách hàng còn đang bảo hành" className="w-full p-2 border rounded-lg font-normal"/></div><p className="mt-1 text-xs text-gray-500">Chỉ hiện khách hàng có phiếu nhận bảo hành chưa hoàn thành. Chọn khách hàng sẽ tự điền các sản phẩm còn bảo hành.</p></div></div>}
@@ -3128,9 +3146,9 @@ function WarrantyView({ products = [], customers = [], suppliers = [], warrantyR
     <div className="flex flex-col lg:flex-row gap-3 mb-3"><input value={search} onChange={e=>setSearch(e.target.value)} placeholder="Tìm nhanh STT, tên khách hàng, số điện thoại, sản phẩm, nơi bảo hành..." className="flex-1 p-2.5 border rounded-xl bg-white"/><select value={filter} onChange={e=>setFilter(e.target.value)} className="p-2.5 border rounded-xl bg-white"><option value="PENDING">Chưa hoàn thành</option><option value="COMPLETED">Đã hoàn thành</option><option value="ALL">Tất cả phiếu</option></select><select value={sortField} onChange={e=>setSortField(e.target.value)} className="p-2.5 border rounded-xl bg-white"><option value="customerName">Sắp xếp tên khách hàng</option><option value="warrantyLocation">Sắp xếp nơi nhận bảo hành</option><option value="sentAt">Sắp xếp thời gian gửi</option></select><button onClick={()=>setSortOrder(v=>v==='asc'?'desc':'asc')} className="p-2.5 border rounded-xl bg-white font-bold"><ArrowUpDown size={15} className="inline mr-1"/>{sortOrder==='asc'?'Tăng dần':'Giảm dần'}</button><select value={rowsPerPage} onChange={e=>setRowsPerPage(e.target.value)} className="p-2.5 border rounded-xl bg-white"><option value="10">10 dòng</option><option value="20">20 dòng</option><option value="50">50 dòng</option><option value="all">Tất cả</option></select><div className="flex items-center gap-2"><span className="text-sm">Khổ giấy</span><select value={paperSize} onChange={e=>setPaperSize(e.target.value)} className="p-2.5 border rounded-xl bg-white"><option>A4</option><option>A5</option></select></div></div>
     <section className="flex-1 overflow-auto bg-white rounded-xl border shadow-sm mb-4">
       <div className="p-4 border-b flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3"><div><h3 className="text-lg font-bold text-gray-800">Chi tiết bảo hành</h3><p className="text-sm text-gray-500">Tập trung phiếu nhận bảo hành của khách hàng và phiếu gửi đến nơi bảo hành trong cùng một danh sách.</p></div><button type="button" onClick={()=>{setSelectedShippingLabelIds([]);setShippingLabelPickerOpen(true);}} className="px-4 py-2 rounded-xl bg-amber-500 text-white font-bold whitespace-nowrap"><Printer size={16} className="inline mr-2"/>Chọn đơn in nhãn (tối đa 4)</button></div>
-      <div className="overflow-x-auto"><table className="w-full text-left text-sm min-w-[1200px]"><thead className="bg-gray-100 sticky top-0"><tr><th className="p-3">STT</th><th className="p-3">Tên khách hàng</th><th className="p-3">Sản phẩm bảo hành</th><th className="p-3">Nơi nhận bảo hành</th><th className="p-3">Thời gian nhận</th><th className="p-3">Thời gian gửi</th><th className="p-3">Số điện thoại khách hàng</th><th className="p-3">Nhà vận chuyển</th><th className="p-3">Trạng thái bảo hành</th><th className="p-3">Thao tác</th></tr></thead><tbody>
-        {visible.map((w, i) => { const type = w.recordType || (w.supplierName ? 'location' : 'customer'); const isLocation = type === 'location'; return <tr key={w.id} className="border-t hover:bg-gray-50 align-top"><td className="p-3">{i+1}</td><td className="p-3 font-bold">{w.customerName || '—'}</td><td className="p-3">{(w.items || []).map((it, j) => <div key={j}>{it.name || '—'}</div>)}</td><td className="p-3">{w.warrantyLocation || '—'}</td><td className="p-3 whitespace-nowrap">{formatDate(w.createdAt || w.updatedAt || w.saleDate || '')}</td><td className="p-3 whitespace-nowrap">{w.sentAt ? formatDate(w.sentAt) : '—'}</td><td className="p-3">{w.phone || '—'}</td><td className="p-3">{isLocation ? (w.carrierName || '—') : '—'}</td><td className="p-3">{w.status === 'COMPLETED' ? <span className="px-2 py-1 rounded-lg text-xs font-bold bg-green-100 text-green-700">Hoàn thành</span> : <span className="px-2 py-1 rounded-lg text-xs font-bold bg-amber-100 text-amber-800">{isLocation ? 'Đang gửi bảo hành' : 'Đang nhận bảo hành'}</span>}</td><td className="p-3"><div className="flex flex-col gap-2"><button onClick={()=>toggleWarrantyStatus(w)} className="px-3 py-1.5 rounded-lg border font-bold whitespace-nowrap">{w.status === 'COMPLETED' ? 'Chuyển lại đang bảo hành' : 'Đánh dấu hoàn thành'}</button><button onClick={()=>editRequest(w)} className="px-3 py-1.5 rounded-lg border font-bold flex items-center gap-1"><Edit size={14}/> Sửa chi tiết</button><button onClick={()=>setPrintTarget(w)} className="px-3 py-1.5 rounded-lg border font-bold flex items-center gap-1"><Printer size={14}/> In lại phiếu</button><button onClick={()=>printShippingLabel(w)} className="px-3 py-1.5 rounded-lg border border-amber-300 text-amber-800 font-bold flex items-center gap-1"><Printer size={14}/> In nhãn gửi bảo hành</button><button onClick={()=>deleteRequest(w)} className="px-3 py-1.5 rounded-lg border border-blue-200 text-blue-600 font-bold flex items-center gap-1"><Trash2 size={14}/> Xóa phiếu</button></div></td></tr>; })}
-        {visible.length===0 && <tr><td colSpan={10} className="p-8 text-center text-gray-400">Chưa có lịch sử bảo hành.</td></tr>}
+      <div className="overflow-x-auto"><table className="w-full text-left text-sm min-w-[1300px]"><thead className="bg-gray-100 sticky top-0"><tr><th className="p-3">STT</th><th className="p-3">Tên khách hàng</th><th className="p-3">Sản phẩm bảo hành</th><th className="p-3">Nơi nhận bảo hành</th><th className="p-3">Thời gian nhận</th><th className="p-3">Thời gian gửi</th><th className="p-3">Số điện thoại khách hàng</th><th className="p-3">Nhà vận chuyển</th><th className="p-3">Trạng thái bảo hành</th><th className="p-3">Tài khoản lập phiếu</th><th className="p-3">Thao tác</th></tr></thead><tbody>
+        {visible.map((w, i) => { const type = w.recordType || (w.supplierName ? 'location' : 'customer'); const isLocation = type === 'location'; return <tr key={w.id} className="border-t hover:bg-gray-50 align-top"><td className="p-3">{i+1}</td><td className="p-3 font-bold">{w.customerName || '—'}</td><td className="p-3">{(w.items || []).map((it, j) => <div key={j}>{it.name || '—'}</div>)}</td><td className="p-3">{w.warrantyLocation || '—'}</td><td className="p-3 whitespace-nowrap">{formatDate(w.createdAt || w.updatedAt || w.saleDate || '')}</td><td className="p-3 whitespace-nowrap">{w.sentAt ? formatDate(w.sentAt) : '—'}</td><td className="p-3">{w.phone || '—'}</td><td className="p-3">{isLocation ? (w.carrierName || '—') : '—'}</td><td className="p-3">{w.status === 'COMPLETED' ? <span className="px-2 py-1 rounded-lg text-xs font-bold bg-green-100 text-green-700">Hoàn thành</span> : <span className="px-2 py-1 rounded-lg text-xs font-bold bg-amber-100 text-amber-800">{isLocation ? 'Đang gửi bảo hành' : 'Đang nhận bảo hành'}</span>}</td><td className="p-3">{w.createdByName || w.createdByEmail || w.createdByUid || '—'}</td><td className="p-3"><div className="flex flex-col gap-2"><button onClick={()=>toggleWarrantyStatus(w)} className="px-3 py-1.5 rounded-lg border font-bold whitespace-nowrap">{w.status === 'COMPLETED' ? 'Chuyển lại đang bảo hành' : 'Đánh dấu hoàn thành'}</button><button onClick={()=>editRequest(w)} className="px-3 py-1.5 rounded-lg border font-bold flex items-center gap-1"><Edit size={14}/> Sửa chi tiết</button><button onClick={()=>setPrintTarget(w)} className="px-3 py-1.5 rounded-lg border font-bold flex items-center gap-1"><Printer size={14}/> In lại phiếu</button><button onClick={()=>printShippingLabel(w)} className="px-3 py-1.5 rounded-lg border border-amber-300 text-amber-800 font-bold flex items-center gap-1"><Printer size={14}/> In nhãn gửi bảo hành</button><button onClick={()=>deleteRequest(w)} className="px-3 py-1.5 rounded-lg border border-blue-200 text-blue-600 font-bold flex items-center gap-1"><Trash2 size={14}/> Xóa phiếu</button></div></td></tr>; })}
+        {visible.length===0 && <tr><td colSpan={11} className="p-8 text-center text-gray-400">Chưa có lịch sử bảo hành.</td></tr>}
       </tbody></table></div>
     </section>
     <div className="flex flex-wrap gap-2 text-xs"><button type="button" onClick={() => navigateMainTab('products')} className="text-blue-700 underline">Mở thẻ Sản phẩm</button><button type="button" onClick={() => navigateMainTab('customers')} className="text-blue-700 underline">Mở thẻ Khách hàng</button><button type="button" onClick={() => navigateMainTab('suppliers')} className="text-blue-700 underline">Mở thẻ Nhà cung cấp</button></div>
@@ -4517,36 +4535,97 @@ function SettingsView({ db, storeId, showToast, storeConfig }) {
     if (!window.JSZip) throw new Error('Thư viện ZIP chưa sẵn sàng');
     return window.JSZip;
   };
-  const makeZipWorkbook = (groupKey, rows) => {
+  const ZIP_RESTORE_COLUMN = '__DỮ_LIỆU_PHỤC_HỒI';
+  const ZIP_FIELD_LABELS = {
+    id: 'ID', invoiceCode: 'Mã hóa đơn', receiptCode: 'Mã phiếu', code: 'Mã', name: 'Tên',
+    customerName: 'Tên khách hàng', customerPhone: 'SĐT khách hàng', customerCode: 'Mã khách hàng',
+    supplierName: 'Tên nhà cung cấp', supplierPhone: 'SĐT nhà cung cấp', supplierCode: 'Mã nhà cung cấp',
+    productName: 'Tên sản phẩm', productCode: 'Mã sản phẩm', quantity: 'Số lượng', qty: 'Số lượng',
+    price: 'Đơn giá', importCost: 'Giá nhập', salePrice: 'Giá bán', total: 'Tổng tiền', totalAmount: 'Tổng tiền',
+    paid: 'Đã thanh toán', paidAmount: 'Đã thanh toán', debt: 'Còn nợ', totalDebt: 'Tổng công nợ',
+    status: 'Trạng thái', paymentMethod: 'Phương thức thanh toán', note: 'Ghi chú',
+    date: 'Thời gian', createdAt: 'Thời gian tạo', updatedAt: 'Thời gian cập nhật', createdByName: 'Người tạo',
+    warrantyStatus: 'Trạng thái bảo hành', location: 'Nơi bảo hành', carrier: 'Nhà vận chuyển', amount: 'Số tiền', stock: 'Tồn kho'
+  };
+  const zipDateValue = (data) => {
+    const keys = ['date', 'createdAt', 'created_at', 'createdTime', 'createdDate', 'time', 'timestamp', 'updatedAt', 'sentAt', 'saleDate', 'importDate'];
+    for (const key of keys) {
+      const value = data?.[key];
+      if (value == null || value === '') continue;
+      if (typeof value === 'number' && Number.isFinite(value)) return value < 1e12 ? value * 1000 : value;
+      const parsed = new Date(value).getTime();
+      if (Number.isFinite(parsed)) return parsed;
+    }
+    return 0;
+  };
+  const sortZipRows = (rows) => [...rows].sort((a, b) => zipDateValue(b.data) - zipDateValue(a.data) || String(a.id).localeCompare(String(b.id), 'vi'));
+  const zipReadableValue = (value) => {
+    if (value == null) return '';
+    if (typeof value === 'boolean') return value ? 'Có' : 'Không';
+    if (Array.isArray(value)) {
+      return value.map(item => {
+        if (item == null) return '';
+        if (typeof item !== 'object') return String(item);
+        const name = item.productName || item.name || item.product || item.title || item.code || '';
+        const qty = item.quantity ?? item.qty ?? item.count;
+        const price = item.price ?? item.salePrice ?? item.importCost ?? item.cost;
+        const total = item.total ?? item.amount ?? item.subtotal;
+        const parts = [];
+        if (name) parts.push(String(name));
+        if (qty != null) parts.push(`SL ${qty}`);
+        if (price != null) parts.push(`ĐG ${price}`);
+        if (total != null) parts.push(`TT ${total}`);
+        return parts.length ? parts.join(' | ') : Object.entries(item).filter(([k,v])=>v!=null && typeof v!=='object').map(([k,v])=>`${k}: ${v}`).join('; ');
+      }).filter(Boolean).join(' || ');
+    }
+    if (typeof value === 'object') return Object.entries(value).filter(([k,v])=>v!=null && typeof v!=='object').map(([k,v])=>`${ZIP_FIELD_LABELS[k] || k}: ${zipReadableValue(v)}`).join('; ');
+    return value;
+  };
+  const flattenZipRecord = (data, prefix = '', out = {}) => {
+    Object.entries(data || {}).forEach(([key, value]) => {
+      if (value === undefined) return;
+      const path = prefix ? `${prefix}.${key}` : key;
+      if (value && typeof value === 'object' && !Array.isArray(value) && !(value instanceof Date)) {
+        const entries = Object.entries(value);
+        if (entries.length && prefix.split('.').length < 2) flattenZipRecord(value, path, out);
+        else out[ZIP_FIELD_LABELS[path] || ZIP_FIELD_LABELS[key] || path] = zipReadableValue(value);
+      } else {
+        const label = ZIP_FIELD_LABELS[path] || ZIP_FIELD_LABELS[key] || path;
+        out[label] = zipReadableValue(value);
+      }
+    });
+    return out;
+  };
+  const makeZipWorkbook = (rows) => {
     const XLSX = window.XLSX;
-    // Các cột đọc được cho người dùng + cột JSON đầy đủ để phục hồi nguyên trạng.
-    // Không dùng JSON làm cột duy nhất như bản trước vì khi mở Excel chỉ thấy mã/dữ liệu thô.
-    const readable = (row) => {
-      const d = row.data || {};
-      const base = { ID: row.id };
-      if (groupKey === 'orders') return {...base, 'Số hóa đơn': d.invoiceCode || d.code || '', 'Ngày giờ': d.date || d.createdAt || '', 'Mã khách hàng': d.customerCode || d.customerId || '', 'Tên khách hàng': d.customerName || '', 'Người bán': d.sellerName || d.createdByName || '', 'Tổng tiền': Number(d.total ?? d.totalAmount) || 0, 'Đã thanh toán': Number(d.paidAmount) || 0, 'Còn nợ': Number(d.remainingDebt ?? ((Number(d.total ?? d.totalAmount)||0)-(Number(d.paidAmount)||0))) || 0, 'Số dòng hàng': Array.isArray(d.items) ? d.items.length : 0, 'Chi tiết sản phẩm': JSON.stringify(d.items || [])};
-      if (groupKey === 'imports') return {...base, 'Số phiếu nhập': d.receiptCode || d.invoiceCode || d.code || '', 'Ngày giờ': d.date || d.createdAt || '', 'Mã nhà cung cấp': d.supplierCode || d.supplierId || '', 'Tên nhà cung cấp': d.supplierName || '', 'Người nhập': d.createdByName || '', 'Tổng tiền': Number(d.total ?? d.totalAmount) || 0, 'Đã thanh toán': Number(d.paidAmount) || 0, 'Còn nợ': Number(d.remainingDebt ?? ((Number(d.total ?? d.totalAmount)||0)-(Number(d.paidAmount)||0))) || 0, 'Số dòng hàng': Array.isArray(d.items) ? d.items.length : 0, 'Chi tiết sản phẩm': JSON.stringify(d.items || [])};
-      if (groupKey === 'products') return {...base, 'Mã sản phẩm': d.code || '', 'Tên sản phẩm': d.name || '', 'Nhóm hàng': d.category || '', 'Đơn vị tính': d.unit || '', 'Giá bán': Number(d.price) || 0, 'Giá vốn': Number(d.cost) || 0, 'Tồn kho': Number(d.stock) || 0};
-      if (groupKey === 'customers') return {...base, 'Mã khách hàng': d.code || '', 'Tên khách hàng': d.name || '', 'Điện thoại': d.phone || '', 'Địa chỉ': d.address || '', 'Tổng nợ': Number(d.originalDebt ?? d.totalDebt) || 0, 'Nợ còn lại': Number(d.totalDebt) || 0};
-      if (groupKey === 'suppliers') return {...base, 'Mã nhà cung cấp': d.code || '', 'Tên nhà cung cấp': d.name || '', 'Điện thoại': d.phone || '', 'Địa chỉ': d.address || '', 'Tổng nợ': Number(d.originalDebt ?? d.totalDebt) || 0, 'Nợ còn lại': Number(d.totalDebt) || 0};
-      if (groupKey === 'expenses') return {...base, 'Ngày': d.date || '', 'Nội dung': d.note || d.description || '', 'Số tiền': Number(d.amount ?? d.total) || 0, 'Người tạo': d.createdByName || ''};
-      if (groupKey === 'warrantyRequests') return {...base, 'Mã phiếu bảo hành': d.code || d.warrantyCode || '', 'Ngày tạo': d.createdAt || d.date || '', 'Khách hàng': d.customerName || '', 'Điện thoại': d.customerPhone || d.phone || '', 'Sản phẩm': d.productName || d.name || '', 'Trạng thái': d.status || '', 'Nhà vận chuyển': d.carrierName || d.carrier || ''};
-      return base;
-    };
-    const safeRows = rows.map(row => ({ ...readable(row), 'Dữ liệu JSON': JSON.stringify(row.data) }));
+    const orderedRows = sortZipRows(rows);
+    const displayRows = orderedRows.map(row => ({ ...flattenZipRecord(row.data), ID: row.id, [ZIP_RESTORE_COLUMN]: JSON.stringify(row.data) }));
+    // Giữ nguyên thứ tự cột ổn định: ID, các cột nghiệp vụ, rồi cột phục hồi bị ẩn.
+    const keys = Array.from(new Set(displayRows.flatMap(row => Object.keys(row))));
+    const visibleKeys = keys.filter(key => key !== ZIP_RESTORE_COLUMN);
+    const columnOrder = ['ID', ...visibleKeys.filter(key => key !== 'ID'), ZIP_RESTORE_COLUMN];
+    const ws = XLSX.utils.json_to_sheet(displayRows.length ? displayRows : [{ ID: '', [ZIP_RESTORE_COLUMN]: '' }], { header: columnOrder });
+    ws['!cols'] = columnOrder.map(key => key === ZIP_RESTORE_COLUMN ? { wch: 0, hidden: true } : ({ wch: Math.min(32, Math.max(12, key.length + 2)) }));
+    ws['!autofilter'] = { ref: XLSX.utils.encode_range({ s: { r: 0, c: 0 }, e: { r: Math.max(0, displayRows.length), c: columnOrder.length - 1 } }) };
+    ws['!freeze'] = { xSplit: 0, ySplit: 1, topLeftCell: 'A2', activePane: 'bottomLeft', state: 'frozen' };
     const wb = XLSX.utils.book_new();
-    XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(safeRows.length ? safeRows : [{ ID: '', 'Dữ liệu JSON': '' }]), 'Data');
-    return XLSX.write(wb, { bookType: 'xlsx', type: 'array' });
+    XLSX.utils.book_append_sheet(wb, ws, 'DuLieu');
+    return XLSX.write(wb, { bookType: 'xlsx', type: 'array', compression: true });
   };
   const handleExportAllZip = async () => {
-    setZipBusy(true); setZipRestoreProgress('Đang đọc dữ liệu Firebase...');
+    if (zipBusy) return;
+    setZipBusy(true); setZipRestoreProgress('Đang chuẩn bị xuất ZIP...');
     try {
       if (!window.XLSX) throw new Error('Thư viện Excel chưa sẵn sàng; hãy tải lại trang.');
       const JSZip = await ensureJSZip();
       const all = {};
-      for (const group of ZIP_GROUPS) {
+      for (let i = 0; i < ZIP_GROUPS.length; i++) {
+        const group = ZIP_GROUPS[i];
+        setZipRestoreProgress(`Đang đọc ${group.label} từ Firebase (${i + 1}/${ZIP_GROUPS.length})...`);
         const snap = await getDocs(collection(db, 'stores', storeId, group.key));
-        all[group.key] = snap.docs.map(d => ({ id: d.id, data: d.data() }));
+        all[group.key] = sortZipRows(snap.docs.map(d => ({ id: d.id, data: d.data() })));
+        setZipRestoreProgress(`Đã đọc ${group.label}: ${all[group.key].length} bản ghi. Đang tiếp tục...`);
+        await new Promise(resolve => setTimeout(resolve, 0));
       }
       const orders = all.orders || [], importsData = all.imports || [], products = all.products || [];
       const customers = all.customers || [], suppliers = all.suppliers || [], expenses = all.expenses || [], warranties = all.warrantyRequests || [];
@@ -4566,15 +4645,26 @@ function SettingsView({ db, storeId, showToast, storeConfig }) {
       ];
       const zip = new JSZip();
       const reportWb = window.XLSX.utils.book_new();
-      window.XLSX.utils.book_append_sheet(reportWb, window.XLSX.utils.json_to_sheet(reportRows), 'BaoCaoTongHop');
-      zip.file('01_Bao_Cao_Tong_Hop.xlsx', window.XLSX.write(reportWb,{bookType:'xlsx',type:'array'}));
-      for (const group of ZIP_GROUPS) zip.file(group.file, makeZipWorkbook(group.key, all[group.key] || []));
-      zip.file('README.txt', 'ZIP sao lưu dữ liệu QUẢN LÝ BÁN HÀNG. Mỗi file Excel có các cột dễ đọc, cột ID và cột Dữ liệu JSON để phục hồi đầy đủ trường dữ liệu. Khi nhập ZIP, ID trùng sẽ được cập nhật; ID chưa có sẽ được tạo mới. Bản ghi không nằm trong ZIP không bị xóa.');
-      const blob = await zip.generateAsync({type:'blob',compression:'DEFLATE'});
+      const reportWs = window.XLSX.utils.json_to_sheet(reportRows);
+      reportWs['!cols'] = [{wch:34},{wch:22}];
+      window.XLSX.utils.book_append_sheet(reportWb, reportWs, 'BaoCaoTongHop');
+      zip.file('01_Bao_Cao_Tong_Hop.xlsx', window.XLSX.write(reportWb,{bookType:'xlsx',type:'array',compression:true}));
+      for (let i = 0; i < ZIP_GROUPS.length; i++) {
+        const group = ZIP_GROUPS[i];
+        setZipRestoreProgress(`Đang tạo Excel ${group.label} (${i + 1}/${ZIP_GROUPS.length})...`);
+        zip.file(group.file, makeZipWorkbook(all[group.key] || []));
+        await new Promise(resolve => setTimeout(resolve, 0));
+      }
+      zip.file('README.txt', 'Sao lưu QUẢN LÝ BÁN HÀNG: gồm 8 file Excel. Các cột nghiệp vụ được hiển thị và sắp xếp theo thời gian mới nhất trước. Cột __DỮ_LIỆU_PHỤC_HỒI bị ẩn trong Excel để giữ nguyên toàn bộ dữ liệu gốc phục hồi. Khi nhập ZIP, ID trùng sẽ được cập nhật; ID chưa có sẽ được tạo mới. Bản ghi không nằm trong ZIP không bị xóa. File Báo cáo tổng hợp chỉ để xem, không nhập vào Firebase.');
+      setZipRestoreProgress('Đã tạo 8 file Excel. Đang nén ZIP, vui lòng giữ trang mở...');
+      const blob = await zip.generateAsync({type:'blob',compression:'DEFLATE',compressionOptions:{level:3}}, metadata => {
+        setZipRestoreProgress(`Đang nén ZIP: ${Math.round(metadata.percent)}%...`);
+      });
       const url = URL.createObjectURL(blob); const a = document.createElement('a');
-      a.href = url; a.download = `Sao_Luu_Du_Lieu_${getVietnamDateKey()}.zip`; document.body.appendChild(a); a.click(); a.remove(); URL.revokeObjectURL(url);
-      setZipRestoreProgress('Đã xuất ZIP gồm 8 file Excel.');
-      showToast('Đã xuất ZIP gồm 8 file Excel.');
+      a.href = url; a.download = `Sao_Luu_Du_Lieu_${getVietnamDateKey()}.zip`; document.body.appendChild(a); a.click(); a.remove();
+      setTimeout(() => URL.revokeObjectURL(url), 30000);
+      setZipRestoreProgress(`Đã xuất ZIP gồm 8 file Excel. Đơn hàng: ${orders.length}; Nhập hàng: ${importsData.length}; Sản phẩm: ${products.length}; Bảo hành: ${warranties.length}; Khách hàng: ${customers.length}; Nhà cung cấp: ${suppliers.length}; Chi phí: ${expenses.length}.`);
+      showToast('Đã xuất ZIP gồm 8 file Excel; các bảng đã được sắp xếp theo thời gian.');
     } catch (err) { console.error(err); setZipRestoreProgress(`Xuất ZIP thất bại: ${err.message||'Lỗi không xác định'}`); showToast(`Không xuất được ZIP: ${err.message||'Lỗi'}`, 'error'); }
     finally { setZipBusy(false); }
   };
@@ -4594,7 +4684,7 @@ function SettingsView({ db, storeId, showToast, storeConfig }) {
         const sheet = wb.Sheets[wb.SheetNames[0]];
         const raw = window.XLSX.utils.sheet_to_json(sheet,{defval:'',raw:true});
         const rows = raw.map(row => {
-          let data = null; try { data = JSON.parse(row['Dữ liệu JSON'] || 'null'); } catch (_) {}
+          let data = null; try { data = JSON.parse(row[ZIP_RESTORE_COLUMN] || row['Dữ liệu JSON'] || 'null'); } catch (_) {}
           const id = String(row.ID || row.id || '').trim();
           return id && data && typeof data === 'object' ? {id,data} : null;
         }).filter(Boolean);
@@ -4634,17 +4724,16 @@ function SettingsView({ db, storeId, showToast, storeConfig }) {
         const isCustomer=type==='customers'; const contactsSnap=await getDocs(collection(db,'stores',storeId,type));
         const txCollection=isCustomer?'orders':'imports'; const txSnap=await getDocs(collection(db,'stores',storeId,txCollection));
         const norm=v=>String(v||'').trim().toLocaleLowerCase('vi');
-        const contactRows = await Promise.all(contactsSnap.docs.map(async d => {
-          const c={id:d.id,...d.data()};
-          const linked=txSnap.docs.filter(td=>{const t=td.data();return (isCustomer && (t.customerId===c.id || (norm(t.customerName)===norm(c.name) && norm(t.customerCode)===norm(c.code))) ) || (!isCustomer && (t.supplierId===c.id || (norm(t.supplierName)===norm(c.name) && norm(t.supplierCode)===norm(c.code))));});
+        const contactRows=[];
+        for(const d of contactsSnap.docs){
+          const c={id:d.id,...d.data()}; const linked=txSnap.docs.filter(td=>{const t=td.data();return (isCustomer && (t.customerId===c.id || (norm(t.customerName)===norm(c.name) && norm(t.customerCode)===norm(c.code))) ) || (!isCustomer && (t.supplierId===c.id || (norm(t.supplierName)===norm(c.name) && norm(t.supplierCode)===norm(c.code))));});
           const debtDetails=linked.map(td=>{const t=td.data();return {'Mã giao dịch':t.invoiceCode||t.receiptCode||t.code||td.id,transactionId:td.id,'Ngày':t.date||'', 'Tổng tiền':Number(t.total??t.totalAmount)||0,'Đã trả':Number(t.paidAmount)||0,'Nợ còn lại':Number(t.remainingDebt ?? (Number(t.total ?? t.totalAmount ?? 0)-Number(t.paidAmount||0)))||0,'Ghi chú':t.debtPaymentNote||t.note||''};});
-          // Đọc lịch sử thanh toán song song để không phải chờ từng khách hàng/NCC lần lượt.
           const paySnap=await getDocs(collection(db,'stores',storeId,type,c.id,'debtPayments'));
           const payments=paySnap.docs.map(pd=>({id:pd.id,...pd.data()}));
           const totalDebt=debtDetails.reduce((a,x)=>a+Number(x['Tổng tiền']||0),0);
           const debtSum=Number(c.totalDebt)||debtDetails.reduce((a,x)=>a+Number(x['Nợ còn lại']||0),0);
-          return {'ID':c.id,[isCustomer?'Mã khách hàng':'Mã nhà cung cấp']:c.code||'', [isCustomer?'Tên khách hàng':'Tên nhà cung cấp']:c.name||'', 'Tổng nợ':Number(c.originalDebt)||totalDebt||Number(c.totalDebt)||0,'Nợ còn lại':Number(c.totalDebt)||debtSum,'Điện thoại':c.phone||'','Địa chỉ':c.address||'','Chi tiết nợ (JSON)':JSON.stringify(debtDetails),'Lịch sử thanh toán (JSON)':JSON.stringify(payments),'Dữ liệu JSON':JSON.stringify(c)};
-        }));
+          contactRows.push({[isCustomer?'Mã khách hàng':'Mã nhà cung cấp']:c.code||'', [isCustomer?'Tên khách hàng':'Tên nhà cung cấp']:c.name||'', 'Tổng nợ':Number(c.originalDebt)||totalDebt||Number(c.totalDebt)||0,'Nợ còn lại':Number(c.totalDebt)||debtSum,'Điện thoại':c.phone||'','Địa chỉ':c.address||'','Chi tiết nợ (JSON)':JSON.stringify(debtDetails),'Lịch sử thanh toán (JSON)':JSON.stringify(payments)});
+        }
         const wb=window.XLSX.utils.book_new();
         window.XLSX.utils.book_append_sheet(wb,window.XLSX.utils.json_to_sheet(contactRows),'DanhBa');
         window.XLSX.writeFile(wb,`CongNo_${type}_${new Date().toISOString().slice(0,10)}.xlsx`);
@@ -4654,17 +4743,17 @@ function SettingsView({ db, storeId, showToast, storeConfig }) {
       let exportData = [];
       snap.docs.forEach(d => {
         const item = d.data();
-        if (type === 'products') exportData.push({ ID: d.id, 'Mã hàng': item.code || '', 'Tên hàng': item.name || '', 'Giá bán': Number(item.price) || 0, 'Giá vốn': Number(item.cost) || 0, 'Tồn kho': Number(item.stock) || 0, 'Dữ liệu JSON': JSON.stringify(item) });
+        if (type === 'products') exportData.push({ 'Mã hàng': item.code || '', 'Tên hàng': item.name || '', 'Giá bán': Number(item.price) || 0, 'Giá vốn': Number(item.cost) || 0, 'Tồn kho': Number(item.stock) || 0 });
         if (type === 'customers') exportData.push({ 'Mã khách hàng': item.code || '', 'Tên khách hàng': item.name || '', 'Tổng nợ': Number(item.totalDebt) || 0, 'Địa chỉ': item.address || '', 'Điện thoại': item.phone || '' });
         if (type === 'suppliers') exportData.push({ 'Mã nhà cung cấp': item.code || '', 'Tên nhà cung cấp': item.name || '', 'Tổng nợ': Number(item.totalDebt) || 0, 'Địa chỉ': item.address || '', 'Điện thoại': item.phone || '' });
-        if (type === 'expenses') exportData.push({ ID: d.id, 'Ngày': formatDate(item.date), 'Nội dung': item.note, 'Số tiền': item.amount, 'Dữ liệu JSON': JSON.stringify(item) });
-        if (type === 'orders') (item.items || []).forEach(it => exportData.push({ 'ID giao dịch': d.id, 'Dữ liệu JSON giao dịch': JSON.stringify(item), 'Mã hóa đơn': item.invoiceCode || '', 'Thời gian': item.date || '', 'Mã khách hàng': item.customerId || '', 'Tên khách hàng': item.customerName || 'Khách lẻ', 'Người bán': item.sellerName || '', 'Tổng tiền hàng': Number(item.total) || 0, 'Khách đã trả': Number(item.paidAmount) || 0, 'Nhóm hàng': it.category || '', 'Tên hàng': it.name || '', 'ĐVT': it.unit || '', 'Số lượng': Number(it.quantity ?? it.qty) || 0, 'Đơn giá': Number(it.price) || 0, 'Giá bán': Number(it.salePrice ?? it.price) || 0, 'Thành tiền': Number(it.lineTotal) || (Number(it.quantity ?? it.qty) || 0) * (Number(it.salePrice ?? it.price) || 0) }));
-        if (type === 'imports') (item.items || []).forEach(it => exportData.push({ 'ID giao dịch': d.id, 'Dữ liệu JSON giao dịch': JSON.stringify(item), 'Thời gian': item.date || '', 'Mã nhà cung cấp': item.supplierCode || '', 'Tên nhà cung cấp': item.supplierName || '', 'Điện thoại': item.supplierPhone || '', 'Người nhập': item.createdByName || '', 'Tổng tiền hàng': Number(item.total) || 0, 'Cần trả NCC': Number(item.payable) || 0, 'Ghi chú': item.note || '', 'Tổng số lượng': Number(item.totalQty) || 0, 'Tổng số mặt hàng': Number(item.totalItems) || (item.items || []).length, 'Mã hàng': it.code || '', 'Tên hàng': it.name || '', 'ĐVT': it.unit || '', 'Đơn giá': Number(it.price) || 0, 'Giá nhập': Number(it.importCost) || 0, 'Thành tiền': Number(it.lineTotal) || (Number(it.qty ?? it.quantity) || 0) * (Number(it.importCost) || 0), 'Số lượng': Number(it.qty ?? it.quantity) || 0 }));
+        if (type === 'expenses') exportData.push({ 'Ngày': formatDate(item.date), 'Nội dung': item.note, 'Số tiền': item.amount });
+        if (type === 'orders') (item.items || []).forEach(it => exportData.push({ 'Mã hóa đơn': item.invoiceCode || '', 'Thời gian': item.date || '', 'Mã khách hàng': item.customerId || '', 'Tên khách hàng': item.customerName || 'Khách lẻ', 'Người bán': item.sellerName || '', 'Tổng tiền hàng': Number(item.total) || 0, 'Khách đã trả': Number(item.paidAmount) || 0, 'Nhóm hàng': it.category || '', 'Tên hàng': it.name || '', 'ĐVT': it.unit || '', 'Số lượng': Number(it.quantity ?? it.qty) || 0, 'Đơn giá': Number(it.price) || 0, 'Giá bán': Number(it.salePrice ?? it.price) || 0, 'Thành tiền': Number(it.lineTotal) || (Number(it.quantity ?? it.qty) || 0) * (Number(it.salePrice ?? it.price) || 0) }));
+        if (type === 'imports') (item.items || []).forEach(it => exportData.push({ 'Thời gian': item.date || '', 'Mã nhà cung cấp': item.supplierCode || '', 'Tên nhà cung cấp': item.supplierName || '', 'Điện thoại': item.supplierPhone || '', 'Người nhập': item.createdByName || '', 'Tổng tiền hàng': Number(item.total) || 0, 'Cần trả NCC': Number(item.payable) || 0, 'Ghi chú': item.note || '', 'Tổng số lượng': Number(item.totalQty) || 0, 'Tổng số mặt hàng': Number(item.totalItems) || (item.items || []).length, 'Mã hàng': it.code || '', 'Tên hàng': it.name || '', 'ĐVT': it.unit || '', 'Đơn giá': Number(it.price) || 0, 'Giá nhập': Number(it.importCost) || 0, 'Thành tiền': Number(it.lineTotal) || (Number(it.qty ?? it.quantity) || 0) * (Number(it.importCost) || 0), 'Số lượng': Number(it.qty ?? it.quantity) || 0 }));
       });
       const ws = window.XLSX.utils.json_to_sheet(exportData); const wb = window.XLSX.utils.book_new();
       window.XLSX.utils.book_append_sheet(wb, ws, "Data"); window.XLSX.writeFile(wb, "Xuat_Du_Lieu_" + type + ".xlsx");
       showToast("Đã XUẤT file Excel thành công!");
-    } catch(e) { console.error("Lỗi xuất Excel:", e); showToast("Lỗi xuất file: " + (e?.message || e?.code || "Không xác định"), "error"); } finally { setLoadingFile(false); }
+    } catch(e) { showToast("Lỗi xuất file", "error"); } setLoadingFile(false);
   };
 
   const menuItems = [
