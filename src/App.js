@@ -2193,6 +2193,17 @@ function ContactManager({ type, data, orders, products = [], navigationTarget, s
       const matchTime = validDate && (filterYear === 'ALL' || d.getFullYear().toString() === filterYear);
       return matchTime;
     }).sort((a,b) => new Date(b.date) - new Date(a.date));
+    // Giữ nguyên tập giao dịch gốc để tính tổng tiền/đã thanh toán; chỉ ẩn khỏi
+    // bảng chi tiết các giao dịch không có tên sản phẩm thực tế (dòng trống).
+    // Không xóa document Firebase và không đụng đến tồn kho/công nợ.
+    const hasVisibleProductDetail = order => {
+      const items = Array.isArray(order.items) ? order.items : [];
+      return items.some(item => {
+        const name = String(item?.name || item?.productName || item?.product || item?.code || item?.productCode || '').trim();
+        return Boolean(name);
+      });
+    };
+    const visibleMatched = matched.filter(hasVisibleProductDetail);
     let totalAmount = detailTarget.manualTotalAmount !== undefined
       ? Math.max(0, Number(detailTarget.manualTotalAmount) || 0)
       : matched.reduce((s, o) => s + (Number(o.total) || 0), 0);
@@ -2201,7 +2212,7 @@ function ContactManager({ type, data, orders, products = [], navigationTarget, s
       : matched.reduce((s, o) => s + (Number(o.paidAmount) || (o.status === 'PAID' ? (Number(o.total) || 0) : 0)), 0);
     // Công nợ hiển thị theo số dư hồ sơ đã xác nhận, không cộng lại giao dịch cũ.
     let totalDebtRemain = Math.max(0, Number(detailTarget.totalDebt) || 0);
-    return { list: matched, totalAmount, totalPaid, totalDebtRemain };
+    return { list: visibleMatched, totalAmount, totalPaid, totalDebtRemain };
   }, [detailTarget, orders, filterYear, isCus]);
   const detailPageList = detailRowsPerPage === 'all' ? detailData.list : detailData.list.slice((detailCurrentPage - 1) * Number(detailRowsPerPage), detailCurrentPage * Number(detailRowsPerPage));
   const detailTotalPages = detailRowsPerPage === 'all' ? 1 : Math.max(1, Math.ceil(detailData.list.length / Number(detailRowsPerPage)));
