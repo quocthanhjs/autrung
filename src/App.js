@@ -354,15 +354,132 @@ function LoginView({ onLoginSuccess }) {
 }
 
 
-const navigateMainTab = (tab, entity = null, entityName = '') => { if (typeof window !== 'undefined') { const target = typeof entity === 'string' ? { id: entity, name: entityName } : entity; const detail = { tab, entity: target, recordId: target?.id || '', recordName: target?.name || '' }; window.history.pushState({ ...(window.history.state || {}), appPopupNavigation: { tab, entity: target || null } }, ''); window.dispatchEvent(new CustomEvent('app:navigate-tab', { detail })); window.setTimeout(() => window.dispatchEvent(new CustomEvent('app:navigate-tab', { detail })), 80); } };
+const getRequestedDetailRoute = () => {
+  if (typeof window === 'undefined') return null;
+  const params = new URLSearchParams(window.location.search);
+  const tab = params.get('detailTab') || '';
+  const id = params.get('detailId') || '';
+  const name = params.get('detailName') || '';
+  return ['products', 'customers', 'suppliers'].includes(tab) && (id || name) ? { tab, id, name, nonce: Date.now() } : null;
+};
+const openEntityInNewTab = (tab, entity, entityName = '') => {
+  if (typeof window === 'undefined') return;
+  const target = typeof entity === 'string' ? { id: entity, name: entityName } : (entity || {});
+  const url = new URL(window.location.href);
+  url.searchParams.set('detailTab', tab);
+  if (target.id) url.searchParams.set('detailId', String(target.id)); else url.searchParams.delete('detailId');
+  if (target.name) url.searchParams.set('detailName', String(target.name)); else url.searchParams.delete('detailName');
+  window.open(url.toString(), '_blank', 'noopener,noreferrer');
+};
+const navigateMainTab = (tab, entity = null, entityName = '') => {
+  if (typeof window === 'undefined') return;
+  const target = typeof entity === 'string' ? { id: entity, name: entityName } : entity;
+  if (target && ['products', 'customers', 'suppliers'].includes(tab)) { openEntityInNewTab(tab, target); return; }
+  const detail = { tab, entity: target, recordId: target?.id || '', recordName: target?.name || '' };
+  window.history.pushState({ ...(window.history.state || {}), appPopupNavigation: { tab, entity: target || null } }, '');
+  window.dispatchEvent(new CustomEvent('app:navigate-tab', { detail }));
+  window.setTimeout(() => window.dispatchEvent(new CustomEvent('app:navigate-tab', { detail })), 80);
+};
+
+const DATA_EXCEL_TYPES = {
+  sales_history: { key: 'orders', label: 'Đơn hàng', file: 'Don_Hang.xlsx' },
+  imports: { key: 'imports', label: 'Nhập hàng', file: 'Nhap_Hang.xlsx' },
+  products: { key: 'products', label: 'Sản phẩm', file: 'San_Pham.xlsx' },
+  warranty: { key: 'warrantyRequests', label: 'Bảo hành', file: 'Bao_Hanh.xlsx' },
+  customers: { key: 'customers', label: 'Khách hàng', file: 'Khach_Hang.xlsx' },
+  suppliers: { key: 'suppliers', label: 'Nhà cung cấp', file: 'Nha_Cung_Cap.xlsx' },
+  expenses: { key: 'expenses', label: 'Chi phí', file: 'Chi_Phi.xlsx' }
+};
+const DATA_EXCEL_PAYLOAD = '__DU_LIEU_PHUC_HOI__';
+const ensureXLSXLibrary = () => new Promise((resolve, reject) => {
+  if (typeof window !== 'undefined' && window.XLSX) return resolve(window.XLSX);
+  const existing = document.querySelector('script[data-app-xlsx="1"]');
+  if (existing) { existing.addEventListener('load', () => resolve(window.XLSX), { once: true }); existing.addEventListener('error', () => reject(new Error('Không tải được thư viện Excel.')), { once: true }); return; }
+  const script = document.createElement('script');
+  script.src = 'https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js';
+  script.dataset.appXlsx = '1';
+  script.onload = () => window.XLSX ? resolve(window.XLSX) : reject(new Error('Thư viện Excel chưa sẵn sàng.'));
+  script.onerror = () => reject(new Error('Không tải được thư viện Excel.'));
+  document.head.appendChild(script);
+});
+const flattenExcelDisplay = (data, prefix = '', output = {}) => {
+  Object.entries(data || {}).forEach(([key, value]) => {
+    if (value === undefined) return;
+    const path = prefix ? `${prefix}.${key}` : key;
+    if (value && typeof value === 'object' && !Array.isArray(value) && !(value instanceof Date) && prefix.split('.').length < 1) flattenExcelDisplay(value, path, output);
+    else if (Array.isArray(value)) output[path] = value.map(item => item && typeof item === 'object' ? Object.entries(item).filter(([,v])=>v==null||typeof v!=='object').map(([k,v])=>`${k}: ${v ?? ''}`).join(' | ') : String(item ?? '')).join(' ; ');
+    else if (value && typeof value === 'object') output[path] = Object.entries(value).filter(([,v])=>v==null||typeof v!=='object').map(([k,v])=>`${k}: ${v ?? ''}`).join(' | ');
+    else output[path] = value == null ? '' : value;
+  });
+  return output;
+};
+function DataExcelToolbar({ activeTab, db, storeId, showToast }) {
+  const [busy, setBusy] = useState(false);
+  const [status, setStatus] = useState('');
+  const config = DATA_EXCEL_TYPES[activeTab];
+  if (!config) return null;
+  const exportExcel = async () => {
+    if (busy) return;
+    setBusy(true); setStatus('Đang xuất dữ liệu...');
+    try {
+      const XLSX = await ensureXLSXLibrary();
+      const snap = await getDocs(collection(db, 'stores', storeId, config.key));
+      const records = snap.docs.map(d => ({ id: d.id, data: d.data() }));
+      const rows = records.map(({id,data}) => ({ ID: id, ...flattenExcelDisplay(data), [DATA_EXCEL_PAYLOAD]: JSON.stringify(data) }));
+      const keys = Array.from(new Set(rows.flatMap(r => Object.keys(r))));
+      const orderedKeys = ['ID', ...keys.filter(k => k !== 'ID' && k !== DATA_EXCEL_PAYLOAD), DATA_EXCEL_PAYLOAD];
+      const ws = XLSX.utils.json_to_sheet(rows.length ? rows : [{ ID: '', [DATA_EXCEL_PAYLOAD]: '' }], { header: orderedKeys });
+      ws['!cols'] = orderedKeys.map(k => k === DATA_EXCEL_PAYLOAD ? { wch: 0, hidden: true } : { wch: Math.min(34, Math.max(12, k.length + 2)) });
+      ws['!autofilter'] = { ref: XLSX.utils.encode_range({ s: { r: 0, c: 0 }, e: { r: Math.max(0, rows.length), c: orderedKeys.length - 1 } }) };
+      ws['!freeze'] = { xSplit: 0, ySplit: 1, topLeftCell: 'A2', activePane: 'bottomLeft', state: 'frozen' };
+      const wb = XLSX.utils.book_new(); XLSX.utils.book_append_sheet(wb, ws, config.label.slice(0,31));
+      XLSX.writeFile(wb, config.file);
+      setStatus(`Đã xuất ${records.length} bản ghi ${config.label} ra Excel.`);
+      showToast(`Đã xuất Excel ${config.label}.`);
+    } catch (err) { setStatus(`Xuất Excel thất bại: ${err.message || 'Lỗi không xác định'}`); showToast(`Không xuất được Excel: ${err.message || 'Lỗi'}`, 'error'); }
+    finally { setBusy(false); }
+  };
+  const importExcel = async event => {
+    const file = event.target.files?.[0]; event.target.value = '';
+    if (!file || busy) return;
+    setBusy(true); setStatus('Đang đọc file Excel...');
+    try {
+      const XLSX = await ensureXLSXLibrary();
+      const wb = XLSX.read(await file.arrayBuffer(), { type: 'array', cellDates: true });
+      const sheet = wb.Sheets[wb.SheetNames[0]];
+      const rows = XLSX.utils.sheet_to_json(sheet, { defval: '', raw: true });
+      const parsed = rows.map(row => {
+        const id = String(row.ID || row.id || '').trim();
+        let data = null;
+        try { data = JSON.parse(row[DATA_EXCEL_PAYLOAD] || row['__DỮ_LIỆU_PHỤC_HỒI__'] || 'null'); } catch (_) {}
+        return id && data && typeof data === 'object' && !Array.isArray(data) ? { id, data } : null;
+      }).filter(Boolean);
+      if (!parsed.length) throw new Error('File không có dữ liệu phục hồi hợp lệ. Hãy dùng file Excel được xuất từ chính thẻ này.');
+      const deduped = Array.from(new Map(parsed.map(row => [row.id, row])).values());
+      const ok = window.confirm(`Nhập Excel ${config.label}\nFile: ${file.name}\nBản ghi hợp lệ: ${parsed.length}\nID trùng trong file đã gộp: ${parsed.length - deduped.length}\n\nID đã tồn tại sẽ được cập nhật; ID mới sẽ được thêm. Bản ghi không có trong file sẽ được giữ nguyên. Tiếp tục?`);
+      if (!ok) { setStatus('Đã hủy nhập; Firebase chưa thay đổi.'); return; }
+      let saved = 0;
+      for (let i = 0; i < deduped.length; i += 400) {
+        const batch = writeBatch(db);
+        deduped.slice(i, i + 400).forEach(row => { const clean = { ...row.data }; delete clean.id; batch.set(doc(db, 'stores', storeId, config.key, row.id), clean); });
+        await batch.commit(); saved += Math.min(400, deduped.length - i);
+        setStatus(`Đã ghi ${saved}/${deduped.length} bản ghi...`);
+      }
+      setStatus(`Đã nhập ${saved} bản ghi ${config.label}. Bản ghi khác không bị xóa.`);
+      showToast(`Đã nhập ${saved} bản ghi ${config.label}.`);
+    } catch (err) { setStatus(`Nhập Excel thất bại: ${err.message || 'Lỗi không xác định'}`); showToast(`Không nhập được Excel: ${err.message || 'Lỗi'}`, 'error'); }
+    finally { setBusy(false); }
+  };
+  return <section className="mx-3 mt-3 md:mx-5 bg-white border border-blue-100 rounded-xl p-3 flex flex-col sm:flex-row sm:items-center gap-3 shadow-sm"><div className="flex-1 min-w-0"><div className="font-bold text-gray-800 text-sm">Nhập / xuất Excel · {config.label}</div><div className="text-xs text-gray-500 mt-1">Excel có tiêu đề cột và dữ liệu chi tiết; có thể nhập lại file đã xuất để khôi phục bản ghi.</div>{status && <div className="text-xs text-blue-700 mt-1" role="status">{status}</div>}</div><div className="flex gap-2"><label className={`relative overflow-hidden inline-flex items-center justify-center gap-2 px-3 py-2 rounded-lg border font-semibold text-sm cursor-pointer ${busy?'opacity-50 pointer-events-none':'hover:bg-blue-50'}`}><Upload size={15}/> Nhập Excel<input type="file" accept=".xlsx,.xls" onChange={importExcel} disabled={busy} className="absolute inset-0 opacity-0 cursor-pointer"/></label><button type="button" onClick={exportExcel} disabled={busy} className="inline-flex items-center justify-center gap-2 px-3 py-2 rounded-lg bg-green-600 text-white font-semibold text-sm disabled:opacity-50"><Download size={15}/> Xuất Excel</button></div></section>;
+}
 
 export default function App() {
   const [user, setUser] = useState(null);
   const [userData, setUserData] = useState({ role: null, name: '', perms: {} });
-  const [activeTab, setActiveTab] = useState('pos');
+  const [activeTab, setActiveTab] = useState(() => getRequestedDetailRoute()?.tab || 'pos');
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const [debtPaymentReports, setDebtPaymentReports] = useState([]);
-  const [navigationTarget, setNavigationTarget] = useState(null);
+  const [navigationTarget, setNavigationTarget] = useState(() => getRequestedDetailRoute());
   useEffect(() => { const handlePopupNavigate = (event) => { const tab = event?.detail?.tab; if (['products','customers','suppliers','warranty','sales_history','imports'].includes(tab)) { setNavigationTarget({ tab, id: event?.detail?.entity?.id || event?.detail?.recordId || '', name: event?.detail?.entity?.name || event?.detail?.recordName || '', nonce: Date.now() }); setActiveTab(tab); } }; const handleBrowserBack = (event) => { const nav = event.state?.appPopupNavigation; if (nav?.tab) { const detail = { tab: nav.tab, entity: nav.entity || null, recordId: nav.entity?.id || '', recordName: nav.entity?.name || '' }; window.dispatchEvent(new CustomEvent('app:navigate-tab', { detail })); } else { window.dispatchEvent(new CustomEvent('app:close-popups')); } }; window.addEventListener('app:navigate-tab', handlePopupNavigate); window.addEventListener('popstate', handleBrowserBack); return () => { window.removeEventListener('app:navigate-tab', handlePopupNavigate); window.removeEventListener('popstate', handleBrowserBack); }; }, []);
   const [storeConfig, setStoreConfig] = useState({
     name: 'QUẢN LÝ BÁN HÀNG', address: '', phone: '', logo: '', costCalcMethod: 'LATEST',
@@ -394,7 +511,7 @@ export default function App() {
           const data = userDoc.data();
           setUser(currentUser);
           setUserData({ role: data.role, name: data.name || data.username, perms: data.permissions || {} });
-          setActiveTab(data.role === 'admin' ? 'dashboard' : 'pos');
+          setActiveTab(getRequestedDetailRoute()?.tab || (data.role === 'admin' ? 'dashboard' : 'pos'));
         }
       }
       setLoading(false);
@@ -434,7 +551,7 @@ export default function App() {
   const showToast = (msg, type = 'success') => { setToast({ msg, type }); setTimeout(() => setToast(null), 3000); };
 
   if (loading) return <div className="min-h-screen flex items-center justify-center bg-gray-50"><div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600"></div></div>;
-  if (!user) return <LoginView onLoginSuccess={(userInfo) => { setUser(userInfo); setUserData({ role: userInfo.role, name: userInfo.name, perms: userInfo.perms }); setActiveTab(userInfo.role === 'admin' ? 'dashboard' : 'pos'); }} />;
+  if (!user) return <LoginView onLoginSuccess={(userInfo) => { setUser(userInfo); setUserData({ role: userInfo.role, name: userInfo.name, perms: userInfo.perms }); setActiveTab(getRequestedDetailRoute()?.tab || (userInfo.role === 'admin' ? 'dashboard' : 'pos')); }} />;
 
   const allTabs = [
     { id: 'dashboard', icon: LayoutDashboard, label: 'Tổng quan', permId: 'tong_quan_xem' },
@@ -472,12 +589,13 @@ export default function App() {
       <nav className={`${mobileMenuOpen ? 'flex' : 'hidden'} md:flex bg-white text-gray-700 px-2 md:px-3 py-2 md:py-1 items-stretch md:items-center flex-col md:flex-row gap-1 md:gap-1 overflow-x-visible md:overflow-x-auto scrollbar-hide shadow-sm shrink-0`}>
         {visibleTabs.map(tab => {
           const activeClass = activeTab === tab.id ? 'bg-blue-800 text-white shadow ring-1 ring-blue-300' : 'bg-blue-600 text-white hover:bg-blue-700 shadow-sm';
-          return <button key={tab.id} onClick={() => { setActiveTab(tab.id); setMobileMenuOpen(false); }} className={'box-border w-full md:w-auto flex items-center justify-start md:justify-center gap-2 px-4 md:px-[14.4px] py-2.5 md:py-[9.6px] min-h-[44px] md:min-h-[46px] rounded-lg whitespace-nowrap font-semibold text-xs transition-all duration-150 border border-white/40 ' + activeClass}><tab.icon size={15}/><span>{tab.label}</span></button>;
+          return <button key={tab.id} onClick={() => { setActiveTab(tab.id); setMobileMenuOpen(false); }} className={'box-border w-full md:w-auto flex items-center justify-start md:justify-center gap-3 px-5 md:px-[19px] py-4 md:py-[12.5px] min-h-[58px] md:min-h-[60px] rounded-lg whitespace-nowrap font-semibold text-lg md:text-[15px] transition-all duration-150 border border-white/40 ' + activeClass}><tab.icon size={22}/><span>{tab.label}</span></button>;
         })}
-        <button onClick={() => { setActiveTab('pos'); setMobileMenuOpen(false); }} className="box-border w-full md:w-auto md:ml-auto flex items-center justify-start md:justify-center gap-2 px-4 md:px-[14.4px] py-2.5 md:py-[9.6px] min-h-[44px] md:min-h-[46px] rounded-lg bg-yellow-400 text-yellow-950 hover:bg-yellow-300 font-extrabold whitespace-nowrap shadow-sm border border-yellow-200 text-xs"><ShoppingCart size={15}/> Bán hàng</button>
+        <button onClick={() => { setActiveTab('pos'); setMobileMenuOpen(false); }} className="box-border w-full md:w-auto md:ml-auto flex items-center justify-start md:justify-center gap-3 px-5 md:px-[19px] py-4 md:py-[12.5px] min-h-[58px] md:min-h-[60px] rounded-lg bg-yellow-400 text-yellow-950 hover:bg-yellow-300 font-extrabold whitespace-nowrap shadow-sm border border-yellow-200 text-lg md:text-[15px]"><ShoppingCart size={22}/> Bán hàng</button>
       </nav>
       <main className="flex-1 min-w-0 overflow-auto flex flex-col min-h-[calc(100vh-104px)] relative">
         {toast && <div className={"fixed top-4 right-4 z-50 px-6 py-3.5 rounded-xl shadow-xl flex items-center gap-2 text-white animate-in slide-in-from-top-2 " + (toast.type === 'success' ? 'bg-emerald-600' : 'bg-blue-600')}><div className="bg-white/20 p-1 rounded-full">{toast.type === 'success' ? <Check size={16} /> : <AlertCircle size={16} />}</div><span className="font-bold text-sm tracking-wide">{toast.msg}</span></div>}
+        {['sales_history','imports','products','warranty','customers','suppliers','expenses'].includes(activeTab) && <DataExcelToolbar activeTab={activeTab} db={db} storeId={storeId} showToast={showToast} />}
         {activeTab === 'reports' && <ReportsView orders={orders} imports={imports} expenses={expenses} debtPaymentReports={debtPaymentReports} />}
         {activeTab === 'dashboard' && <DashboardView orders={orders} imports={imports} expenses={expenses} customers={customers} suppliers={suppliers} products={products} warrantyRequests={warrantyRequests} showToast={showToast} userData={userData} />}
         {activeTab === 'pos' && <POSView products={products} orders={orders} customers={customers} db={db} storeId={storeId} user={user} storeConfig={storeConfig} showToast={showToast} userData={userData} />}
@@ -2265,10 +2383,10 @@ function ContactManager({ type, data, orders, products = [], navigationTarget, s
               {paginatedData.map(i => {
                 const textDebtClass = i.totalDebt > 0 ? (isCus ? 'text-blue-600' : 'text-orange-600') : 'text-gray-400';
                 return (
-                  <tr key={i.id} className="border-b hover:bg-blue-50/50 cursor-pointer" onClick={() => setDetailTarget(i)}>
+                  <tr key={i.id} className="border-b hover:bg-blue-50/50 cursor-pointer" onClick={() => openEntityInNewTab(type, { id: i.id, name: i.name })}>
                     <td className="p-4" onClick={e=>e.stopPropagation()}><input type="checkbox" checked={selectedIds.includes(i.id)} onChange={() => setSelectedIds(prev => prev.includes(i.id) ? prev.filter(x=>x!==i.id) : [...prev, i.id])} className="w-4 h-4"/></td>
                     <td className="p-4 font-medium text-blue-600 underline">{i.name}</td><td className="p-4 text-gray-600">{i.phone}</td><td className={"p-4 font-bold " + textDebtClass}>{formatCurrency(i.totalDebt)}</td>
-                    <td className="p-4 text-right flex justify-end gap-1" onClick={e=>e.stopPropagation()}><button onClick={() => setDetailTarget(i)} title="Xem chi tiết giao dịch" className="text-gray-600 bg-gray-100 p-2 rounded-lg hover:bg-gray-200"><Eye size={16}/></button><button onClick={() => {setForm(i);setIsModalOpen(true);}} className="text-blue-600 bg-blue-50 p-2 rounded-lg hover:bg-blue-100"><Edit size={16}/></button><button onClick={() => handleDelete(i.id)} className="text-blue-600 bg-blue-50 p-2 rounded-lg hover:bg-blue-100"><Trash2 size={16}/></button></td>
+                    <td className="p-4 text-right flex justify-end gap-1" onClick={e=>e.stopPropagation()}><button onClick={() => openEntityInNewTab(type, { id: i.id, name: i.name })} title="Xem chi tiết giao dịch" className="text-gray-600 bg-gray-100 p-2 rounded-lg hover:bg-gray-200"><Eye size={16}/></button><button onClick={() => {setForm(i);setIsModalOpen(true);}} className="text-blue-600 bg-blue-50 p-2 rounded-lg hover:bg-blue-100"><Edit size={16}/></button><button onClick={() => handleDelete(i.id)} className="text-blue-600 bg-blue-50 p-2 rounded-lg hover:bg-blue-100"><Trash2 size={16}/></button></td>
                   </tr>
                 );
               })}
@@ -2280,7 +2398,7 @@ function ContactManager({ type, data, orders, products = [], navigationTarget, s
       </div>
       </>}
       {detailTarget && <div className="flex-1 overflow-y-auto bg-gray-50/50 border rounded-xl p-4 md:p-6 space-y-4">
-        <div className="flex flex-wrap items-center justify-between gap-3 bg-white border rounded-xl p-3"><h2 className="text-xl font-bold text-gray-800">Chi tiết: {detailTarget.name}</h2><div className="flex gap-2"><button type="button" onClick={() => { if (window.history.state?.appPopupNavigation?.tab === type) window.history.back(); else setDetailTarget(null); }} className="border rounded-lg px-3 py-2 text-sm font-semibold">← Lùi</button><button type="button" onClick={() => window.history.forward()} className="border rounded-lg px-3 py-2 text-sm font-semibold">Tiến →</button><button type="button" onClick={() => { setDetailTarget(null); window.history.replaceState({ ...(window.history.state || {}), appPopupNavigation: { tab: type, entity: null } }, ''); }} className="bg-gray-700 text-white rounded-lg px-3 py-2 text-sm font-semibold">Danh sách {isCus ? 'khách hàng' : 'nhà cung cấp'}</button></div></div>
+        <div className="flex flex-wrap items-center justify-between gap-3 bg-white border rounded-xl p-3"><h2 className="text-xl font-bold text-gray-800">Chi tiết: {detailTarget.name}</h2><div className="flex gap-2"><button type="button" onClick={() => { if (window.history.state?.appPopupNavigation?.tab === type) window.history.back(); else setDetailTarget(null); }} className="border rounded-lg px-3 py-2 text-sm font-semibold">← Lùi</button><button type="button" onClick={() => window.history.forward()} className="border rounded-lg px-3 py-2 text-sm font-semibold">Tiến →</button><button type="button" onClick={() => { setDetailTarget(null); const url = new URL(window.location.href); ['detailTab','detailId','detailName'].forEach(k=>url.searchParams.delete(k)); window.history.replaceState({ ...(window.history.state || {}), appPopupNavigation: { tab: type, entity: null } }, '', url.toString()); }} className="bg-gray-700 text-white rounded-lg px-3 py-2 text-sm font-semibold">Danh sách {isCus ? 'khách hàng' : 'nhà cung cấp'}</button></div></div>
           <div className="space-y-4">
             <div className="flex justify-between items-center bg-gray-50 p-3 rounded-xl border">
               <div><p className="text-xs text-gray-500">SĐT:</p><p className="font-bold">{detailTarget.phone || 'Trống'}</p></div>
@@ -2456,17 +2574,18 @@ function InventoryView({ products, orders, imports, warrantyRequests = [], custo
     window.addEventListener('app:close-popups', onCloseProductPage);
     return () => { window.removeEventListener('app:navigate-tab', onNavigate); window.removeEventListener('app:close-popups', onCloseProductPage); };
   }, [products]);
+  useEffect(() => {
+    if (navigationTarget?.tab !== 'products' || !(navigationTarget.id || navigationTarget.name)) return;
+    const match = (products || []).find(row => navigationTarget.id && row.id === navigationTarget.id) || (products || []).find(row => navigationTarget.name && String(row.name || '').trim().toLocaleLowerCase('vi') === navigationTarget.name.trim().toLocaleLowerCase('vi'));
+    if (match) { setSearchTerm(''); setInvCurrentPage(1); setDetailProduct(match); setProductImportYear(String(getVietnamDateParts(new Date()).year)); setShowAllDetailSales(true); }
+  }, [navigationTarget?.nonce, navigationTarget?.tab, navigationTarget?.id, navigationTarget?.name, products]);
   const [showAllDetailSales, setShowAllDetailSales] = useState(false);
   const [productSalesRows, setProductSalesRows] = useState('5');
   const [productSalesPage, setProductSalesPage] = useState(1);
   const [productImportRows, setProductImportRows] = useState('5');
   const [productImportPage, setProductImportPage] = useState(1);
-  const openProductHistory = (product, showAll = false) => {
-    if (typeof window !== 'undefined') window.history.pushState({ ...(window.history.state || {}), appPopupNavigation: { tab: 'products', entity: { id: product.id, name: product.name } } }, '');
-    setDetailProduct(product);
-    setProductImportYear(String(getVietnamDateParts(new Date()).year));
-    setShowAllDetailSales(showAll);
-    setProductSalesRows('5'); setProductSalesPage(1); setProductImportRows('5'); setProductImportPage(1);
+  const openProductHistory = (product) => {
+    openEntityInNewTab('products', { id: product.id, name: product.name });
   };
   const currentDate = new Date();
   const currentVietnamDate = getVietnamDateParts(currentDate);
@@ -2676,7 +2795,7 @@ function InventoryView({ products, orders, imports, warrantyRequests = [], custo
       {detailProduct && <div className="flex-1 overflow-y-auto bg-gray-50/50 p-4 md:p-6 space-y-4">
         <div className="flex flex-wrap items-center justify-between gap-3 bg-white border rounded-xl p-3">
           <div><h2 className="text-xl font-bold text-gray-800">Lịch sử: {detailProduct.name || ''}</h2><p className="text-sm text-gray-500">Chi tiết sản phẩm</p></div>
-          <div className="flex gap-2"><button type="button" onClick={() => { if (window.history.state?.appPopupNavigation?.tab === 'products') window.history.back(); else setDetailProduct(null); }} className="border rounded-lg px-3 py-2 text-sm font-semibold hover:bg-gray-100">← Lùi</button><button type="button" onClick={() => window.history.forward()} className="border rounded-lg px-3 py-2 text-sm font-semibold hover:bg-gray-100">Tiến →</button><button type="button" onClick={() => { setDetailProduct(null); window.history.replaceState({ ...(window.history.state || {}), appPopupNavigation: { tab: 'products', entity: null } }, ''); }} className="bg-gray-700 text-white rounded-lg px-3 py-2 text-sm font-semibold">Danh sách sản phẩm</button></div>
+          <div className="flex gap-2"><button type="button" onClick={() => { if (window.history.state?.appPopupNavigation?.tab === 'products') window.history.back(); else setDetailProduct(null); }} className="border rounded-lg px-3 py-2 text-sm font-semibold hover:bg-gray-100">← Lùi</button><button type="button" onClick={() => window.history.forward()} className="border rounded-lg px-3 py-2 text-sm font-semibold hover:bg-gray-100">Tiến →</button><button type="button" onClick={() => { setDetailProduct(null); const url = new URL(window.location.href); ['detailTab','detailId','detailName'].forEach(k=>url.searchParams.delete(k)); window.history.replaceState({ ...(window.history.state || {}), appPopupNavigation: { tab: 'products', entity: null } }, '', url.toString()); }} className="bg-gray-700 text-white rounded-lg px-3 py-2 text-sm font-semibold">Danh sách sản phẩm</button></div>
         </div>
         {detailProduct && <div className="px-1 pt-2"><button type="button" onClick={() => { setDetailProduct(null); navigateMainTab('products'); }} className="text-blue-700 underline text-sm font-semibold">Mở thẻ lưu sản phẩm</button></div>}
         {detailProduct && (
@@ -5091,21 +5210,7 @@ function SettingsView({ db, storeId, showToast, storeConfig }) {
                 <div className="flex flex-col sm:flex-row justify-end gap-2"><button type="button" onClick={()=>setZipRestorePreview(null)} disabled={zipBusy} className="rounded-xl border bg-white px-4 py-3 font-bold">Hủy</button><button type="button" onClick={confirmZipRestore} disabled={zipBusy||!zipRestorePreview.total} className="rounded-xl bg-violet-600 text-white px-4 py-3 font-bold disabled:opacity-50">{zipBusy?'Đang phục hồi...':'Xác nhận phục hồi vào Firebase'}</button></div>
               </div>}
             </div>
-            <div className="bg-white p-6 rounded-2xl border shadow-sm">
-              <h3 className="font-bold border-b pb-3 mb-2 text-gray-800 flex items-center gap-2"><FileText className="text-green-600"/> Nhập / Xuất File Excel</h3><p className="text-xs text-gray-500 mb-5">Đọc toàn bộ dòng dữ liệu trong sheet, không giới hạn 200 dòng. Khi nhập sẽ hỏi xác nhận số dòng trước khi ghi. Đơn hàng đối chiếu theo mã hóa đơn; chi phí chỉ chống trùng khi có mã phiếu, không tự bỏ giao dịch chỉ vì trùng ngày hoặc số tiền.</p>
-              {loadingFile && <div className="mb-4 text-blue-600 font-bold flex items-center gap-2"><div className="animate-spin h-5 w-5 border-2 border-blue-600 border-t-transparent rounded-full"></div> Đang xử lý file, vui lòng đợi...</div>}
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                {menuItems.map(item => (
-                  <div key={item.id} className="border border-gray-200 p-4 rounded-xl flex flex-col gap-3 bg-gray-50/50 hover:bg-gray-50 transition-colors">
-                    <span className="font-bold text-gray-800">{item.label}</span>
-                    <div className="flex gap-2 w-full">
-                      <div className="relative overflow-hidden bg-white text-gray-700 px-3 py-2 rounded-lg border shadow-sm hover:border-blue-400 flex items-center gap-2 cursor-pointer flex-1 justify-center transition-colors font-medium text-sm"> <Upload size={16} className="text-blue-500"/> Tải File Lên (Nhập) <input type="file" accept=".xls,.xlsx" onChange={(e) => handleImport(e, item.id)} disabled={loadingFile} className="absolute inset-0 opacity-0 cursor-pointer"/> </div>
-                      <button onClick={() => handleExport(item.id)} disabled={loadingFile} className="bg-white hover:bg-green-50 text-gray-700 px-3 py-2 rounded-lg border shadow-sm hover:border-green-400 flex items-center gap-2 flex-1 justify-center transition-colors font-medium text-sm"> <Download size={16} className="text-green-600"/> Tải Xuống (Xuất) </button>
-                    </div>
-                  </div>
-                ))}
-              </div>
-            </div>
+
           </div>
         )}
             {contactDebtPreview && (
