@@ -4517,9 +4517,23 @@ function SettingsView({ db, storeId, showToast, storeConfig }) {
     if (!window.JSZip) throw new Error('Thư viện ZIP chưa sẵn sàng');
     return window.JSZip;
   };
-  const makeZipWorkbook = (rows) => {
+  const makeZipWorkbook = (groupKey, rows) => {
     const XLSX = window.XLSX;
-    const safeRows = rows.map(row => ({ ID: row.id, 'Dữ liệu JSON': JSON.stringify(row.data) }));
+    // Các cột đọc được cho người dùng + cột JSON đầy đủ để phục hồi nguyên trạng.
+    // Không dùng JSON làm cột duy nhất như bản trước vì khi mở Excel chỉ thấy mã/dữ liệu thô.
+    const readable = (row) => {
+      const d = row.data || {};
+      const base = { ID: row.id };
+      if (groupKey === 'orders') return {...base, 'Số hóa đơn': d.invoiceCode || d.code || '', 'Ngày giờ': d.date || d.createdAt || '', 'Mã khách hàng': d.customerCode || d.customerId || '', 'Tên khách hàng': d.customerName || '', 'Người bán': d.sellerName || d.createdByName || '', 'Tổng tiền': Number(d.total ?? d.totalAmount) || 0, 'Đã thanh toán': Number(d.paidAmount) || 0, 'Còn nợ': Number(d.remainingDebt ?? ((Number(d.total ?? d.totalAmount)||0)-(Number(d.paidAmount)||0))) || 0, 'Số dòng hàng': Array.isArray(d.items) ? d.items.length : 0, 'Chi tiết sản phẩm': JSON.stringify(d.items || [])};
+      if (groupKey === 'imports') return {...base, 'Số phiếu nhập': d.receiptCode || d.invoiceCode || d.code || '', 'Ngày giờ': d.date || d.createdAt || '', 'Mã nhà cung cấp': d.supplierCode || d.supplierId || '', 'Tên nhà cung cấp': d.supplierName || '', 'Người nhập': d.createdByName || '', 'Tổng tiền': Number(d.total ?? d.totalAmount) || 0, 'Đã thanh toán': Number(d.paidAmount) || 0, 'Còn nợ': Number(d.remainingDebt ?? ((Number(d.total ?? d.totalAmount)||0)-(Number(d.paidAmount)||0))) || 0, 'Số dòng hàng': Array.isArray(d.items) ? d.items.length : 0, 'Chi tiết sản phẩm': JSON.stringify(d.items || [])};
+      if (groupKey === 'products') return {...base, 'Mã sản phẩm': d.code || '', 'Tên sản phẩm': d.name || '', 'Nhóm hàng': d.category || '', 'Đơn vị tính': d.unit || '', 'Giá bán': Number(d.price) || 0, 'Giá vốn': Number(d.cost) || 0, 'Tồn kho': Number(d.stock) || 0};
+      if (groupKey === 'customers') return {...base, 'Mã khách hàng': d.code || '', 'Tên khách hàng': d.name || '', 'Điện thoại': d.phone || '', 'Địa chỉ': d.address || '', 'Tổng nợ': Number(d.originalDebt ?? d.totalDebt) || 0, 'Nợ còn lại': Number(d.totalDebt) || 0};
+      if (groupKey === 'suppliers') return {...base, 'Mã nhà cung cấp': d.code || '', 'Tên nhà cung cấp': d.name || '', 'Điện thoại': d.phone || '', 'Địa chỉ': d.address || '', 'Tổng nợ': Number(d.originalDebt ?? d.totalDebt) || 0, 'Nợ còn lại': Number(d.totalDebt) || 0};
+      if (groupKey === 'expenses') return {...base, 'Ngày': d.date || '', 'Nội dung': d.note || d.description || '', 'Số tiền': Number(d.amount ?? d.total) || 0, 'Người tạo': d.createdByName || ''};
+      if (groupKey === 'warrantyRequests') return {...base, 'Mã phiếu bảo hành': d.code || d.warrantyCode || '', 'Ngày tạo': d.createdAt || d.date || '', 'Khách hàng': d.customerName || '', 'Điện thoại': d.customerPhone || d.phone || '', 'Sản phẩm': d.productName || d.name || '', 'Trạng thái': d.status || '', 'Nhà vận chuyển': d.carrierName || d.carrier || ''};
+      return base;
+    };
+    const safeRows = rows.map(row => ({ ...readable(row), 'Dữ liệu JSON': JSON.stringify(row.data) }));
     const wb = XLSX.utils.book_new();
     XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(safeRows.length ? safeRows : [{ ID: '', 'Dữ liệu JSON': '' }]), 'Data');
     return XLSX.write(wb, { bookType: 'xlsx', type: 'array' });
@@ -4554,8 +4568,8 @@ function SettingsView({ db, storeId, showToast, storeConfig }) {
       const reportWb = window.XLSX.utils.book_new();
       window.XLSX.utils.book_append_sheet(reportWb, window.XLSX.utils.json_to_sheet(reportRows), 'BaoCaoTongHop');
       zip.file('01_Bao_Cao_Tong_Hop.xlsx', window.XLSX.write(reportWb,{bookType:'xlsx',type:'array'}));
-      for (const group of ZIP_GROUPS) zip.file(group.file, makeZipWorkbook(all[group.key] || []));
-      zip.file('README.txt', 'ZIP sao lưu dữ liệu QUẢN LÝ BÁN HÀNG. Mỗi file Excel có cột ID và Dữ liệu JSON để phục hồi đầy đủ trường dữ liệu. Khi nhập ZIP, ID trùng sẽ được cập nhật; ID chưa có sẽ được tạo mới. Bản ghi không nằm trong ZIP không bị xóa.');
+      for (const group of ZIP_GROUPS) zip.file(group.file, makeZipWorkbook(group.key, all[group.key] || []));
+      zip.file('README.txt', 'ZIP sao lưu dữ liệu QUẢN LÝ BÁN HÀNG. Mỗi file Excel có các cột dễ đọc, cột ID và cột Dữ liệu JSON để phục hồi đầy đủ trường dữ liệu. Khi nhập ZIP, ID trùng sẽ được cập nhật; ID chưa có sẽ được tạo mới. Bản ghi không nằm trong ZIP không bị xóa.');
       const blob = await zip.generateAsync({type:'blob',compression:'DEFLATE'});
       const url = URL.createObjectURL(blob); const a = document.createElement('a');
       a.href = url; a.download = `Sao_Luu_Du_Lieu_${getVietnamDateKey()}.zip`; document.body.appendChild(a); a.click(); a.remove(); URL.revokeObjectURL(url);
@@ -4620,16 +4634,17 @@ function SettingsView({ db, storeId, showToast, storeConfig }) {
         const isCustomer=type==='customers'; const contactsSnap=await getDocs(collection(db,'stores',storeId,type));
         const txCollection=isCustomer?'orders':'imports'; const txSnap=await getDocs(collection(db,'stores',storeId,txCollection));
         const norm=v=>String(v||'').trim().toLocaleLowerCase('vi');
-        const contactRows=[];
-        for(const d of contactsSnap.docs){
-          const c={id:d.id,...d.data()}; const linked=txSnap.docs.filter(td=>{const t=td.data();return (isCustomer && (t.customerId===c.id || (norm(t.customerName)===norm(c.name) && norm(t.customerCode)===norm(c.code))) ) || (!isCustomer && (t.supplierId===c.id || (norm(t.supplierName)===norm(c.name) && norm(t.supplierCode)===norm(c.code))));});
+        const contactRows = await Promise.all(contactsSnap.docs.map(async d => {
+          const c={id:d.id,...d.data()};
+          const linked=txSnap.docs.filter(td=>{const t=td.data();return (isCustomer && (t.customerId===c.id || (norm(t.customerName)===norm(c.name) && norm(t.customerCode)===norm(c.code))) ) || (!isCustomer && (t.supplierId===c.id || (norm(t.supplierName)===norm(c.name) && norm(t.supplierCode)===norm(c.code))));});
           const debtDetails=linked.map(td=>{const t=td.data();return {'Mã giao dịch':t.invoiceCode||t.receiptCode||t.code||td.id,transactionId:td.id,'Ngày':t.date||'', 'Tổng tiền':Number(t.total??t.totalAmount)||0,'Đã trả':Number(t.paidAmount)||0,'Nợ còn lại':Number(t.remainingDebt ?? (Number(t.total ?? t.totalAmount ?? 0)-Number(t.paidAmount||0)))||0,'Ghi chú':t.debtPaymentNote||t.note||''};});
+          // Đọc lịch sử thanh toán song song để không phải chờ từng khách hàng/NCC lần lượt.
           const paySnap=await getDocs(collection(db,'stores',storeId,type,c.id,'debtPayments'));
           const payments=paySnap.docs.map(pd=>({id:pd.id,...pd.data()}));
           const totalDebt=debtDetails.reduce((a,x)=>a+Number(x['Tổng tiền']||0),0);
           const debtSum=Number(c.totalDebt)||debtDetails.reduce((a,x)=>a+Number(x['Nợ còn lại']||0),0);
-          contactRows.push({[isCustomer?'Mã khách hàng':'Mã nhà cung cấp']:c.code||'', [isCustomer?'Tên khách hàng':'Tên nhà cung cấp']:c.name||'', 'Tổng nợ':Number(c.originalDebt)||totalDebt||Number(c.totalDebt)||0,'Nợ còn lại':Number(c.totalDebt)||debtSum,'Điện thoại':c.phone||'','Địa chỉ':c.address||'','Chi tiết nợ (JSON)':JSON.stringify(debtDetails),'Lịch sử thanh toán (JSON)':JSON.stringify(payments)});
-        }
+          return {'ID':c.id,[isCustomer?'Mã khách hàng':'Mã nhà cung cấp']:c.code||'', [isCustomer?'Tên khách hàng':'Tên nhà cung cấp']:c.name||'', 'Tổng nợ':Number(c.originalDebt)||totalDebt||Number(c.totalDebt)||0,'Nợ còn lại':Number(c.totalDebt)||debtSum,'Điện thoại':c.phone||'','Địa chỉ':c.address||'','Chi tiết nợ (JSON)':JSON.stringify(debtDetails),'Lịch sử thanh toán (JSON)':JSON.stringify(payments),'Dữ liệu JSON':JSON.stringify(c)};
+        }));
         const wb=window.XLSX.utils.book_new();
         window.XLSX.utils.book_append_sheet(wb,window.XLSX.utils.json_to_sheet(contactRows),'DanhBa');
         window.XLSX.writeFile(wb,`CongNo_${type}_${new Date().toISOString().slice(0,10)}.xlsx`);
@@ -4639,17 +4654,17 @@ function SettingsView({ db, storeId, showToast, storeConfig }) {
       let exportData = [];
       snap.docs.forEach(d => {
         const item = d.data();
-        if (type === 'products') exportData.push({ 'Mã hàng': item.code || '', 'Tên hàng': item.name || '', 'Giá bán': Number(item.price) || 0, 'Giá vốn': Number(item.cost) || 0, 'Tồn kho': Number(item.stock) || 0 });
+        if (type === 'products') exportData.push({ ID: d.id, 'Mã hàng': item.code || '', 'Tên hàng': item.name || '', 'Giá bán': Number(item.price) || 0, 'Giá vốn': Number(item.cost) || 0, 'Tồn kho': Number(item.stock) || 0, 'Dữ liệu JSON': JSON.stringify(item) });
         if (type === 'customers') exportData.push({ 'Mã khách hàng': item.code || '', 'Tên khách hàng': item.name || '', 'Tổng nợ': Number(item.totalDebt) || 0, 'Địa chỉ': item.address || '', 'Điện thoại': item.phone || '' });
         if (type === 'suppliers') exportData.push({ 'Mã nhà cung cấp': item.code || '', 'Tên nhà cung cấp': item.name || '', 'Tổng nợ': Number(item.totalDebt) || 0, 'Địa chỉ': item.address || '', 'Điện thoại': item.phone || '' });
-        if (type === 'expenses') exportData.push({ 'Ngày': formatDate(item.date), 'Nội dung': item.note, 'Số tiền': item.amount });
-        if (type === 'orders') (item.items || []).forEach(it => exportData.push({ 'Mã hóa đơn': item.invoiceCode || '', 'Thời gian': item.date || '', 'Mã khách hàng': item.customerId || '', 'Tên khách hàng': item.customerName || 'Khách lẻ', 'Người bán': item.sellerName || '', 'Tổng tiền hàng': Number(item.total) || 0, 'Khách đã trả': Number(item.paidAmount) || 0, 'Nhóm hàng': it.category || '', 'Tên hàng': it.name || '', 'ĐVT': it.unit || '', 'Số lượng': Number(it.quantity ?? it.qty) || 0, 'Đơn giá': Number(it.price) || 0, 'Giá bán': Number(it.salePrice ?? it.price) || 0, 'Thành tiền': Number(it.lineTotal) || (Number(it.quantity ?? it.qty) || 0) * (Number(it.salePrice ?? it.price) || 0) }));
-        if (type === 'imports') (item.items || []).forEach(it => exportData.push({ 'Thời gian': item.date || '', 'Mã nhà cung cấp': item.supplierCode || '', 'Tên nhà cung cấp': item.supplierName || '', 'Điện thoại': item.supplierPhone || '', 'Người nhập': item.createdByName || '', 'Tổng tiền hàng': Number(item.total) || 0, 'Cần trả NCC': Number(item.payable) || 0, 'Ghi chú': item.note || '', 'Tổng số lượng': Number(item.totalQty) || 0, 'Tổng số mặt hàng': Number(item.totalItems) || (item.items || []).length, 'Mã hàng': it.code || '', 'Tên hàng': it.name || '', 'ĐVT': it.unit || '', 'Đơn giá': Number(it.price) || 0, 'Giá nhập': Number(it.importCost) || 0, 'Thành tiền': Number(it.lineTotal) || (Number(it.qty ?? it.quantity) || 0) * (Number(it.importCost) || 0), 'Số lượng': Number(it.qty ?? it.quantity) || 0 }));
+        if (type === 'expenses') exportData.push({ ID: d.id, 'Ngày': formatDate(item.date), 'Nội dung': item.note, 'Số tiền': item.amount, 'Dữ liệu JSON': JSON.stringify(item) });
+        if (type === 'orders') (item.items || []).forEach(it => exportData.push({ 'ID giao dịch': d.id, 'Dữ liệu JSON giao dịch': JSON.stringify(item), 'Mã hóa đơn': item.invoiceCode || '', 'Thời gian': item.date || '', 'Mã khách hàng': item.customerId || '', 'Tên khách hàng': item.customerName || 'Khách lẻ', 'Người bán': item.sellerName || '', 'Tổng tiền hàng': Number(item.total) || 0, 'Khách đã trả': Number(item.paidAmount) || 0, 'Nhóm hàng': it.category || '', 'Tên hàng': it.name || '', 'ĐVT': it.unit || '', 'Số lượng': Number(it.quantity ?? it.qty) || 0, 'Đơn giá': Number(it.price) || 0, 'Giá bán': Number(it.salePrice ?? it.price) || 0, 'Thành tiền': Number(it.lineTotal) || (Number(it.quantity ?? it.qty) || 0) * (Number(it.salePrice ?? it.price) || 0) }));
+        if (type === 'imports') (item.items || []).forEach(it => exportData.push({ 'ID giao dịch': d.id, 'Dữ liệu JSON giao dịch': JSON.stringify(item), 'Thời gian': item.date || '', 'Mã nhà cung cấp': item.supplierCode || '', 'Tên nhà cung cấp': item.supplierName || '', 'Điện thoại': item.supplierPhone || '', 'Người nhập': item.createdByName || '', 'Tổng tiền hàng': Number(item.total) || 0, 'Cần trả NCC': Number(item.payable) || 0, 'Ghi chú': item.note || '', 'Tổng số lượng': Number(item.totalQty) || 0, 'Tổng số mặt hàng': Number(item.totalItems) || (item.items || []).length, 'Mã hàng': it.code || '', 'Tên hàng': it.name || '', 'ĐVT': it.unit || '', 'Đơn giá': Number(it.price) || 0, 'Giá nhập': Number(it.importCost) || 0, 'Thành tiền': Number(it.lineTotal) || (Number(it.qty ?? it.quantity) || 0) * (Number(it.importCost) || 0), 'Số lượng': Number(it.qty ?? it.quantity) || 0 }));
       });
       const ws = window.XLSX.utils.json_to_sheet(exportData); const wb = window.XLSX.utils.book_new();
       window.XLSX.utils.book_append_sheet(wb, ws, "Data"); window.XLSX.writeFile(wb, "Xuat_Du_Lieu_" + type + ".xlsx");
       showToast("Đã XUẤT file Excel thành công!");
-    } catch(e) { showToast("Lỗi xuất file", "error"); } setLoadingFile(false);
+    } catch(e) { console.error("Lỗi xuất Excel:", e); showToast("Lỗi xuất file: " + (e?.message || e?.code || "Không xác định"), "error"); } finally { setLoadingFile(false); }
   };
 
   const menuItems = [
