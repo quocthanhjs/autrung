@@ -3772,164 +3772,126 @@ function SettingsView({ db, storeId, showToast, storeConfig }) {
     }));
   };
 
-  // Rà và sửa chi tiết sản phẩm trùng trong cùng hoặc giữa các giao dịch.
-  // Chỉ xem là trùng khi khớp đối tượng (khách/NCC), sản phẩm, thời điểm,
-  // số lượng và đơn giá. Không đụng đến tổng tiền, công nợ hoặc tồn kho.
+  // Rà chi tiết trùng trong các giao dịch đơn hàng/nhập hàng và lịch sử theo khách/NCC.
+  // Một số dữ liệu cũ lưu giao dịch của nhà cung cấp trong collection orders, vì vậy
+  // cần rà cả supplierId/supplierName trên orders, không chỉ customerId.
+  const duplicateNormalize = value => String(value ?? '').trim().toLocaleLowerCase('vi').replace(/\s+/g, ' ');
+  const duplicateNormalizeTime = value => {
+    if (value === undefined || value === null || value === '') return '';
+    let parsed;
+    if (typeof value?.toDate === 'function') parsed = value.toDate();
+    else if (value instanceof Date) parsed = value;
+    else if (typeof value === 'number') parsed = new Date(value);
+    else {
+      const raw = String(value).trim();
+      const local = raw.match(/^(?:(\d{1,2}):(\d{2})(?::(\d{2}))?\s+)?(\d{1,2})[\/. -](\d{1,2})[\/. -](\d{2,4})$/);
+      if (local) {
+        const hour=Number(local[1]||0), minute=Number(local[2]||0), second=Number(local[3]||0), day=Number(local[4]), month=Number(local[5]);
+        let year=Number(local[6]); if(year<100) year += year>=70 ? 1900 : 2000;
+        parsed = new Date(year, month-1, day, hour, minute, second);
+      } else parsed = new Date(raw);
+    }
+    return parsed && !Number.isNaN(parsed.getTime()) ? String(Math.floor(parsed.getTime() / 1000) * 1000) : duplicateNormalize(value);
+  };
+  const duplicateNormalizeNumber = value => {
+    if (typeof value === 'number') return Number.isFinite(value) ? value : NaN;
+    let raw=String(value ?? '0').trim().replace(/[^0-9,.-]/g,''); if(!raw) return 0;
+    if(raw.includes('.')&&raw.includes(',')) raw=raw.lastIndexOf(',')>raw.lastIndexOf('.') ? raw.replace(/\./g,'').replace(',','.') : raw.replace(/,/g,'');
+    else if(raw.includes(',')&&!raw.includes('.')) raw=/,\d{1,2}$/.test(raw)?raw.replace(',','.'):raw.replace(/,/g,'');
+    else if((raw.match(/\./g)||[]).length>1||/\.\d{3}$/.test(raw)) raw=raw.replace(/\./g,'');
+    return Number(raw);
+  };
+  const duplicateDetailSignatures = (type, data, item) => {
+    // Ưu tiên tên/mã hiển thị ổn định vì dữ liệu cũ đôi khi có productId khác nhau
+    // nhưng cùng một mặt hàng. Nếu không có tên/mã mới dùng ID.
+    const productKey = duplicateNormalize(item.name || item.productName || item.product || item.code || item.productCode || item.productId || item.id);
+    const rawTime = item.transactionTime || item.date || item.createdAt || item.saleDate || item.purchaseDate || data.date || data.createdAt || data.importDate || data.time || '';
+    const timeKey = duplicateNormalizeTime(rawTime);
+    const qty = duplicateNormalizeNumber(item.qty ?? item.quantity ?? item.count ?? 0);
+    if (!productKey || !timeKey || !Number.isFinite(qty) || qty <= 0) return [];
+    const roles = [];
+    const customer = data.customerId || data.customerCode || data.customerName || data.customer;
+    const supplier = data.supplierId || data.supplierCode || data.supplierName || data.supplier;
+    if (customer) roles.push({ role: 'customer', contact: customer, price: item.salePrice ?? item.price ?? item.unitPrice ?? 0 });
+    if (supplier) roles.push({ role: 'supplier', contact: supplier, price: item.importCost ?? item.cost ?? item.importPrice ?? item.price ?? 0 });
+    // Phiếu nhập thường chỉ có NCC; đơn bán thường chỉ có khách. Nếu không có contact
+    // rõ ràng thì không xóa tự động vì chưa đủ căn cứ.
+    return roles.map(({role,contact,price}) => {
+      const normalizedPrice = duplicateNormalizeNumber(price);
+      if (!Number.isFinite(normalizedPrice)) return null;
+      return [type, role, duplicateNormalize(contact), productKey, timeKey, qty, normalizedPrice].join('::');
+    }).filter(Boolean);
+  };
+
   const findDuplicateProductDetails = async () => {
     setDuplicateRepairBusy(true);
     try {
       const foundByDoc = new Map();
       const seenDetails = new Map();
-      const normalize = value => String(value ?? '').trim().toLocaleLowerCase('vi').replace(/\s+/g, ' ');
-      const normalizeTime = value => {
-        if (value === undefined || value === null || value === '') return '';
-        let parsed;
-        if (typeof value?.toDate === 'function') parsed = value.toDate();
-        else if (value instanceof Date) parsed = value;
-        else if (typeof value === 'number') parsed = new Date(value);
-        else {
-          const raw = String(value).trim();
-          // Hỗ trợ định dạng hiển thị kiểu 14:14:59 20/10/26.
-          const local = raw.match(/^(?:(\d{1,2}):(\d{2})(?::(\d{2}))?\s+)?(\d{1,2})[\/. -](\d{1,2})[\/. -](\d{2,4})$/);
-          if (local) {
-            const hour = Number(local[1] || 0), minute = Number(local[2] || 0), second = Number(local[3] || 0);
-            const day = Number(local[4]), month = Number(local[5]);
-            let year = Number(local[6]); if (year < 100) year += year >= 70 ? 1900 : 2000;
-            parsed = new Date(Date.UTC(year, month - 1, day, hour, minute, second));
-          } else parsed = new Date(raw);
-        }
-        return parsed && !Number.isNaN(parsed.getTime()) ? String(parsed.getTime()) : normalize(value);
-      };
-      const normalizeNumber = value => {
-        if (typeof value === 'number') return Number.isFinite(value) ? value : NaN;
-        let raw = String(value ?? '0').trim().replace(/[^0-9,.-]/g, '');
-        if (!raw) return 0;
-        if (raw.includes('.') && raw.includes(',')) raw = raw.lastIndexOf(',') > raw.lastIndexOf('.') ? raw.replace(/\./g, '').replace(',', '.') : raw.replace(/,/g, '');
-        else if (raw.includes(',') && !raw.includes('.')) raw = /,\d{1,2}$/.test(raw) ? raw.replace(',', '.') : raw.replace(/,/g, '');
-        else if ((raw.match(/\./g) || []).length > 1 || /\.\d{3}$/.test(raw)) raw = raw.replace(/\./g, '');
-        return Number(raw);
-      };
       for (const type of ['orders', 'imports']) {
         const snap = await getDocs(collection(db, 'stores', storeId, type));
-        const docs = snap.docs.map(d => ({ id: d.id, data: d.data() }));
-        // Sort deterministically so one canonical detail is retained.
-        docs.sort((a, b) => String(a.data.date || a.data.createdAt || a.id).localeCompare(String(b.data.date || b.data.createdAt || b.id)));
-        for (const entry of docs) {
-          const { id, data } = entry;
+        const docs = snap.docs.map(d => ({ id:d.id, data:d.data() }));
+        docs.sort((a,b)=>String(a.data.date||a.data.createdAt||a.id).localeCompare(String(b.data.date||b.data.createdAt||b.id)));
+        for (const {id,data} of docs) {
           const items = Array.isArray(data.items) ? data.items : [];
-          items.forEach((it, index) => {
-            const productKey = normalize(it.productId || it.productCode || it.code || it.name || it.productName || it.product);
-            if (!productKey) return;
-            const contactKey = type === 'orders'
-              ? normalize(data.customerId || data.customerCode || data.customerName || data.customer || '')
-              : normalize(data.supplierId || data.supplierCode || data.supplierName || data.supplier || '');
-            const rawTime = it.transactionTime || it.date || it.createdAt || data.date || data.createdAt || data.importDate || data.time || '';
-            const timeKey = normalizeTime(rawTime);
-            const qty = normalizeNumber(it.qty ?? it.quantity ?? it.count ?? 0);
-            const price = normalizeNumber(type === 'orders' ? (it.salePrice ?? it.price ?? it.unitPrice ?? 0) : (it.importCost ?? it.cost ?? it.importPrice ?? it.price ?? 0));
-            // Không có thời gian/đối tượng/số lượng thì không đủ cơ sở để xóa an toàn.
-            if (!contactKey || !timeKey || !Number.isFinite(qty) || qty <= 0 || !Number.isFinite(price)) return;
-            const signature = [type, contactKey, productKey, timeKey, qty, price].join('::');
-            if (!seenDetails.has(signature)) {
-              seenDetails.set(signature, { id, index });
-              return;
+          items.forEach((item,index) => {
+            const signatures = duplicateDetailSignatures(type,data,item);
+            for (const signature of signatures) {
+              if (!seenDetails.has(signature)) { seenDetails.set(signature,{id,index}); continue; }
+              const docKey=`${type}::${id}`;
+              if (!foundByDoc.has(docKey)) foundByDoc.set(docKey,{type,id,data,duplicateIndexes:[],duplicateSignatures:{},duplicateLineCount:0});
+              const record=foundByDoc.get(docKey);
+              if (!record.duplicateIndexes.includes(index)) {
+                record.duplicateIndexes.push(index);
+                record.duplicateLineCount++;
+              }
+              record.duplicateSignatures[index] = [...new Set([...(record.duplicateSignatures[index]||[]),signature])];
+              break;
             }
-            const docKey = `${type}::${id}`;
-            if (!foundByDoc.has(docKey)) foundByDoc.set(docKey, { type, id, data, duplicateIndexes: [], duplicateSignatures: {}, duplicateLineCount: 0 });
-            const record = foundByDoc.get(docKey);
-            record.duplicateIndexes.push(index);
-            record.duplicateSignatures[index] = signature;
-            record.duplicateLineCount++;
           });
         }
       }
-      const found = [...foundByDoc.values()];
-      setDuplicateRepairPreview({ records: found, scannedAt: new Date().toISOString() });
-      const total = found.reduce((n, r) => n + r.duplicateLineCount, 0);
-      showToast(total ? `Tìm thấy ${total} chi tiết trùng trong ${found.length} giao dịch (bao gồm trùng giữa các giao dịch). Chưa thay đổi dữ liệu.` : 'Không tìm thấy chi tiết trùng đủ điều kiện: cần khớp khách/NCC, sản phẩm, thời gian, số lượng và đơn giá. Chưa thay đổi dữ liệu.');
-    } catch (err) {
+      const found=[...foundByDoc.values()];
+      setDuplicateRepairPreview({records:found,scannedAt:new Date().toISOString()});
+      const total=found.reduce((n,r)=>n+r.duplicateLineCount,0);
+      showToast(total ? `Tìm thấy ${total} dòng chi tiết có khả năng trùng trong ${found.length} giao dịch, gồm lịch sử khách hàng và nhà cung cấp. Chưa thay đổi dữ liệu.` : 'Không tìm thấy dòng trùng đủ điều kiện. Lưu ý: nếu dữ liệu lịch sử được lưu ở collection khác orders/imports, cần bổ sung nguồn đó; chưa có dữ liệu nào bị thay đổi.');
+    } catch(err) {
       console.error(err);
-      showToast('Không thể rà dữ liệu trùng: ' + (err?.message || 'Lỗi Firestore'), 'error');
+      showToast('Không thể rà dữ liệu trùng: '+(err?.message||'Lỗi Firestore'),'error');
     } finally { setDuplicateRepairBusy(false); }
   };
 
   const applyDuplicateProductRepair = async () => {
     if (!duplicateRepairPreview || duplicateRepairBusy) return;
-    const records = duplicateRepairPreview.records || [];
-    const totalLines = records.reduce((n, r) => n + (r.duplicateIndexes || []).length, 0);
-    if (!totalLines) { showToast('Không có dữ liệu trùng để xử lý.'); return; }
-    if (!window.confirm(`Tìm thấy ${totalLines} chi tiết trùng trong ${records.length} giao dịch. Hệ thống sẽ sao lưu dữ liệu gốc vào repairArchive và chỉ loại bỏ các dòng trùng đã khớp khách/NCC, sản phẩm, thời gian, số lượng, đơn giá. Không xóa cả hóa đơn và không ghi đè tổng tiền, công nợ hoặc tồn kho. Tiếp tục?`)) return;
+    const records=duplicateRepairPreview.records||[];
+    const totalLines=records.reduce((n,r)=>n+(r.duplicateIndexes||[]).length,0);
+    if(!totalLines){showToast('Không có dữ liệu trùng để xử lý.');return;}
+    if(!window.confirm(`Tìm thấy ${totalLines} dòng chi tiết có khả năng trùng trong ${records.length} giao dịch. Hệ thống sẽ sao lưu bản gốc vào repairArchive và chỉ loại bỏ dòng trùng đã khớp đối tượng, sản phẩm, thời gian, số lượng, đơn giá. Không xóa hóa đơn và không cập nhật tổng tiền, công nợ hoặc tồn kho. Tiếp tục?`)) return;
     setDuplicateRepairBusy(true);
-    let repaired = 0, removedLines = 0;
+    let repaired=0,removedLines=0;
     try {
-      for (const record of records) {
-        const sourceRef = doc(db, 'stores', storeId, record.type, record.id);
-        const latestSnap = await getDoc(sourceRef);
-        if (!latestSnap.exists()) continue;
-        const current = latestSnap.data();
-        const items = Array.isArray(current.items) ? current.items : [];
-        // Xác minh lại chữ ký từng dòng; không xóa nếu dữ liệu đã thay đổi sau bước rà.
-        const normalizeNow = value => String(value ?? '').trim().toLocaleLowerCase('vi').replace(/\s+/g, ' ');
-        const normalizeTimeNow = value => {
-          if (value === undefined || value === null || value === '') return '';
-          let parsed;
-          if (typeof value?.toDate === 'function') parsed = value.toDate();
-          else if (value instanceof Date) parsed = value;
-          else if (typeof value === 'number') parsed = new Date(value);
-          else {
-            const raw = String(value).trim();
-            const local = raw.match(/^(?:(\d{1,2}):(\d{2})(?::(\d{2}))?\s+)?(\d{1,2})[\/. -](\d{1,2})[\/. -](\d{2,4})$/);
-            if (local) { const h=Number(local[1]||0),m=Number(local[2]||0),sec=Number(local[3]||0),day=Number(local[4]),month=Number(local[5]); let year=Number(local[6]); if(year<100)year+=year>=70?1900:2000; parsed=new Date(Date.UTC(year,month-1,day,h,m,sec)); }
-            else parsed = new Date(raw);
-          }
-          return parsed && !Number.isNaN(parsed.getTime()) ? String(parsed.getTime()) : normalizeNow(value);
-        };
-        const normalizeNumberNow = value => {
-          if (typeof value === 'number') return Number.isFinite(value) ? value : NaN;
-          let raw=String(value ?? '0').trim().replace(/[^0-9,.-]/g,''); if(!raw)return 0;
-          if(raw.includes('.')&&raw.includes(','))raw=raw.lastIndexOf(',')>raw.lastIndexOf('.')?raw.replace(/\./g,'').replace(',','.'):raw.replace(/,/g,'');
-          else if(raw.includes(',')&&!raw.includes('.'))raw=/,\d{1,2}$/.test(raw)?raw.replace(',','.'):raw.replace(/,/g,'');
-          else if((raw.match(/\./g)||[]).length>1||/\.\d{3}$/.test(raw))raw=raw.replace(/\./g,'');
-          return Number(raw);
-        };
-        const contactNow = record.type === 'orders' ? normalizeNow(current.customerId || current.customerCode || current.customerName || current.customer || '') : normalizeNow(current.supplierId || current.supplierCode || current.supplierName || current.supplier || '');
-        const timeNow = normalizeTimeNow(current.date || current.createdAt || current.importDate || current.time || '');
-        const indexes = [...new Set(record.duplicateIndexes || [])].filter(i => {
-          if (!Number.isInteger(i) || i < 0 || i >= items.length) return false;
-          const it = items[i];
-          const product = normalizeNow(it.productId || it.productCode || it.code || it.name || it.productName || it.product);
-          const itemTime = normalizeTimeNow(it.transactionTime || it.date || it.createdAt || current.date || current.createdAt || current.importDate || current.time || '');
-          const qty = normalizeNumberNow(it.qty ?? it.quantity ?? it.count ?? 0);
-          const price = normalizeNumberNow(record.type === 'orders' ? (it.salePrice ?? it.price ?? it.unitPrice ?? 0) : (it.importCost ?? it.cost ?? it.importPrice ?? it.price ?? 0));
-          const signature = [record.type, contactNow, product, itemTime, qty, price].join('::');
-          return signature === record.duplicateSignatures?.[i];
+      for(const record of records){
+        const sourceRef=doc(db,'stores',storeId,record.type,record.id);
+        const latestSnap=await getDoc(sourceRef); if(!latestSnap.exists()) continue;
+        const current=latestSnap.data(); const items=Array.isArray(current.items)?current.items:[];
+        const indexes=[...new Set(record.duplicateIndexes||[])].filter(i=>{
+          if(!Number.isInteger(i)||i<0||i>=items.length) return false;
+          const currentSignatures=duplicateDetailSignatures(record.type,current,items[i]);
+          const savedSignatures=record.duplicateSignatures?.[i]||[];
+          return savedSignatures.some(sig=>currentSignatures.includes(sig));
         }).sort((a,b)=>a-b);
-        if (!indexes.length) continue;
-        const archiveRef = doc(collection(db, 'stores', storeId, 'repairArchive'));
-        await setDoc(archiveRef, {
-          sourceCollection: record.type,
-          sourceId: record.id,
-          originalData: current,
-          archivedAt: new Date().toISOString(),
-          reason: 'duplicate-product-detail-repair-cross-transaction',
-          removedIndexes: indexes
-        });
-        const indexSet = new Set(indexes);
-        const keptItems = items.filter((_, index) => !indexSet.has(index));
-        // Chỉ cập nhật mảng chi tiết và dấu vết sao lưu. Các trường tổng tiền/công nợ/tồn kho giữ nguyên.
-        await updateDoc(sourceRef, {
-          items: keptItems,
-          duplicateRepairArchiveId: archiveRef.id,
-          duplicateRepairAt: new Date().toISOString()
-        });
-        repaired++;
-        removedLines += indexes.length;
+        if(!indexes.length) continue;
+        const archiveRef=doc(collection(db,'stores',storeId,'repairArchive'));
+        await setDoc(archiveRef,{sourceCollection:record.type,sourceId:record.id,originalData:current,archivedAt:new Date().toISOString(),reason:'duplicate-product-detail-repair-customer-supplier-history',removedIndexes:indexes});
+        const removeSet=new Set(indexes);
+        await updateDoc(sourceRef,{items:items.filter((_,index)=>!removeSet.has(index)),duplicateRepairArchiveId:archiveRef.id,duplicateRepairAt:new Date().toISOString()});
+        repaired++; removedLines+=indexes.length;
       }
       setDuplicateRepairPreview(null);
-      showToast(`Đã loại bỏ ${removedLines} chi tiết trùng trong ${repaired} giao dịch. Bản gốc đã lưu vào repairArchive; tổng tiền, công nợ và tồn kho không bị ghi đè.`);
-    } catch (err) {
+      showToast(`Đã loại bỏ ${removedLines} dòng chi tiết trùng trong ${repaired} giao dịch. Bản gốc đã sao lưu vào repairArchive; tổng tiền, công nợ và tồn kho không bị ghi đè.`);
+    } catch(err) {
       console.error(err);
-      showToast(`Đã xử lý ${repaired} giao dịch trước khi gặp lỗi. Kiểm tra repairArchive trước khi chạy lại: ${err?.message || 'Lỗi Firestore'}`, 'error');
+      showToast(`Đã xử lý ${repaired} giao dịch trước khi gặp lỗi. Kiểm tra repairArchive trước khi chạy lại: ${err?.message||'Lỗi Firestore'}`,'error');
     } finally { setDuplicateRepairBusy(false); }
   };
 
