@@ -1764,8 +1764,6 @@ function ContactManager({ type, data, orders, products = [], navigationTarget, s
   const [savingDebtPayment, setSavingDebtPayment] = useState(false);
   const [editDetailStat, setEditDetailStat] = useState(null);
   const [editingContactTransaction, setEditingContactTransaction] = useState(null);
-  // Keep an untouched copy of the original transaction so a missing Firebase document can be safely recreated.
-  const [editingContactTransactionOriginal, setEditingContactTransactionOriginal] = useState(null);
   const [savedContactTransactions, setSavedContactTransactions] = useState({});
 
   // Keep these handlers inside ContactManager so the customer/supplier detail
@@ -1920,12 +1918,8 @@ function ContactManager({ type, data, orders, products = [], navigationTarget, s
     setSavingDebtPayment(true);
     try {
       const currentSnapshot = await getDoc(transactionRef);
-      const sourceWasMissing = !currentSnapshot.exists();
-      // If the source document disappeared from Firebase, use the untouched row captured when edit was opened.
-      // Recreate the same document ID and preserve its original timestamps/metadata, while applying the edited items.
-      const originalData = sourceWasMissing ? editingContactTransactionOriginal : currentSnapshot.data();
-      if (!originalData || !Array.isArray(originalData.items)) throw new Error('Không tìm thấy dữ liệu gốc để khôi phục đơn hàng. Hãy tải lại trang, mở lại giao dịch rồi thử lại.');
-      const original = { ...originalData, id: transaction.id };
+      if (!currentSnapshot.exists()) throw new Error('Không tìm thấy chứng từ gốc trên Firebase. Hãy tải lại trang và mở lại giao dịch.');
+      const original = { ...currentSnapshot.data(), id: transaction.id };
       const items = (transaction.items || []).map(item => {
         const quantity = Math.max(0, Number(item.quantity ?? item.qty) || 0);
         const price = Math.max(0, Number(item.price ?? item.importCost ?? item.cost) || 0);
@@ -1947,7 +1941,7 @@ function ContactManager({ type, data, orders, products = [], navigationTarget, s
       const paidAmount = Math.max(0, Number(original.paidAmount ?? (oldTotal - oldRemaining)) || 0);
       if (paidAmount > total) throw new Error('Tổng tiền mới nhỏ hơn số đã thanh toán. Hãy điều chỉnh thanh toán trước khi lưu.');
       const newRemaining = Math.max(0, total - paidAmount);
-      if (!window.confirm(`${sourceWasMissing ? 'Không tìm thấy chứng từ gốc trên Firebase. Hệ thống sẽ khôi phục chứng từ cùng mã và thời gian từ dữ liệu đang hiển thị, sau đó áp dụng nội dung mới. ' : ''}Lưu thay đổi ${isCus ? 'đơn hàng' : 'phiếu nhập'}? Tổng tiền mới: ${formatCurrency(total)}. Công nợ và tồn kho sẽ được điều chỉnh theo chênh lệch.`)) return;
+      if (!window.confirm(`Lưu thay đổi ${isCus ? 'đơn hàng' : 'phiếu nhập'}? Tổng tiền mới: ${formatCurrency(total)}. Công nợ và tồn kho sẽ được điều chỉnh theo chênh lệch.`)) return;
 
       const batch = writeBatch(db);
       // Quy đổi mỗi dòng hàng về đúng ID sản phẩm trong kho trước khi tính chênh lệch tồn.
@@ -1980,18 +1974,12 @@ function ContactManager({ type, data, orders, products = [], navigationTarget, s
         if (stock + delta < 0) throw new Error('Tồn kho không đủ để điều chỉnh: ' + (product.name || productId));
         batch.update(doc(db, 'stores', storeId, 'products', product.id), { stock: stock + delta, updatedAt: new Date().toISOString() });
       }
-      const transactionUpdate = {
+      batch.update(transactionRef, {
         items, total, totalAmount: total, paidAmount, remainingDebt: newRemaining,
         status: newRemaining > 0 ? 'DEBT' : 'PAID',
         ...(isCus ? { totalCost, customerName: detailTarget?.name || transaction.customerName } : { supplierName: detailTarget?.name || transaction.supplierName }),
         debtUpdatedAt: new Date().toISOString()
-      };
-      if (sourceWasMissing) {
-        // Atomic recreation avoids a half-deleted state; stock is adjusted by restoring old lines and applying new lines in one batch.
-        batch.set(transactionRef, { ...original, ...transactionUpdate }, { merge: true });
-      } else {
-        batch.update(transactionRef, transactionUpdate);
-      }
+      });
       const contactDebtDelta = newRemaining - oldRemaining;
       if (contactDebtDelta !== 0 && detailTarget?.id) {
         batch.set(doc(db, 'stores', storeId, type, detailTarget.id), {
@@ -2013,8 +2001,7 @@ function ContactManager({ type, data, orders, products = [], navigationTarget, s
       setSavedContactTransactions(prev => ({ ...prev, [transaction.id]: saved }));
       setDetailTarget(prev => prev ? { ...prev, totalDebt: Math.max(0, (Number(prev.totalDebt) || 0) + contactDebtDelta) } : prev);
       setEditingContactTransaction(null);
-      setEditingContactTransactionOriginal(null);
-      showToast(sourceWasMissing ? 'Đã khôi phục chứng từ bị thiếu và lưu thay đổi; tồn kho/công nợ đã được điều chỉnh.' : 'Đã lưu thay đổi và xác minh lại dữ liệu trên Firebase.');
+      showToast('Đã lưu thay đổi và xác minh lại dữ liệu trên Firebase.');
     } catch (err) {
       console.error('Lỗi lưu giao dịch chi tiết khách hàng/nhà cung cấp:', err);
       const errorMessage = 'Không lưu được: ' + (err?.message || 'Lỗi không xác định.');
@@ -2623,7 +2610,7 @@ function ContactManager({ type, data, orders, products = [], navigationTarget, s
                               {getOrderRemainingDebt(ord) > 0 && <span className="font-semibold text-orange-700">Còn: {formatCurrency(getOrderRemainingDebt(ord))}</span>}
                               <button type="button" disabled={savingDebtPayment || getOrderRemainingDebt(ord) <= 0} onClick={() => handlePartialTransactionPayment(ord)} className="text-blue-700 underline font-semibold disabled:opacity-40">Thanh toán một phần</button>
                               <button type="button" disabled={savingDebtPayment} onClick={() => handleChangeTransactionStatus(ord)} className="text-red-600 underline font-semibold disabled:opacity-40">Sửa trạng thái</button>
-                              <button type="button" disabled={savingDebtPayment} onClick={() => { setEditingContactTransactionOriginal(JSON.parse(JSON.stringify(ord))); setEditingContactTransaction(JSON.parse(JSON.stringify(ord))); }} className="text-blue-700 underline font-semibold disabled:opacity-40">Sửa đơn hàng</button>
+                              <button type="button" disabled={savingDebtPayment} onClick={() => setEditingContactTransaction(JSON.parse(JSON.stringify(ord)))} className="text-blue-700 underline font-semibold disabled:opacity-40">Sửa đơn hàng</button>
                               <button type="button" disabled={savingDebtPayment} onClick={() => handleDeleteOneContactTransaction(ord)} className="text-red-700 underline font-semibold disabled:opacity-40">Xóa đơn hàng</button>
                             </div>
                           </td>
@@ -2638,11 +2625,11 @@ function ContactManager({ type, data, orders, products = [], navigationTarget, s
             </div>
           </div>
         </div>}
-      {editingContactTransaction && <div className="fixed inset-0 z-50 overflow-y-auto bg-black/40 p-3 sm:p-6" onClick={(e) => { if (e.target === e.currentTarget && !savingDebtPayment) setEditingContactTransaction(null); setEditingContactTransactionOriginal(null); }}>
+      {editingContactTransaction && <div className="fixed inset-0 z-50 overflow-y-auto bg-black/40 p-3 sm:p-6" onClick={(e) => { if (e.target === e.currentTarget && !savingDebtPayment) { setEditingContactTransaction(null); setEditingContactTransactionOriginal(null); } }}>
         <div className="mx-auto my-2 w-full max-w-3xl rounded-xl bg-white shadow-2xl overflow-hidden">
           <div className="sticky top-0 z-10 flex items-center gap-2 p-3 border-b bg-white">
             <h3 className="flex-1 text-lg font-bold text-gray-800">Sửa {isCus ? 'đơn hàng' : 'phiếu nhập'}</h3>
-            <button type="button" disabled={savingDebtPayment} onClick={() => { setEditingContactTransaction(null); setEditingContactTransactionOriginal(null); }} className="rounded-lg border p-2 text-gray-500 disabled:opacity-40" aria-label="Đóng"> <X size={20}/> </button>
+            <button type="button" disabled={savingDebtPayment} onClick={() => setEditingContactTransaction(null)} className="rounded-lg border p-2 text-gray-500 disabled:opacity-40" aria-label="Đóng"> <X size={20}/> </button>
           </div>
           <div className="p-4">
         <form onSubmit={handleSaveContactTransaction} className="space-y-4">
@@ -2660,7 +2647,7 @@ function ContactManager({ type, data, orders, products = [], navigationTarget, s
           </div>
           <button type="button" disabled={savingDebtPayment} onClick={()=>setEditingContactTransaction(prev=>({...prev,items:[...(prev.items||[]),{name:'',quantity:1,price:0,cost:0}]}))} className="inline-flex items-center gap-2 border border-blue-200 text-blue-700 rounded-lg px-3 py-2 font-semibold text-sm"><Plus size={16}/> Thêm sản phẩm</button>
           <div className="flex justify-between items-center rounded-lg bg-gray-50 p-3 font-bold"><span>Tổng tiền mới</span><span>{formatCurrency((editingContactTransaction.items||[]).reduce((sum,item)=>sum+(Number(item.quantity??item.qty)||0)*(Number(item.price??item.importCost)||0),0))}</span></div>
-          <div className="flex gap-2"><button type="button" disabled={savingDebtPayment} onClick={()=>{setEditingContactTransaction(null);setEditingContactTransactionOriginal(null);}} className="flex-1 border rounded-lg p-3">Hủy</button><button type="submit" disabled={savingDebtPayment} className="flex-1 bg-blue-600 text-white rounded-lg p-3 font-bold">{savingDebtPayment?'Đang lưu...':'Lưu thay đổi'}</button></div>
+          <div className="flex gap-2"><button type="button" disabled={savingDebtPayment} onClick={()=>setEditingContactTransaction(null)} className="flex-1 border rounded-lg p-3">Hủy</button><button type="submit" disabled={savingDebtPayment} className="flex-1 bg-blue-600 text-white rounded-lg p-3 font-bold">{savingDebtPayment?'Đang lưu...':'Lưu thay đổi'}</button></div>
         </form>
           </div>
         </div>
