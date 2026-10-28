@@ -2011,8 +2011,8 @@ function ContactManager({ type, data, orders, products = [], navigationTarget, s
       });
       if (Number(saved.total ?? saved.totalAmount) !== total || !itemsMatch) throw new Error('Firebase chưa xác nhận đúng nội dung vừa sửa. Vui lòng tải lại trang và kiểm tra dữ liệu trước khi thử lại.');
       setSavedContactTransactions(prev => ({ ...prev, [transaction.id]: saved, [saved.id]: saved }));
-      if (isCus && sourceWasMissing) setOrders(prev => [...prev.filter(o => o.id !== transaction.id && o.id !== saved.id), saved]);
-      if (!isCus && sourceWasMissing) setImports(prev => [...prev.filter(o => o.id !== transaction.id && o.id !== saved.id), saved]);
+      // savedContactTransactions supplies the updated/recreated record to the detail list.
+      // Do not call setOrders/setImports here: ContactManager owns no such setters.
       setDetailTarget(prev => prev ? { ...prev, totalDebt: Math.max(0, (Number(prev.totalDebt) || 0) + contactDebtDelta) } : prev);
       setEditingContactTransaction(null);
       setEditingContactTransactionOriginal(null);
