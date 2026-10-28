@@ -973,7 +973,7 @@ function POSView({ products, orders = [], customers, db, storeId, user, storeCon
     setCart(prev => {
       const ex = prev.find(i => i.id === product.id);
       if (ex) return prev.map(i => i.id === product.id ? { ...i, quantity: i.quantity + 1 } : i);
-      return [...prev, { ...product, quantity: 1, price: product.price, warrantyValue: '', warrantyUnit: 'tháng', note: '' }];
+      return [{ ...product, quantity: 1, price: product.price, warrantyValue: '', warrantyUnit: 'tháng', note: '' }, ...prev];
     });
   };
 
