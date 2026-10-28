@@ -1932,7 +1932,7 @@ function ContactManager({ type, data, orders, products = [], navigationTarget, s
 
       const batch = writeBatch(db);
       const stockDeltas = new Map();
-      const itemKey = item => String(item.productId || item.productID || item.productCode || item.code || item.name || item.productName || '').trim().toLowerCase();
+      const itemKey = item => String(item.productId || item.productID || item.productCode || item.code || item.name || item.productName || item.id || '').trim().toLowerCase();
       const addStockDelta = (item, delta) => {
         const key = itemKey(item);
         if (key && delta) stockDeltas.set(key, (stockDeltas.get(key) || 0) + delta);
