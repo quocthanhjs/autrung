@@ -36,6 +36,14 @@ const getVietnamDateKey = (date = new Date()) => {
   const p = getVietnamDateParts(date);
   return `${p.year}-${String(p.month).padStart(2, '0')}-${String(p.day).padStart(2, '0')}`;
 };
+const getVietnamDateTimeInput = (date = new Date()) => {
+  const p = getVietnamDateParts(date);
+  return `${p.year}-${String(p.month).padStart(2, '0')}-${String(p.day).padStart(2, '0')}T${String(p.hour).padStart(2, '0')}:${String(p.minute).padStart(2, '0')}`;
+};
+const vietnamDateTimeInputToISO = (value) => {
+  if (!value || !/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}$/.test(value)) return new Date().toISOString();
+  return new Date(`${value}:00+07:00`).toISOString();
+};
 const generateInvoiceCode = (orders = [], date = new Date()) => {
   const vietnamDate = getVietnamDateParts(date);
   const prefix = `${String(vietnamDate.month).padStart(2, '0')}${String(vietnamDate.year).slice(-2)}`;
@@ -1146,7 +1154,7 @@ function SalesHistoryView({ orders, imports = [], products, customers, storeConf
   const [viewingOrderPrint, setViewingOrderPrint] = useState(null);
   const [localPrintSize, setLocalPrintSize] = useState(storeConfig.printPaperSize || 'K80');
   const [showCreateOrderModal, setShowCreateOrderModal] = useState(false);
-  const [newOrderForm, setNewOrderForm] = useState({ customerId: '', status: 'PAID', note: '', items: [] });
+  const [newOrderForm, setNewOrderForm] = useState({ customerId: '', status: 'PAID', note: '', dateTime: getVietnamDateTimeInput(), items: [] });
   const [showAddCusModal, setShowAddCusModal] = useState(false);
   const [newCusForm, setNewCusForm] = useState({ name: '', phone: '', address: '' });
   const [historyTarget, setHistoryTarget] = useState(null);
@@ -1254,7 +1262,7 @@ function SalesHistoryView({ orders, imports = [], products, customers, storeConf
       const orderData = {
         invoiceCode: generateInvoiceCode(orders),
         customerId: newOrderForm.customerId || null, customerName: c ? c.name : 'Khách lẻ', sellerUid: user.uid, sellerName: userData?.name || user?.displayName || user?.email || 'Nhân viên', note: newOrderForm.note,
-        items: itemsToSave, total: total, totalCost: totalCost, status: newOrderForm.status, date: new Date().toISOString()
+        items: itemsToSave, total: total, totalCost: totalCost, status: newOrderForm.status, date: vietnamDateTimeInputToISO(newOrderForm.dateTime)
       };
       await addDoc(collection(db, 'stores', storeId, 'orders'), orderData);
       
@@ -1322,7 +1330,7 @@ function SalesHistoryView({ orders, imports = [], products, customers, storeConf
           <p className="text-sm text-gray-500 mt-0.5">Theo dõi lịch sử giao dịch và in lại hóa đơn (Theo cấu hình mẫu in)</p>
         </div>
         <div className="flex items-center gap-2 w-full sm:w-auto">
-          <button onClick={() => { setNewOrderForm({ customerId: '', status: 'PAID', note: '', items: [] }); setOrderCustomerSearch(''); setOrderProductSearch({}); setShowCreateOrderModal(true); }} className="bg-blue-600 text-white px-4 py-2.5 rounded-lg font-bold flex gap-2 shrink-0 items-center shadow-sm whitespace-nowrap"> <Plus size={16}/> <span>Tạo đơn</span> </button>
+          <button onClick={() => { setNewOrderForm({ customerId: '', status: 'PAID', note: '', dateTime: getVietnamDateTimeInput(), items: [] }); setOrderCustomerSearch(''); setOrderProductSearch({}); setShowCreateOrderModal(true); }} className="bg-blue-600 text-white px-4 py-2.5 rounded-lg font-bold flex gap-2 shrink-0 items-center shadow-sm whitespace-nowrap"> <Plus size={16}/> <span>Tạo đơn</span> </button>
           <div className="relative flex-1 sm:w-72">
             <Search size={16} className="absolute left-3 top-3.5 text-gray-400"/>
             <input placeholder="Tìm mã HĐ hoặc tên khách..." value={searchTerm} onChange={e=>{ setSearchTerm(e.target.value); setSalesCurrentPage(1); }} className="w-full pl-9 pr-3 py-2.5 border rounded-xl bg-white outline-none shadow-sm focus:ring-2 focus:ring-blue-500 transition-all"/>
@@ -1417,6 +1425,11 @@ function SalesHistoryView({ orders, imports = [], products, customers, storeConf
               <label className="block text-sm font-bold text-gray-700 mb-1">Trạng thái thanh toán</label>
               <select value={newOrderForm.status} onChange={e=>setNewOrderForm({...newOrderForm, status: e.target.value})} className="w-full p-3 border rounded-xl outline-none text-sm font-bold bg-gray-50 focus:bg-white"><option value="PAID">Đã thanh toán (Tiền mặt)</option><option value="DEBT">Ghi nợ</option></select>
             </div>
+          </div>
+          <div>
+            <label className="block text-sm font-bold text-gray-700 mb-1">Thời gian bán (ngày và giờ, GMT+7)</label>
+            <input type="datetime-local" required value={newOrderForm.dateTime || getVietnamDateTimeInput()} onChange={e=>setNewOrderForm({...newOrderForm, dateTime:e.target.value})} className="w-full p-3 border rounded-xl outline-none text-sm font-bold bg-gray-50 focus:bg-white" />
+            <p className="mt-1 text-xs text-gray-500">Mặc định là thời điểm hiện tại; bạn có thể chọn ngày và giờ khác trước khi tạo đơn.</p>
           </div>
           <div>
             <label className="block text-sm font-bold text-gray-700 mb-1">Ghi chú chung đơn hàng</label>
@@ -1931,21 +1944,34 @@ function ContactManager({ type, data, orders, products = [], navigationTarget, s
       if (!window.confirm(`Lưu thay đổi ${isCus ? 'đơn hàng' : 'phiếu nhập'}? Tổng tiền mới: ${formatCurrency(total)}. Công nợ và tồn kho sẽ được điều chỉnh theo chênh lệch.`)) return;
 
       const batch = writeBatch(db);
+      // Quy đổi mỗi dòng hàng về đúng ID sản phẩm trong kho trước khi tính chênh lệch tồn.
+      // Đơn cũ có thể chỉ lưu tên/mã, còn dòng vừa sửa có productId; dùng khóa khác nhau
+      // cho cùng một sản phẩm sẽ làm sai tồn kho hoặc khiến thao tác lưu bị hủy.
+      const resolveProduct = item => {
+        const candidates = [item.productId, item.productID, item.productCode, item.code, item.name, item.productName, item.product];
+        for (const candidate of candidates) {
+          const value = String(candidate || '').trim().toLowerCase();
+          if (!value) continue;
+          const found = products.find(p => [p.id, p.code, p.productCode, p.name].some(v => String(v || '').trim().toLowerCase() === value));
+          if (found) return found;
+        }
+        return null;
+      };
       const stockDeltas = new Map();
-      const itemKey = item => String(item.productId || item.productID || item.productCode || item.code || item.name || item.productName || item.id || '').trim().toLowerCase();
       const addStockDelta = (item, delta) => {
-        const key = itemKey(item);
-        if (key && delta) stockDeltas.set(key, (stockDeltas.get(key) || 0) + delta);
+        const product = resolveProduct(item);
+        if (!product) throw new Error('Không tìm thấy sản phẩm trong kho: ' + String(item.name || item.productName || item.code || item.productCode || 'không rõ tên') + '. Hãy chọn lại sản phẩm từ danh sách gợi ý rồi lưu.');
+        if (delta) stockDeltas.set(product.id, (stockDeltas.get(product.id) || 0) + delta);
       };
       const oldItems = Array.isArray(original.items) ? original.items : [];
       oldItems.forEach(item => addStockDelta(item, isCus ? Number(item.quantity ?? item.qty ?? 0) : -Number(item.quantity ?? item.qty ?? 0)));
       items.forEach(item => addStockDelta(item, isCus ? -item.quantity : item.quantity));
-      for (const [key, delta] of stockDeltas.entries()) {
+      for (const [productId, delta] of stockDeltas.entries()) {
         if (!delta) continue;
-        const product = products.find(p => [p.id, p.code, p.productCode, p.name].some(value => String(value || '').trim().toLowerCase() === key));
-        if (!product) throw new Error('Không tìm thấy sản phẩm trong kho để điều chỉnh tồn: ' + key + '. Hãy chọn sản phẩm từ gợi ý.');
+        const product = products.find(p => String(p.id) === String(productId));
+        if (!product) throw new Error('Không tìm thấy sản phẩm trong kho để điều chỉnh tồn: ' + productId);
         const stock = Number(product.stock ?? product.quantity ?? 0) || 0;
-        if (stock + delta < 0) throw new Error('Tồn kho không đủ để điều chỉnh: ' + (product.name || key));
+        if (stock + delta < 0) throw new Error('Tồn kho không đủ để điều chỉnh: ' + (product.name || productId));
         batch.update(doc(db, 'stores', storeId, 'products', product.id), { stock: stock + delta, updatedAt: new Date().toISOString() });
       }
       batch.update(transactionRef, {
@@ -1978,7 +2004,11 @@ function ContactManager({ type, data, orders, products = [], navigationTarget, s
       showToast('Đã lưu thay đổi và xác minh lại dữ liệu trên Firebase.');
     } catch (err) {
       console.error('Lỗi lưu giao dịch chi tiết khách hàng/nhà cung cấp:', err);
-      showToast('Không lưu được: ' + (err?.message || 'Lỗi không xác định. Mở Console để xem chi tiết.'), 'error');
+      const errorMessage = 'Không lưu được: ' + (err?.message || 'Lỗi không xác định.');
+      showToast(errorMessage, 'error');
+      // Modal chỉnh sửa nằm phía trên trang; thông báo toast có thể bị lớp phủ che.
+      // Hiện lỗi trực tiếp để người dùng biết lý do và không tưởng rằng đã lưu thành công.
+      if (typeof window !== 'undefined') window.alert(errorMessage);
     } finally {
       setSavingDebtPayment(false);
     }
@@ -2595,8 +2625,14 @@ function ContactManager({ type, data, orders, products = [], navigationTarget, s
             </div>
           </div>
         </div>}
-      <Modal isOpen={!!editingContactTransaction} onClose={() => { if (!savingDebtPayment) setEditingContactTransaction(null); }} title={`Sửa ${isCus ? 'đơn hàng' : 'phiếu nhập'}`} maxWidth="max-w-3xl">
-        {editingContactTransaction && <form onSubmit={handleSaveContactTransaction} className="space-y-4">
+      {editingContactTransaction && <div className="fixed inset-0 z-50 overflow-y-auto bg-black/40 p-3 sm:p-6" onClick={(e) => { if (e.target === e.currentTarget && !savingDebtPayment) setEditingContactTransaction(null); }}>
+        <div className="mx-auto my-2 w-full max-w-3xl rounded-xl bg-white shadow-2xl overflow-hidden">
+          <div className="sticky top-0 z-10 flex items-center gap-2 p-3 border-b bg-white">
+            <h3 className="flex-1 text-lg font-bold text-gray-800">Sửa {isCus ? 'đơn hàng' : 'phiếu nhập'}</h3>
+            <button type="button" disabled={savingDebtPayment} onClick={() => setEditingContactTransaction(null)} className="rounded-lg border p-2 text-gray-500 disabled:opacity-40" aria-label="Đóng"> <X size={20}/> </button>
+          </div>
+          <div className="p-4">
+        <form onSubmit={handleSaveContactTransaction} className="space-y-4">
           <p className="text-sm text-blue-700 bg-blue-50 border border-blue-200 rounded-lg p-3">Tìm và chọn sản phẩm từ danh sách gợi ý. Có thể xóa từng dòng; khi lưu, hệ thống tính lại tổng tiền, công nợ và điều chỉnh tồn kho theo chênh lệch.</p>
           <datalist id={`contact-product-suggestions-${type}`}>{products.map(product => <option key={product.id} value={product.name || ''}>{[product.code, product.stock != null ? `Tồn: ${product.stock}` : ''].filter(Boolean).join(' · ')}</option>)}</datalist>
           <div className="space-y-3 max-h-[55vh] overflow-y-auto">
@@ -2612,8 +2648,10 @@ function ContactManager({ type, data, orders, products = [], navigationTarget, s
           <button type="button" disabled={savingDebtPayment} onClick={()=>setEditingContactTransaction(prev=>({...prev,items:[...(prev.items||[]),{name:'',quantity:1,price:0,cost:0}]}))} className="inline-flex items-center gap-2 border border-blue-200 text-blue-700 rounded-lg px-3 py-2 font-semibold text-sm"><Plus size={16}/> Thêm sản phẩm</button>
           <div className="flex justify-between items-center rounded-lg bg-gray-50 p-3 font-bold"><span>Tổng tiền mới</span><span>{formatCurrency((editingContactTransaction.items||[]).reduce((sum,item)=>sum+(Number(item.quantity??item.qty)||0)*(Number(item.price??item.importCost)||0),0))}</span></div>
           <div className="flex gap-2"><button type="button" disabled={savingDebtPayment} onClick={()=>setEditingContactTransaction(null)} className="flex-1 border rounded-lg p-3">Hủy</button><button type="submit" disabled={savingDebtPayment} className="flex-1 bg-blue-600 text-white rounded-lg p-3 font-bold">{savingDebtPayment?'Đang lưu...':'Lưu thay đổi'}</button></div>
-        </form>}
-      </Modal>
+        </form>
+          </div>
+        </div>
+      </div>}
       <Modal isOpen={!!editDetailStat} onClose={() => { if (!savingDebtPayment) setEditDetailStat(null); }} title={editDetailStat ? `Sửa số tiền: ${editDetailStat.label}` : 'Sửa số tiền'}>
         {editDetailStat && <form onSubmit={handleSaveDetailStat} className="space-y-4">
           <div><label className="block text-sm font-semibold text-gray-700 mb-1">Số tiền mới (VNĐ)</label><input autoFocus type="number" min="0" step="1" inputMode="numeric" required value={editDetailStat.newValue} onChange={e=>setEditDetailStat(v=>({...v,newValue:e.target.value}))} className="w-full p-3 border rounded-xl outline-none focus:ring-2 focus:ring-blue-500" placeholder="Nhập số tiền" /></div>
