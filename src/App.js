@@ -1740,6 +1740,7 @@ function ContactManager({ type, data, orders, products = [], navigationTarget, s
   const [detailRowsPerPage, setDetailRowsPerPage] = useState('5');
   const [detailCurrentPage, setDetailCurrentPage] = useState(1);
   const [debtPayments, setDebtPayments] = useState([]);
+  const [deletedContactTransactions, setDeletedContactTransactions] = useState([]);
   const [selectedPaymentIds, setSelectedPaymentIds] = useState([]);
   const [selectedTransactionIds, setSelectedTransactionIds] = useState([]);
   const [debtPaymentMode, setDebtPaymentMode] = useState('partial');
@@ -1747,6 +1748,7 @@ function ContactManager({ type, data, orders, products = [], navigationTarget, s
   const [debtPaymentDate, setDebtPaymentDate] = useState(() => getVietnamDateKey(new Date()));
   const [debtPaymentMethod, setDebtPaymentMethod] = useState('cash');
   const [debtPaymentNote, setDebtPaymentNote] = useState('');
+  const [selectedDebtInvoiceIds, setSelectedDebtInvoiceIds] = useState([]);
   const [editingDebtPayment, setEditingDebtPayment] = useState(null);
   const [savingDebtPayment, setSavingDebtPayment] = useState(false);
   const [editDetailStat, setEditDetailStat] = useState(null);
@@ -1807,9 +1809,12 @@ function ContactManager({ type, data, orders, products = [], navigationTarget, s
   };
 
   useEffect(() => {
-    if (!detailTarget?.id) { setDebtPayments([]); return; }
+    if (!detailTarget?.id) { setDebtPayments([]); setDeletedContactTransactions([]); return; }
     const paymentsRef = collection(db, 'stores', storeId, type, detailTarget.id, 'debtPayments');
-    return onSnapshot(paymentsRef, snap => setDebtPayments(snap.docs.map(d => ({ id: d.id, ...d.data() })).sort((a,b) => new Date(b.date || 0) - new Date(a.date || 0))), () => showToast('Không tải được lịch sử trừ công nợ', 'error'));
+    const deletedRef = collection(db, 'stores', storeId, type, detailTarget.id, 'deletedTransactions');
+    const stopPayments = onSnapshot(paymentsRef, snap => setDebtPayments(snap.docs.map(d => ({ id: d.id, ...d.data() })).sort((a,b) => new Date(b.date || 0) - new Date(a.date || 0))), () => showToast('Không tải được lịch sử trừ công nợ', 'error'));
+    const stopDeleted = onSnapshot(deletedRef, snap => setDeletedContactTransactions(snap.docs.map(d => ({ id: d.id, ...d.data() })).sort((a,b) => new Date(b.deletedAt || 0) - new Date(a.deletedAt || 0))), () => showToast('Không tải được lịch sử xóa hóa đơn', 'error'));
+    return () => { stopPayments(); stopDeleted(); };
   }, [db, storeId, type, detailTarget?.id, showToast]);
   useEffect(() => {
     const closeOnBrowserBack = () => setDetailTarget(null);
@@ -2027,25 +2032,76 @@ function ContactManager({ type, data, orders, products = [], navigationTarget, s
     }
   };
 
+  const handleUndoDeletedContactTransaction = async (deletedRecord) => {
+    if (!deletedRecord || deletedRecord.status === 'restored' || savingDebtPayment || !detailTarget?.id) return;
+    const transactionData = deletedRecord.transactionData;
+    const transactionId = deletedRecord.transactionId || deletedRecord.id;
+    if (!transactionData || !transactionId) { showToast('Không đủ dữ liệu để hoàn tác hóa đơn đã xóa.', 'error'); return; }
+    if (!window.confirm(`Khôi phục hóa đơn ${deletedRecord.transactionCode || transactionId}? Công nợ sẽ được cộng lại ${formatCurrency(deletedRecord.debtRemoved || 0)}. Tồn kho sẽ giữ nguyên như lúc xóa.`)) return;
+    setSavingDebtPayment(true);
+    try {
+      const collectionName = deletedRecord.collectionName || (isCus ? 'orders' : 'imports');
+      const transactionRef = doc(db, 'stores', storeId, collectionName, transactionId);
+      const current = await getDoc(transactionRef);
+      if (current.exists()) throw new Error('Hóa đơn này đã tồn tại trở lại. Không thể khôi phục trùng mã.');
+      const archivedRef = doc(db, 'stores', storeId, type, detailTarget.id, 'deletedTransactions', deletedRecord.id);
+      const debtRemoved = Math.max(0, Number(deletedRecord.debtRemoved) || 0);
+      const nextDebt = Math.max(0, (Number(detailTarget.totalDebt) || 0) + debtRemoved);
+      const nowIso = new Date().toISOString();
+      const batch = writeBatch(db);
+      const restoredData = { ...transactionData };
+      delete restoredData.id;
+      batch.set(transactionRef, { ...restoredData, restoredFromDeletedHistory: true, restoredAt: nowIso }, { merge: false });
+      batch.update(archivedRef, { status: 'restored', restoredAt: nowIso, restoredBy: userData.email || userData.username || 'user' });
+      batch.set(doc(db, 'stores', storeId, type, detailTarget.id), {
+        totalDebt: nextDebt,
+        debtUpdatedAt: nowIso,
+        debtNote: `Đã hoàn tác xóa hóa đơn ${deletedRecord.transactionCode || transactionId}; khôi phục công nợ ${formatCurrency(debtRemoved)}`
+      }, { merge: true });
+      await batch.commit();
+      setSavedContactTransactions(prev => ({ ...prev, [transactionId]: { ...transactionData, id: transactionId } }));
+      setDetailTarget(prev => prev ? { ...prev, totalDebt: nextDebt, debtNote: `Đã hoàn tác xóa hóa đơn ${deletedRecord.transactionCode || transactionId}; khôi phục công nợ ${formatCurrency(debtRemoved)}` } : prev);
+      showToast('Đã hoàn tác xóa hóa đơn và khôi phục công nợ; tồn kho giữ nguyên.');
+    } catch (err) {
+      showToast('Không thể hoàn tác xóa hóa đơn: ' + (err?.message || 'Lỗi không xác định'), 'error');
+    } finally { setSavingDebtPayment(false); }
+  };
+
   const handleDeleteOneContactTransaction = async (transaction) => {
     if (!transaction || savingDebtPayment || !detailTarget?.id) return;
-    if (!window.confirm(`Xóa ${isCus ? 'đơn hàng' : 'phiếu nhập'} này khỏi lịch sử? Thao tác điều chỉnh công nợ hồ sơ nhưng không tự thay đổi tồn kho. Bạn có chắc chắn không?`)) return;
+    if (!window.confirm(`Xóa ${isCus ? 'đơn hàng' : 'phiếu nhập'} này khỏi lịch sử? Hệ thống sẽ lưu bản sao để có thể hoàn tác; tồn kho không thay đổi. Bạn có chắc chắn không?`)) return;
     setSavingDebtPayment(true);
     try {
       const remaining = getOrderRemainingDebt(transaction);
       const nextDebt = Math.max(0, (Number(detailTarget.totalDebt) || 0) - remaining);
+      const collectionName = isCus ? 'orders' : 'imports';
+      const nowIso = new Date().toISOString();
+      const archiveRef = doc(db, 'stores', storeId, type, detailTarget.id, 'deletedTransactions', transaction.id);
+      const transactionRef = doc(db, 'stores', storeId, collectionName, transaction.id);
       const batch = writeBatch(db);
-      batch.delete(doc(db, 'stores', storeId, isCus ? 'orders' : 'imports', transaction.id));
+      batch.set(archiveRef, {
+        transactionId: transaction.id,
+        transactionCode: transaction.invoiceCode || transaction.receiptCode || transaction.code || transaction.id,
+        transactionData: { ...transaction },
+        collectionName,
+        deletedAt: nowIso,
+        deletedBy: userData.email || userData.username || 'user',
+        debtRemoved: remaining,
+        status: 'deleted',
+        deleteNote: `Đã xóa hóa đơn ${transaction.invoiceCode || transaction.receiptCode || transaction.code || transaction.id}; giảm công nợ ${formatCurrency(remaining)}`
+      }, { merge: true });
+      batch.delete(transactionRef);
       batch.set(doc(db, 'stores', storeId, type, detailTarget.id), {
         totalDebt: nextDebt,
-        debtUpdatedAt: new Date().toISOString(),
-        debtNote: `Đã xóa ${isCus ? 'đơn hàng' : 'phiếu nhập'} ${transaction.id}; điều chỉnh công nợ ${formatCurrency(remaining)}`
+        debtUpdatedAt: nowIso,
+        debtNote: `Đã xóa hóa đơn ${transaction.invoiceCode || transaction.receiptCode || transaction.code || transaction.id}; giảm công nợ ${formatCurrency(remaining)}. Có thể hoàn tác tại Lịch sử xóa hóa đơn.`
       }, { merge: true });
       await batch.commit();
       setSelectedTransactionIds(prev => prev.filter(id => id !== transaction.id));
-      setDetailTarget(prev => prev ? { ...prev, totalDebt: nextDebt } : prev);
-      showToast('Đã xóa giao dịch khỏi lịch sử; tồn kho không thay đổi.');
-    } catch (err) { showToast('Không thể xóa giao dịch: ' + (err?.message || ''), 'error'); }
+      setDetailTarget(prev => prev ? { ...prev, totalDebt: nextDebt, debtNote: `Đã xóa hóa đơn ${transaction.invoiceCode || transaction.receiptCode || transaction.code || transaction.id}; giảm công nợ ${formatCurrency(remaining)}. Có thể hoàn tác tại Lịch sử xóa hóa đơn.` } : prev);
+      setSavedContactTransactions(prev => { const next = { ...prev }; delete next[transaction.id]; return next; });
+      showToast('Đã xóa hóa đơn; ghi chú đã cập nhật và có thể hoàn tác. Tồn kho không thay đổi.');
+    } catch (err) { showToast('Không thể xóa giao dịch: ' + (err?.message || 'Lỗi không xác định'), 'error'); }
     finally { setSavingDebtPayment(false); }
   };
 
@@ -2053,42 +2109,46 @@ function ContactManager({ type, data, orders, products = [], navigationTarget, s
     if (!selectedTransactionIds.length || savingDebtPayment || !detailTarget?.id) return;
     const chosen = (detailData?.list || []).filter(transaction => selectedTransactionIds.includes(transaction.id));
     if (!chosen.length) { setSelectedTransactionIds([]); return; }
-    if (!window.confirm(`Bạn sắp xóa ${chosen.length} giao dịch khỏi lịch sử chi tiết. Thao tác này chỉ xóa đơn hàng/phiếu nhập đã chọn và điều chỉnh công nợ trên hồ sơ; KHÔNG thay đổi số lượng tồn kho hiện tại. Bạn có chắc chắn muốn tiếp tục?`)) return;
+    if (!window.confirm(`Bạn sắp xóa ${chosen.length} giao dịch khỏi lịch sử. Hệ thống sẽ lưu bản sao từng hóa đơn để có thể hoàn tác; tồn kho không thay đổi. Tiếp tục?`)) return;
     setSavingDebtPayment(true);
     try {
       const batch = writeBatch(db);
       let debtReduction = 0;
+      const nowIso = new Date().toISOString();
+      const collectionName = isCus ? 'orders' : 'imports';
       for (const transaction of chosen) {
         const remaining = getOrderRemainingDebt(transaction);
         debtReduction += remaining;
-        // Chủ ý không cập nhật collection products: xóa lịch sử giao dịch không được làm thay đổi tồn kho.
-        batch.delete(doc(db, 'stores', storeId, isCus ? 'orders' : 'imports', transaction.id));
+        const code = transaction.invoiceCode || transaction.receiptCode || transaction.code || transaction.id;
+        batch.set(doc(db, 'stores', storeId, type, detailTarget.id, 'deletedTransactions', transaction.id), {
+          transactionId: transaction.id,
+          transactionCode: code,
+          transactionData: { ...transaction },
+          collectionName,
+          deletedAt: nowIso,
+          deletedBy: userData.email || userData.username || 'user',
+          debtRemoved: remaining,
+          status: 'deleted',
+          deleteNote: `Đã xóa hóa đơn ${code}; giảm công nợ ${formatCurrency(remaining)}`
+        }, { merge: true });
+        batch.delete(doc(db, 'stores', storeId, collectionName, transaction.id));
       }
+      const nextDebt = Math.max(0, (Number(detailTarget.totalDebt) || 0) - debtReduction);
       batch.set(doc(db, 'stores', storeId, type, detailTarget.id), {
-        totalDebt: Math.max(0, (Number(detailTarget.totalDebt) || 0) - debtReduction),
-        debtUpdatedAt: new Date().toISOString(),
-        debtNote: `Đã xóa ${chosen.length} giao dịch chi tiết; điều chỉnh công nợ ${formatCurrency(debtReduction)}`,
+        totalDebt: nextDebt,
+        debtUpdatedAt: nowIso,
+        debtNote: `Đã xóa ${chosen.length} hóa đơn; giảm công nợ ${formatCurrency(debtReduction)}. Có thể hoàn tác từng hóa đơn tại Lịch sử xóa hóa đơn.`,
         ...(detailTarget.name ? { name: detailTarget.name } : {}),
         ...(detailTarget.code ? { code: detailTarget.code } : {}),
         ...(detailTarget.phone ? { phone: detailTarget.phone } : {}),
         ...(detailTarget.address ? { address: detailTarget.address } : {})
       }, { merge: true });
       await batch.commit();
-      // Remove matching transaction-specific payment report entries to keep reports aligned.
-      const reportSnapshot = await getDocs(collection(db, 'stores', storeId, 'debtPaymentReports'));
-      const reportBatch = writeBatch(db);
-      let reportDeletes = 0;
       const ids = new Set(chosen.map(row => row.id));
-      reportSnapshot.docs.forEach(reportDoc => {
-        const report = reportDoc.data();
-        if (ids.has(report.transactionId) && report.source === 'transactionDebt' && reportDeletes < 490) {
-          reportBatch.delete(reportDoc.ref); reportDeletes += 1;
-        }
-      });
-      if (reportDeletes) await reportBatch.commit();
+      setSavedContactTransactions(prev => { const next = { ...prev }; ids.forEach(id => delete next[id]); return next; });
       setSelectedTransactionIds([]);
-      setDetailTarget(prev => prev ? { ...prev, totalDebt: Math.max(0, (Number(prev.totalDebt) || 0) - debtReduction) } : prev);
-      showToast(`Đã xóa ${chosen.length} giao dịch; tồn kho giữ nguyên, công nợ đã được điều chỉnh.`);
+      setDetailTarget(prev => prev ? { ...prev, totalDebt: nextDebt, debtNote: `Đã xóa ${chosen.length} hóa đơn; giảm công nợ ${formatCurrency(debtReduction)}. Có thể hoàn tác từng hóa đơn tại Lịch sử xóa hóa đơn.` } : prev);
+      showToast(`Đã xóa ${chosen.length} hóa đơn; ghi chú đã cập nhật và có thể hoàn tác. Tồn kho giữ nguyên.`);
     } catch (err) {
       showToast(`Không thể xóa giao dịch: ${err?.message || 'Lỗi không xác định'}`, 'error');
     } finally { setSavingDebtPayment(false); }
@@ -2192,23 +2252,24 @@ function ContactManager({ type, data, orders, products = [], navigationTarget, s
 
       const allocations = [];
       let amountToAllocate = amount;
-      if (debtPaymentMode === 'partial') {
-        for (const transaction of debtTransactions) {
-          if (amountToAllocate <= 0) break;
-          const remaining = Math.max(0, Number(transaction._baseRemaining) || 0);
-          const applied = Math.min(remaining, amountToAllocate);
-          if (applied <= 0) continue;
-          const nextRemaining = Math.max(0, remaining - applied);
-          const transactionCode = transaction.invoiceCode || transaction.receiptCode || transaction.code || transaction.id;
-          const allocationNote = `Đã trừ ${formatCurrency(applied)} vào ${isCus ? 'đơn hàng' : 'phiếu nhập'} ${transactionCode} ngày ${paymentDateText}${userNote ? `; Ghi chú: ${userNote}` : ''}`;
-          transactionUpdates.set(transaction.id, { transaction, total: transaction.total, remaining: nextRemaining, note: allocationNote });
-          allocations.push({ transactionId: transaction.id, transactionCode, transactionDate: transaction.date || '', amount: applied, note: allocationNote });
-          amountToAllocate = Math.max(0, amountToAllocate - applied);
-        }
+      const selectedInvoiceSet = new Set(selectedDebtInvoiceIds || []);
+      // Có chọn hóa đơn thì chỉ phân bổ vào các hóa đơn đã chọn. Không chọn thì
+      // phân bổ theo thứ tự cũ nhất; chế độ tổng nợ phân bổ qua các hóa đơn còn nợ.
+      const allocationCandidates = debtTransactions.filter(transaction => selectedInvoiceSet.size === 0 || selectedInvoiceSet.has(transaction.id));
+      for (const transaction of allocationCandidates) {
+        if (amountToAllocate <= 0) break;
+        const remaining = Math.max(0, Number(transaction._baseRemaining) || 0);
+        const applied = Math.min(remaining, amountToAllocate);
+        if (applied <= 0) continue;
+        const nextRemaining = Math.max(0, remaining - applied);
+        const transactionCode = transaction.invoiceCode || transaction.receiptCode || transaction.code || transaction.id;
+        const allocationNote = `Đã trừ ${formatCurrency(applied)} vào ${isCus ? 'đơn hàng' : 'phiếu nhập'} ${transactionCode} ngày ${paymentDateText}${userNote ? `; Ghi chú: ${userNote}` : ''}`;
+        transactionUpdates.set(transaction.id, { transaction, total: transaction.total, remaining: nextRemaining, note: allocationNote });
+        allocations.push({ transactionId: transaction.id, transactionCode, transactionDate: transaction.date || '', amount: applied, note: allocationNote });
+        amountToAllocate = Math.max(0, amountToAllocate - applied);
       }
-
-      const outsideDebtNote = debtPaymentMode === 'partial' && amountToAllocate > 0
-        ? `; Nợ khác không có trong chi tiết ${formatCurrency(amountToAllocate)} đã được trừ vào tổng công nợ, không phân bổ vào đơn/phiếu nào`
+      const outsideDebtNote = amountToAllocate > 0
+        ? `; Phần công nợ không phân bổ vào hóa đơn đã chọn ${formatCurrency(amountToAllocate)} vẫn được trừ vào tổng công nợ`
         : '';
       const allocationSummary = allocations.length
         ? `; Đã phân bổ: ${allocations.map(a => `${a.transactionCode}: ${formatCurrency(a.amount)}`).join('; ')}`
@@ -2219,7 +2280,8 @@ function ContactManager({ type, data, orders, products = [], navigationTarget, s
         method: debtPaymentMethod,
         mode: debtPaymentMode,
         note,
-        allocations: debtPaymentMode === 'partial' ? allocations : [],
+        userNote,
+        allocations,
         date: paymentDateIso,
         updatedAt: nowIso,
         contactId: detailTarget.id,
@@ -2279,6 +2341,7 @@ function ContactManager({ type, data, orders, products = [], navigationTarget, s
       setDebtPaymentMode('partial');
       setDebtPaymentMethod('cash');
       setDebtPaymentNote('');
+      setSelectedDebtInvoiceIds([]);
       setEditingDebtPayment(null);
       showToast(editingDebtPayment ? 'Đã cập nhật giao dịch công nợ' : 'Đã ghi nhận trừ công nợ');
     } catch (err) {
@@ -2463,7 +2526,15 @@ function ContactManager({ type, data, orders, products = [], navigationTarget, s
     const idField = isCus ? 'customerId' : 'supplierId';
     const nameField = isCus ? 'customerName' : 'supplierName';
     const sameName = value => String(value || '').trim().toLocaleLowerCase('vi') === String(detailTarget.name || '').trim().toLocaleLowerCase('vi');
-    const allOrders = (orders || []).map(o => savedContactTransactions[o.id] || o);
+    const mappedOrders = (orders || []).map(o => savedContactTransactions[o.id] || savedContactTransactions[o.recoveredFromTransactionId] || o);
+    // Gộp chứng từ gốc và chứng từ thay thế để không cộng đôi tổng tiền/công nợ.
+    const byOriginalTransaction = new Map();
+    mappedOrders.forEach(order => {
+      const rootId = String(order.recoveredFromTransactionId || order.id || '');
+      const previous = byOriginalTransaction.get(rootId);
+      if (!previous || order.recoveredFromTransactionId || String(order.id) !== rootId) byOriginalTransaction.set(rootId, order);
+    });
+    const allOrders = Array.from(byOriginalTransaction.values());
     const idMatches = detailTarget.id ? allOrders.filter(o => o[idField] && o[idField] === detailTarget.id) : [];
     const baseMatches = idMatches.length
       ? idMatches
@@ -2569,6 +2640,8 @@ function ContactManager({ type, data, orders, products = [], navigationTarget, s
               <div className="bg-green-50 p-2.5 rounded-lg border border-green-100"><p className="text-[10px] text-green-600 font-bold uppercase">Đã Thanh Toán</p><p className="text-sm font-bold text-green-700">{formatCurrency(detailData.totalPaid)}</p>{canEditDetailAmounts && <button type="button" onClick={()=>handleEditDetailStat('totalPaid','Đã Thanh Toán',detailData.totalPaid)} className="mt-1 text-[10px] text-green-700 underline">Sửa số tiền</button>}</div>
               <div className="bg-orange-50 p-2.5 rounded-lg border border-orange-100"><p className="text-[10px] text-orange-600 font-bold uppercase">Đang Nợ</p><p className="text-sm font-bold text-orange-700">{formatCurrency(detailData.totalDebtRemain)}</p>{canEditDetailAmounts && <button type="button" onClick={()=>handleEditDetailStat('totalDebt','Đang Nợ',detailData.totalDebtRemain)} className="mt-1 text-[10px] text-orange-700 underline">Sửa số tiền</button>}</div>
             </div>
+            {(detailTarget.debtNote || detailTarget.lastManualAdjustmentNote) && <div className="rounded-lg border bg-amber-50 p-3 text-xs text-gray-700"><span className="font-bold">Ghi chú cập nhật công nợ/số tiền:</span> {detailTarget.lastManualAdjustmentNote || detailTarget.debtNote}</div>}
+            {deletedContactTransactions.length > 0 && <section className="rounded-lg border border-red-200 bg-red-50 p-3 space-y-2"><div className="font-bold text-sm text-red-800">Lịch sử xóa hóa đơn (có thể hoàn tác)</div><div className="space-y-2 max-h-56 overflow-y-auto">{deletedContactTransactions.map(record => <div key={record.id} className="flex flex-wrap items-center justify-between gap-2 rounded border bg-white p-2 text-xs"><div className="min-w-0 flex-1"><div className="font-semibold">{record.deleteNote || `Đã xóa hóa đơn ${record.transactionCode || record.transactionId || record.id}`}</div><div className="text-gray-500">{formatDate(record.deletedAt)} · {record.status === 'restored' ? 'Đã hoàn tác' : `Công nợ đã giảm ${formatCurrency(record.debtRemoved || 0)}`}</div></div>{record.status !== 'restored' && <button type="button" disabled={savingDebtPayment} onClick={() => handleUndoDeletedContactTransaction(record)} className="rounded bg-blue-600 px-3 py-1.5 font-semibold text-white disabled:opacity-50">Hoàn tác</button>}</div>)}</div></section>}
             <section className="border rounded-xl bg-white p-4 space-y-3">
               <div className="flex flex-wrap justify-between items-center gap-2"><h3 className="font-bold text-gray-800">Trừ công nợ</h3><span className="text-sm font-bold text-blue-600">Còn nợ: {formatCurrency(Math.max(0, Number(detailTarget.totalDebt) || 0))}</span></div>
               <form onSubmit={handleDebtPaymentSave} className="grid grid-cols-1 md:grid-cols-4 gap-3 items-end">
@@ -2579,10 +2652,18 @@ function ContactManager({ type, data, orders, products = [], navigationTarget, s
                 <label className="text-xs font-semibold text-gray-600 md:col-span-3">Ghi chú giao dịch<textarea value={debtPaymentNote} onChange={e=>setDebtPaymentNote(e.target.value)} rows={2} className="mt-1 w-full border rounded-lg p-2 text-sm" placeholder="Ví dụ: trừ từng phần / trừ tổng nợ, nội dung đối chiếu..." /></label>
                 <button type="submit" disabled={savingDebtPayment || (Math.max(0, Number(detailTarget.totalDebt) || 0)<=0 && !editingDebtPayment)} className="bg-blue-600 hover:bg-blue-700 disabled:opacity-50 text-white font-bold rounded-lg p-2.5 text-sm">{savingDebtPayment ? 'Đang lưu...' : editingDebtPayment ? 'Lưu chỉnh sửa' : 'Xác nhận trừ nợ'}</button>
               </form>
-              {editingDebtPayment && <button type="button" onClick={()=>{setEditingDebtPayment(null);setDebtPaymentAmount('');setDebtPaymentDate(getVietnamDateKey(new Date()));setDebtPaymentMode('partial');setDebtPaymentMethod('cash');}} className="text-xs text-gray-600 underline">Hủy chỉnh sửa</button>}
+              <div className="rounded-lg border bg-gray-50 p-3 space-y-2">
+                <div className="flex flex-wrap items-center justify-between gap-2"><p className="text-xs font-bold text-gray-700">Chọn hóa đơn/phiếu cần phân bổ thanh toán</p><div className="flex gap-3"><button type="button" onClick={()=>setSelectedDebtInvoiceIds(getContactTransactionsForDebt().map(t=>t.id))} className="text-xs text-blue-700 underline">Chọn tất cả</button><button type="button" onClick={()=>setSelectedDebtInvoiceIds([])} className="text-xs text-gray-600 underline">Bỏ chọn</button></div></div>
+                <p className="text-[11px] text-gray-500">Nếu không chọn hóa đơn, khoản trừ sẽ phân bổ theo các hóa đơn còn nợ từ cũ đến mới. Nếu chọn, chỉ phân bổ vào hóa đơn đã chọn.</p>
+                <div className="max-h-44 overflow-y-auto space-y-1">
+                  {getContactTransactionsForDebt().map(invoice => <label key={invoice.id} className="flex items-start gap-2 rounded border bg-white p-2 text-xs"><input type="checkbox" className="mt-0.5" checked={selectedDebtInvoiceIds.includes(invoice.id)} onChange={e=>setSelectedDebtInvoiceIds(prev=>e.target.checked?[...prev,invoice.id]:prev.filter(id=>id!==invoice.id))}/><span className="flex-1"><span className="font-semibold">{invoice.invoiceCode || invoice.receiptCode || invoice.code || invoice.id}</span><span className="block text-gray-500">{formatDate(invoice.date)} · Còn nợ: {formatCurrency(getOrderRemainingDebt(invoice))}</span></span></label>)}
+                  {getContactTransactionsForDebt().length===0 && <p className="text-xs text-gray-400">Không có hóa đơn/phiếu còn nợ để chọn.</p>}
+                </div>
+              </div>
+              {editingDebtPayment && <button type="button" onClick={()=>{setEditingDebtPayment(null);setDebtPaymentAmount('');setDebtPaymentDate(getVietnamDateKey(new Date()));setDebtPaymentMode('partial');setDebtPaymentMethod('cash');setDebtPaymentNote('');setSelectedDebtInvoiceIds([]);}} className="text-xs text-gray-600 underline">Hủy chỉnh sửa</button>}
               {selectedPaymentIds.length > 0 && <div className="flex items-center justify-between gap-2 bg-red-50 border border-red-200 rounded-lg p-2 text-xs"><span>Đã chọn {selectedPaymentIds.length} lần thanh toán</span><button type="button" disabled={savingDebtPayment} onClick={handleDeleteSelectedPayments} className="bg-red-600 text-white rounded px-3 py-1.5 font-bold disabled:opacity-50">Xóa lần thanh toán đã chọn</button></div>}
               <div className="border rounded-lg overflow-x-auto"><table className="w-full text-xs text-left"><thead className="bg-gray-100"><tr><th className="p-2">Chọn</th><th className="p-2">Thời gian thanh toán</th><th className="p-2">Số tiền</th><th className="p-2">Cách trừ</th><th className="p-2">Phương thức</th><th className="p-2">Ghi chú</th><th className="p-2">Thao tác</th></tr></thead><tbody>
-                {debtPayments.map(payment => <tr key={payment.id} className="border-t"><td className="p-2"><input type="checkbox" checked={selectedPaymentIds.includes(payment.id)} onChange={e=>setSelectedPaymentIds(prev=>e.target.checked?[...prev,payment.id]:prev.filter(id=>id!==payment.id))} aria-label="Chọn lần thanh toán" /></td><td className="p-2 whitespace-nowrap">{formatDate(payment.date || payment.createdAt)}</td><td className="p-2 font-bold">{formatCurrency(payment.amount)}</td><td className="p-2">{payment.mode==='all'?'Trừ trên tổng nợ':'Trừ từng phần'}</td><td className="p-2">{payment.method==='transfer'?'Chuyển khoản':'Tiền mặt'}</td><td className="p-2 min-w-[180px]">{payment.note || '—'}</td><td className="p-2"><div className="flex flex-wrap gap-2"><button type="button" onClick={()=>{setEditingDebtPayment(payment);setDebtPaymentMode(payment.mode==='all'?'all':'partial');setDebtPaymentAmount(String(payment.amount||''));setDebtPaymentDate(payment.date ? getVietnamDateKey(new Date(payment.date)) : getVietnamDateKey(new Date()));setDebtPaymentMethod(payment.method||'cash');setDebtPaymentNote(payment.note||'');}} className="text-blue-600 underline font-semibold">Chỉnh sửa</button><button type="button" disabled={savingDebtPayment} onClick={()=>handleUndoDebtPayment(payment)} className="text-red-600 underline font-semibold disabled:opacity-50">Hoàn tác</button></div></td></tr>)}
+                {debtPayments.map(payment => <tr key={payment.id} className="border-t"><td className="p-2"><input type="checkbox" checked={selectedPaymentIds.includes(payment.id)} onChange={e=>setSelectedPaymentIds(prev=>e.target.checked?[...prev,payment.id]:prev.filter(id=>id!==payment.id))} aria-label="Chọn lần thanh toán" /></td><td className="p-2 whitespace-nowrap">{formatDate(payment.date || payment.createdAt)}</td><td className="p-2 font-bold">{formatCurrency(payment.amount)}</td><td className="p-2">{payment.mode==='all'?'Trừ trên tổng nợ':'Trừ từng phần'}</td><td className="p-2">{payment.method==='transfer'?'Chuyển khoản':'Tiền mặt'}</td><td className="p-2 min-w-[180px]">{payment.note || '—'}</td><td className="p-2"><div className="flex flex-wrap gap-2"><button type="button" onClick={()=>{setEditingDebtPayment(payment);setDebtPaymentMode(payment.mode==='all'?'all':'partial');setDebtPaymentAmount(String(payment.amount||''));setDebtPaymentDate(payment.date ? getVietnamDateKey(new Date(payment.date)) : getVietnamDateKey(new Date()));setDebtPaymentMethod(payment.method||'cash');setDebtPaymentNote(payment.userNote ?? payment.note ?? '');setSelectedDebtInvoiceIds((payment.allocations||[]).map(a=>a.transactionId));}} className="text-blue-600 underline font-semibold">Chỉnh sửa</button><button type="button" disabled={savingDebtPayment} onClick={()=>handleUndoDebtPayment(payment)} className="text-red-600 underline font-semibold disabled:opacity-50">Hoàn tác</button></div></td></tr>)}
                 {debtPayments.length===0 && <tr><td colSpan="7" className="p-3 text-center text-gray-400">Chưa có giao dịch trừ công nợ</td></tr>}
               </tbody></table></div>
             </section>
