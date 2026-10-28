@@ -5370,6 +5370,7 @@ function SettingsView({ db, storeId, showToast, storeConfig }) {
           <table style={{width:'100%',borderCollapse:'collapse',tableLayout:'fixed',marginTop:'20px'}}><thead><tr>{['STT','Sản phẩm','SL','Đơn giá',...(showWarranty?['Thời gian bảo hành']:[]),...(showNote?['Ghi chú']:[]),'Thành tiền'].map(h=><th key={h} style={{border:'1px solid #666',padding:'7px',background:'#f2f2f2',textAlign:'center'}}>{h}</th>)}</tr></thead><tbody>{[1,2,3].map(n=><tr key={n}>{[''+n,'Tên sản phẩm','1','0 đ',...(showWarranty?['12 tháng']:[]),...(showNote?['Ghi chú']:[]),'0 đ'].map((v,i)=><td key={i} style={{border:'1px solid #666',padding:'7px',height:'30px',textAlign:i===0||i===2?'center':'left',overflowWrap:'anywhere'}}>{v}</td>)}</tr>)}</tbody></table>
           <div style={{textAlign:'right',fontWeight:700,fontSize:`${quoteFontSize+2}px`,marginTop:'18px'}}>TỔNG CỘNG: 0 đ</div>
           <div style={{marginTop:'18px'}}>Ghi chú: —</div><div style={{textAlign:'center',marginTop:'40px',whiteSpace:'pre-wrap'}}>{quoteCfg.printFooter||'Báo giá có hiệu lực theo thỏa thuận.'}</div>
+          </div>
         </div>
       );
     }
