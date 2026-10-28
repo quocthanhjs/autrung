@@ -1751,6 +1751,7 @@ function ContactManager({ type, data, orders, products = [], navigationTarget, s
   const [savingDebtPayment, setSavingDebtPayment] = useState(false);
   const [editDetailStat, setEditDetailStat] = useState(null);
   const [editingContactTransaction, setEditingContactTransaction] = useState(null);
+  const [editingContactTransactionOriginal, setEditingContactTransactionOriginal] = useState(null);
   const [savedContactTransactions, setSavedContactTransactions] = useState({});
 
   // Keep these handlers inside ContactManager so the customer/supplier detail
@@ -2622,7 +2623,7 @@ function ContactManager({ type, data, orders, products = [], navigationTarget, s
                               {getOrderRemainingDebt(ord) > 0 && <span className="font-semibold text-orange-700">Còn: {formatCurrency(getOrderRemainingDebt(ord))}</span>}
                               <button type="button" disabled={savingDebtPayment || getOrderRemainingDebt(ord) <= 0} onClick={() => handlePartialTransactionPayment(ord)} className="text-blue-700 underline font-semibold disabled:opacity-40">Thanh toán một phần</button>
                               <button type="button" disabled={savingDebtPayment} onClick={() => handleChangeTransactionStatus(ord)} className="text-red-600 underline font-semibold disabled:opacity-40">Sửa trạng thái</button>
-                              <button type="button" disabled={savingDebtPayment} onClick={() => setEditingContactTransaction(JSON.parse(JSON.stringify(ord)))} className="text-blue-700 underline font-semibold disabled:opacity-40">Sửa đơn hàng</button>
+                              <button type="button" disabled={savingDebtPayment} onClick={() => { const original = JSON.parse(JSON.stringify(ord)); setEditingContactTransactionOriginal(original); setEditingContactTransaction(JSON.parse(JSON.stringify(ord))); }} className="text-blue-700 underline font-semibold disabled:opacity-40">Sửa đơn hàng</button>
                               <button type="button" disabled={savingDebtPayment} onClick={() => handleDeleteOneContactTransaction(ord)} className="text-red-700 underline font-semibold disabled:opacity-40">Xóa đơn hàng</button>
                             </div>
                           </td>
@@ -2637,7 +2638,7 @@ function ContactManager({ type, data, orders, products = [], navigationTarget, s
             </div>
           </div>
         </div>}
-      <Modal isOpen={!!editingContactTransaction} onClose={() => { if (!savingDebtPayment) setEditingContactTransaction(null); }} title={`Sửa ${isCus ? 'đơn hàng' : 'phiếu nhập'}`} maxWidth="max-w-3xl">
+      <Modal isOpen={!!editingContactTransaction} onClose={() => { if (!savingDebtPayment) { setEditingContactTransaction(null); setEditingContactTransactionOriginal(null); } }} title={`Sửa ${isCus ? 'đơn hàng' : 'phiếu nhập'}`} maxWidth="max-w-3xl">
         {editingContactTransaction && <form onSubmit={handleSaveContactTransaction} className="space-y-4">
           <p className="text-sm text-blue-700 bg-blue-50 border border-blue-200 rounded-lg p-3">Tìm và chọn sản phẩm từ danh sách gợi ý. Có thể xóa từng dòng; khi lưu, hệ thống tính lại tổng tiền, công nợ và điều chỉnh tồn kho theo chênh lệch.</p>
           <datalist id={`contact-product-suggestions-${type}`}>{products.map(product => <option key={product.id} value={product.name || ''}>{[product.code, product.stock != null ? `Tồn: ${product.stock}` : ''].filter(Boolean).join(' · ')}</option>)}</datalist>
