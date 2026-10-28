@@ -1898,44 +1898,44 @@ function ContactManager({ type, data, orders, products = [], navigationTarget, s
   };
 
   const handleSaveContactTransaction = async (e) => {
-    e.preventDefault();
+    if (e?.preventDefault) e.preventDefault();
     if (!editingContactTransaction || savingDebtPayment) return;
     const transaction = editingContactTransaction;
-    const sourceRef = doc(db, 'stores', storeId, isCus ? 'orders' : 'imports', transaction.id);
     const transactionRef = doc(db, 'stores', storeId, isCus ? 'orders' : 'imports', transaction.id);
-    const currentSnapshot = await getDoc(transactionRef).catch(err => { showToast('Không đọc được giao dịch gốc: ' + (err?.message || ''), 'error'); return null; });
-    if (!currentSnapshot) return;
-    if (!currentSnapshot.exists()) { showToast('Không tìm thấy chứng từ gốc trên Firebase. Không thể lưu thay đổi.', 'error'); return; }
-    const original = { ...currentSnapshot.data(), id: transaction.id };
-    const items = (transaction.items || []).map(item => ({
-      ...item,
-      name: String(item.name || item.productName || '').trim(),
-      quantity: Math.max(0, Number(item.quantity ?? item.qty) || 0),
-      price: Math.max(0, Number(item.price ?? item.importCost ?? item.cost) || 0),
-      qty: Math.max(0, Number(item.quantity ?? item.qty) || 0),
-      ...(!isCus ? { importCost: Math.max(0, Number(item.price ?? item.importCost ?? item.cost) || 0) } : {}),
-      cost: Math.max(0, Number(item.cost ?? item.importCost) || 0)
-    }));
-    if (!items.length || items.some(item => !item.name || item.quantity <= 0)) {
-      showToast('Đơn hàng/phiếu nhập phải có ít nhất một sản phẩm; mỗi dòng cần tên và số lượng lớn hơn 0.', 'error'); return;
-    }
-    const total = items.reduce((sum, item) => sum + item.quantity * item.price, 0);
-    const totalCost = items.reduce((sum, item) => sum + item.quantity * item.cost, 0);
-    const oldTotal = Math.max(0, Number(original.total) || 0);
-    const oldRemaining = getOrderRemainingDebt(original);
-    const paidAmount = Math.max(0, Number(original.paidAmount ?? (oldTotal - oldRemaining)) || 0);
-    if (paidAmount > total) { showToast('Tổng tiền mới nhỏ hơn số đã thanh toán. Cần điều chỉnh/hoàn tác thanh toán trước khi lưu để không mất tiền đã thu/chi.', 'error'); return; }
-    const newRemaining = Math.max(0, total - paidAmount);
-    if (!window.confirm(`Lưu thay đổi ${isCus ? 'đơn hàng' : 'phiếu nhập'}? Tổng tiền mới: ${formatCurrency(total)}. Công nợ còn lại sẽ được tính lại theo số đã thanh toán; tồn kho được điều chỉnh theo chênh lệch sản phẩm/số lượng.`)) return;
     setSavingDebtPayment(true);
     try {
+      const currentSnapshot = await getDoc(transactionRef);
+      if (!currentSnapshot.exists()) throw new Error('Không tìm thấy chứng từ gốc trên Firebase. Hãy tải lại trang và mở lại giao dịch.');
+      const original = { ...currentSnapshot.data(), id: transaction.id };
+      const items = (transaction.items || []).map(item => {
+        const quantity = Math.max(0, Number(item.quantity ?? item.qty) || 0);
+        const price = Math.max(0, Number(item.price ?? item.importCost ?? item.cost) || 0);
+        const cost = Math.max(0, Number(item.cost ?? item.importCost) || 0);
+        return {
+          ...item,
+          name: String(item.name || item.productName || '').trim(),
+          quantity, qty: quantity, price, cost,
+          ...(!isCus ? { importCost: price } : {})
+        };
+      });
+      if (!items.length || items.some(item => !item.name || item.quantity <= 0)) {
+        throw new Error('Đơn hàng/phiếu nhập phải có ít nhất một sản phẩm; mỗi dòng cần tên và số lượng lớn hơn 0.');
+      }
+      const total = items.reduce((sum, item) => sum + item.quantity * item.price, 0);
+      const totalCost = items.reduce((sum, item) => sum + item.quantity * item.cost, 0);
+      const oldTotal = Math.max(0, Number(original.total ?? original.totalAmount) || 0);
+      const oldRemaining = getOrderRemainingDebt(original);
+      const paidAmount = Math.max(0, Number(original.paidAmount ?? (oldTotal - oldRemaining)) || 0);
+      if (paidAmount > total) throw new Error('Tổng tiền mới nhỏ hơn số đã thanh toán. Hãy điều chỉnh thanh toán trước khi lưu.');
+      const newRemaining = Math.max(0, total - paidAmount);
+      if (!window.confirm(`Lưu thay đổi ${isCus ? 'đơn hàng' : 'phiếu nhập'}? Tổng tiền mới: ${formatCurrency(total)}. Công nợ và tồn kho sẽ được điều chỉnh theo chênh lệch.`)) return;
+
       const batch = writeBatch(db);
       const stockDeltas = new Map();
       const itemKey = item => String(item.productId || item.productID || item.productCode || item.code || item.name || item.productName || '').trim().toLowerCase();
       const addStockDelta = (item, delta) => {
         const key = itemKey(item);
-        if (!key || !delta) return;
-        stockDeltas.set(key, (stockDeltas.get(key) || 0) + delta);
+        if (key && delta) stockDeltas.set(key, (stockDeltas.get(key) || 0) + delta);
       };
       const oldItems = Array.isArray(original.items) ? original.items : [];
       oldItems.forEach(item => addStockDelta(item, isCus ? Number(item.quantity ?? item.qty ?? 0) : -Number(item.quantity ?? item.qty ?? 0)));
@@ -1943,17 +1943,13 @@ function ContactManager({ type, data, orders, products = [], navigationTarget, s
       for (const [key, delta] of stockDeltas.entries()) {
         if (!delta) continue;
         const product = products.find(p => [p.id, p.code, p.productCode, p.name].some(value => String(value || '').trim().toLowerCase() === key));
-        if (!product) throw new Error('Không tìm thấy sản phẩm trong kho để điều chỉnh tồn: ' + key);
+        if (!product) throw new Error('Không tìm thấy sản phẩm trong kho để điều chỉnh tồn: ' + key + '. Hãy chọn sản phẩm từ gợi ý.');
         const stock = Number(product.stock ?? product.quantity ?? 0) || 0;
         if (stock + delta < 0) throw new Error('Tồn kho không đủ để điều chỉnh: ' + (product.name || key));
         batch.update(doc(db, 'stores', storeId, 'products', product.id), { stock: stock + delta, updatedAt: new Date().toISOString() });
       }
       batch.update(transactionRef, {
-        items,
-        total,
-        totalAmount: total,
-        paidAmount,
-        remainingDebt: newRemaining,
+        items, total, totalAmount: total, paidAmount, remainingDebt: newRemaining,
         status: newRemaining > 0 ? 'DEBT' : 'PAID',
         ...(isCus ? { totalCost, customerName: detailTarget?.name || transaction.customerName } : { supplierName: detailTarget?.name || transaction.supplierName }),
         debtUpdatedAt: new Date().toISOString()
@@ -1968,16 +1964,24 @@ function ContactManager({ type, data, orders, products = [], navigationTarget, s
       }
       await batch.commit();
       const savedSnapshot = await getDoc(transactionRef);
-      if (!savedSnapshot.exists()) throw new Error('Không tìm thấy chứng từ sau khi lưu.');
+      if (!savedSnapshot.exists()) throw new Error('Đã gửi lệnh lưu nhưng không đọc lại được chứng từ. Tải lại trang để kiểm tra trước khi thử lại.');
       const saved = { ...savedSnapshot.data(), id: transaction.id };
-      if (Number(saved.total) !== total || JSON.stringify(saved.items || []) !== JSON.stringify(items)) throw new Error('Firebase chưa trả về nội dung vừa sửa. Vui lòng tải lại trang và kiểm tra trước khi thử tiếp.');
+      const savedItems = Array.isArray(saved.items) ? saved.items : [];
+      const itemsMatch = savedItems.length === items.length && items.every((item, index) => {
+        const stored = savedItems[index] || {};
+        return String(stored.name || stored.productName || '') === item.name && Number(stored.quantity ?? stored.qty) === item.quantity && Number(stored.price ?? stored.importCost ?? stored.cost) === item.price;
+      });
+      if (Number(saved.total ?? saved.totalAmount) !== total || !itemsMatch) throw new Error('Firebase chưa xác nhận đúng nội dung vừa sửa. Vui lòng tải lại trang và kiểm tra dữ liệu trước khi thử lại.');
       setSavedContactTransactions(prev => ({ ...prev, [transaction.id]: saved }));
       setDetailTarget(prev => prev ? { ...prev, totalDebt: Math.max(0, (Number(prev.totalDebt) || 0) + contactDebtDelta) } : prev);
       setEditingContactTransaction(null);
-      showToast('Đã cập nhật giao dịch, tính lại công nợ và điều chỉnh tồn kho theo chênh lệch.');
+      showToast('Đã lưu thay đổi và xác minh lại dữ liệu trên Firebase.');
     } catch (err) {
-      showToast('Không thể cập nhật giao dịch: ' + (err?.message || ''), 'error');
-    } finally { setSavingDebtPayment(false); }
+      console.error('Lỗi lưu giao dịch chi tiết khách hàng/nhà cung cấp:', err);
+      showToast('Không lưu được: ' + (err?.message || 'Lỗi không xác định. Mở Console để xem chi tiết.'), 'error');
+    } finally {
+      setSavingDebtPayment(false);
+    }
   };
 
   const handleDeleteOneContactTransaction = async (transaction) => {
@@ -2607,7 +2611,7 @@ function ContactManager({ type, data, orders, products = [], navigationTarget, s
           </div>
           <button type="button" disabled={savingDebtPayment} onClick={()=>setEditingContactTransaction(prev=>({...prev,items:[...(prev.items||[]),{name:'',quantity:1,price:0,cost:0}]}))} className="inline-flex items-center gap-2 border border-blue-200 text-blue-700 rounded-lg px-3 py-2 font-semibold text-sm"><Plus size={16}/> Thêm sản phẩm</button>
           <div className="flex justify-between items-center rounded-lg bg-gray-50 p-3 font-bold"><span>Tổng tiền mới</span><span>{formatCurrency((editingContactTransaction.items||[]).reduce((sum,item)=>sum+(Number(item.quantity??item.qty)||0)*(Number(item.price??item.importCost)||0),0))}</span></div>
-          <div className="flex gap-2"><button type="button" disabled={savingDebtPayment} onClick={()=>setEditingContactTransaction(null)} className="flex-1 border rounded-lg p-3">Hủy</button><button type="button" disabled={savingDebtPayment} onClick={(e)=>handleSaveContactTransaction(e)} className="flex-1 bg-blue-600 text-white rounded-lg p-3 font-bold disabled:opacity-50">{savingDebtPayment?'Đang lưu...':'Lưu thay đổi'}</button></div>
+          <div className="flex gap-2"><button type="button" disabled={savingDebtPayment} onClick={()=>setEditingContactTransaction(null)} className="flex-1 border rounded-lg p-3">Hủy</button><button type="submit" disabled={savingDebtPayment} className="flex-1 bg-blue-600 text-white rounded-lg p-3 font-bold">{savingDebtPayment?'Đang lưu...':'Lưu thay đổi'}</button></div>
         </form>}
       </Modal>
       <Modal isOpen={!!editDetailStat} onClose={() => { if (!savingDebtPayment) setEditDetailStat(null); }} title={editDetailStat ? `Sửa số tiền: ${editDetailStat.label}` : 'Sửa số tiền'}>
