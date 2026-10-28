@@ -3813,10 +3813,13 @@ function ImportView({ products, orders = [], imports = [], suppliers, db, storeI
   const handleAddNewProductInImport = async (e) => {
     e.preventDefault();
     try {
-      const costVal = Number(newProdForm.cost) || 0; const priceVal = Number(newProdForm.price) || 0; const initStock = Math.max(0, Number(newProdForm.stock) || 0);
+      const formData = new FormData(e.currentTarget);
+      const productName = String(formData.get('productName') || '').trim();
+      const costVal = Number(formData.get('cost')) || 0; const priceVal = Number(formData.get('price')) || 0; const initStock = Math.max(0, Number(formData.get('stock')) || 0);
+      if (!productName) { showToast('Vui lòng nhập tên sản phẩm', 'error'); return; }
       // Số lượng người dùng nhập phải đúng bằng tồn kho cuối cùng: tạo sản phẩm ở tồn 0,
       // sau đó dùng chính số lượng đã nhập làm số lượng trên phiếu nhập (không cộng thêm 1).
-      const newProdData = { name: newProdForm.name, category: newProdForm.category || '', cost: costVal, price: priceVal, stock: 0, createdAt: new Date().toISOString() };
+      const newProdData = { name: productName, category: newProdForm.category || '', cost: costVal, price: priceVal, stock: 0, createdAt: new Date().toISOString() };
       const docRef = await addDoc(collection(db, 'stores', storeId, 'products'), newProdData);
       setCart(c => [...c, { id: docRef.id, name: newProdData.name, category: newProdData.category, qty: initStock, importCost: costVal, price: priceVal, isNewProduct: true, initialStock: 0 }]);
       setShowAddProdModal(false); setShowGroupSuggestions(false); setShowAddGroupForm(false); setNewProdForm({ name: '', category: '', cost: '', price: '', stock: '' }); showToast("Đã thêm hàng mới và đưa vào phiếu nhập!");
@@ -4050,13 +4053,13 @@ function ImportView({ products, orders = [], imports = [], suppliers, db, storeI
 
         {showAddProdModal && <form onSubmit={handleAddNewProductInImport} className="mb-3 bg-white border border-blue-200 rounded-xl p-3 space-y-3 shadow-sm">
           <div className="font-bold text-sm text-blue-700">Thêm sản phẩm mới ngay trong phiếu nhập</div>
-          <div><label className="block text-xs font-bold text-gray-500 mb-1">Tên sản phẩm *</label><input required placeholder="Nhập tên sản phẩm..." value={newProdForm.name} onChange={e=>setNewProdForm({...newProdForm,name:e.target.value})} className="w-full p-2.5 border rounded-lg outline-none text-sm"/></div>
+          <div><label className="block text-xs font-bold text-gray-500 mb-1">Tên sản phẩm *</label><input required name="productName" placeholder="Nhập tên sản phẩm..." defaultValue={newProdForm.name} autoComplete="off" className="w-full p-2.5 border rounded-lg outline-none text-sm"/></div>
           <div className="relative"><label className="block text-xs font-bold text-gray-500 mb-1">Nhóm hàng</label><input placeholder="Tìm hoặc chọn nhóm hàng..." value={groupSearch || newProdForm.category} onFocus={()=>setShowGroupSuggestions(true)} onChange={e=>{setGroupSearch(e.target.value);setNewProdForm(v=>({...v,category:e.target.value}));setShowGroupSuggestions(true);}} className="w-full p-2.5 border rounded-lg outline-none text-sm"/>
             {showGroupSuggestions && <div className="mt-1 border rounded-lg max-h-32 overflow-auto bg-white">{visibleGroups.slice(0,8).map((g,i)=><button type="button" key={`${g}-${i}`} onClick={()=>{setNewProdForm(v=>({...v,category:g}));setGroupSearch(g);setShowGroupSuggestions(false);}} className="block w-full text-left px-3 py-2 text-sm hover:bg-blue-50">{g}</button>)}<button type="button" onClick={()=>{setNewGroupName(groupSearch || newProdForm.category);setShowAddGroupForm(v=>!v);}} className="w-full text-left px-3 py-2 text-sm text-blue-700 font-semibold border-t"><Plus size={14} className="inline mr-1"/>Thêm nhóm hàng mới</button></div>}
             {showAddGroupForm && <div className="mt-2 flex gap-2"><input value={newGroupName} onChange={e=>setNewGroupName(e.target.value)} placeholder="Tên nhóm hàng mới" className="min-w-0 flex-1 p-2 border rounded-lg text-sm"/><button type="button" onClick={handleAddGroupQuick} className="px-3 rounded-lg bg-blue-600 text-white text-sm font-bold">Chọn nhóm</button></div>}
           </div>
-          <div className="grid grid-cols-2 gap-3"><div><label className="block text-xs font-bold text-gray-500 mb-1">Giá vốn (đ) *</label><input required type="number" step="any" placeholder="0 (có thể âm)" value={newProdForm.cost} onChange={e=>setNewProdForm({...newProdForm,cost:e.target.value})} className="w-full p-2.5 border rounded-lg text-sm"/></div><div><label className="block text-xs font-bold text-gray-500 mb-1">Giá bán (đ) *</label><input required type="number" step="any" placeholder="0 (có thể âm)" value={newProdForm.price} onChange={e=>setNewProdForm({...newProdForm,price:e.target.value})} className="w-full p-2.5 border rounded-lg text-sm"/></div></div>
-          <div><label className="block text-xs font-bold text-gray-500 mb-1">Số lượng tồn ban đầu *</label><input required type="number" placeholder="0" value={newProdForm.stock} onChange={e=>setNewProdForm({...newProdForm,stock:e.target.value})} className="w-full p-2.5 border rounded-lg text-sm"/></div>
+          <div className="grid grid-cols-2 gap-3"><div><label className="block text-xs font-bold text-gray-500 mb-1">Giá vốn (đ) *</label><input required name="cost" type="number" step="any" placeholder="0 (có thể âm)" defaultValue={newProdForm.cost} className="w-full p-2.5 border rounded-lg text-sm"/></div><div><label className="block text-xs font-bold text-gray-500 mb-1">Giá bán (đ) *</label><input required name="price" type="number" step="any" placeholder="0 (có thể âm)" defaultValue={newProdForm.price} className="w-full p-2.5 border rounded-lg text-sm"/></div></div>
+          <div><label className="block text-xs font-bold text-gray-500 mb-1">Số lượng tồn ban đầu *</label><input required name="stock" type="number" placeholder="0" defaultValue={newProdForm.stock} className="w-full p-2.5 border rounded-lg text-sm"/></div>
           <button type="submit" className="w-full bg-blue-600 text-white font-bold p-2.5 rounded-lg text-sm">Lưu & đưa vào phiếu nhập</button>
         </form>}
         <div className="flex-1 bg-white rounded-xl border shadow-sm overflow-hidden flex flex-col justify-between">
