@@ -1908,21 +1908,56 @@ function ContactManager({ type, data, orders, products = [], navigationTarget, s
       cost: Math.max(0, Number(item.cost ?? item.importCost) || 0)
     }));
     if (!items.length || items.some(item => !item.name || item.quantity <= 0)) {
-      showToast('Mỗi mặt hàng cần có tên và số lượng lớn hơn 0.', 'error'); return;
+      showToast('Đơn hàng/phiếu nhập phải có ít nhất một sản phẩm; mỗi dòng cần tên và số lượng lớn hơn 0.', 'error'); return;
     }
     const total = items.reduce((sum, item) => sum + item.quantity * item.price, 0);
     const totalCost = items.reduce((sum, item) => sum + item.quantity * item.cost, 0);
-    if (!window.confirm('Lưu thay đổi đơn hàng/phiếu nhập? Lưu ý: thao tác này cập nhật thông tin giao dịch và tổng tiền; không tự điều chỉnh tồn kho theo chênh lệch sản phẩm.')) return;
+    const oldTotal = Math.max(0, Number(transaction.total) || 0);
+    const oldRemaining = getOrderRemainingDebt(transaction);
+    const paidAmount = Math.max(0, Number(transaction.paidAmount ?? (oldTotal - oldRemaining)) || 0);
+    const newRemaining = Math.max(0, total - paidAmount);
+    if (!window.confirm(`Lưu thay đổi ${isCus ? 'đơn hàng' : 'phiếu nhập'}? Tổng tiền mới: ${formatCurrency(total)}. Công nợ còn lại sẽ được tính lại theo số đã thanh toán; tồn kho được điều chỉnh theo chênh lệch sản phẩm/số lượng.`)) return;
     setSavingDebtPayment(true);
     try {
-      await updateDoc(doc(db, 'stores', storeId, isCus ? 'orders' : 'imports', transaction.id), {
+      const batch = writeBatch(db);
+      const stockDeltas = new Map();
+      const itemKey = item => String(item.productId || item.productID || item.productCode || item.code || item.name || item.productName || '').trim().toLowerCase();
+      const addStockDelta = (item, delta) => {
+        const key = itemKey(item);
+        if (!key || !delta) return;
+        stockDeltas.set(key, (stockDeltas.get(key) || 0) + delta);
+      };
+      const oldItems = Array.isArray(transaction.items) ? transaction.items : [];
+      oldItems.forEach(item => addStockDelta(item, isCus ? Number(item.quantity ?? item.qty ?? 0) : -Number(item.quantity ?? item.qty ?? 0)));
+      items.forEach(item => addStockDelta(item, isCus ? -item.quantity : item.quantity));
+      for (const [key, delta] of stockDeltas.entries()) {
+        if (!delta) continue;
+        const product = products.find(p => [p.id, p.code, p.productCode, p.name].some(value => String(value || '').trim().toLowerCase() === key));
+        if (!product) continue;
+        const stock = Number(product.stock ?? product.quantity ?? 0) || 0;
+        batch.update(doc(db, 'stores', storeId, 'products', product.id), { stock: Math.max(0, stock + delta), updatedAt: new Date().toISOString() });
+      }
+      batch.update(doc(db, 'stores', storeId, isCus ? 'orders' : 'imports', transaction.id), {
         items,
         total,
+        paidAmount: Math.min(total, paidAmount),
+        remainingDebt: newRemaining,
+        status: newRemaining > 0 ? 'DEBT' : 'PAID',
         ...(isCus ? { totalCost, customerName: detailTarget?.name || transaction.customerName } : { supplierName: detailTarget?.name || transaction.supplierName }),
         debtUpdatedAt: new Date().toISOString()
       });
+      const contactDebtDelta = newRemaining - oldRemaining;
+      if (contactDebtDelta !== 0 && detailTarget?.id) {
+        batch.set(doc(db, 'stores', storeId, type, detailTarget.id), {
+          totalDebt: Math.max(0, (Number(detailTarget.totalDebt) || 0) + contactDebtDelta),
+          debtUpdatedAt: new Date().toISOString(),
+          debtNote: `Điều chỉnh công nợ sau khi sửa ${isCus ? 'đơn hàng' : 'phiếu nhập'} ${transaction.id}`
+        }, { merge: true });
+      }
+      await batch.commit();
+      setDetailTarget(prev => prev ? { ...prev, totalDebt: Math.max(0, (Number(prev.totalDebt) || 0) + contactDebtDelta) } : prev);
       setEditingContactTransaction(null);
-      showToast('Đã cập nhật chi tiết giao dịch. Vui lòng kiểm tra tồn kho nếu có đổi sản phẩm/số lượng.');
+      showToast('Đã cập nhật giao dịch, tính lại công nợ và điều chỉnh tồn kho theo chênh lệch.');
     } catch (err) {
       showToast('Không thể cập nhật giao dịch: ' + (err?.message || ''), 'error');
     } finally { setSavingDebtPayment(false); }
@@ -2541,14 +2576,20 @@ function ContactManager({ type, data, orders, products = [], navigationTarget, s
         </div>}
       <Modal isOpen={!!editingContactTransaction} onClose={() => { if (!savingDebtPayment) setEditingContactTransaction(null); }} title={`Sửa ${isCus ? 'đơn hàng' : 'phiếu nhập'}`} maxWidth="max-w-3xl">
         {editingContactTransaction && <form onSubmit={handleSaveContactTransaction} className="space-y-4">
-          <p className="text-sm text-amber-700 bg-amber-50 border border-amber-200 rounded-lg p-3">Chỉnh tên mặt hàng, số lượng và giá. Nếu đổi sản phẩm hoặc số lượng, bạn cần kiểm tra/điều chỉnh tồn kho riêng sau khi lưu.</p>
+          <p className="text-sm text-blue-700 bg-blue-50 border border-blue-200 rounded-lg p-3">Tìm và chọn sản phẩm từ danh sách gợi ý. Có thể xóa từng dòng; khi lưu, hệ thống tính lại tổng tiền, công nợ và điều chỉnh tồn kho theo chênh lệch.</p>
+          <datalist id={`contact-product-suggestions-${type}`}>{products.map(product => <option key={product.id} value={product.name || ''}>{[product.code, product.stock != null ? `Tồn: ${product.stock}` : ''].filter(Boolean).join(' · ')}</option>)}</datalist>
           <div className="space-y-3 max-h-[55vh] overflow-y-auto">
-            {(editingContactTransaction.items || []).map((item, index) => <div key={index} className="grid grid-cols-1 sm:grid-cols-4 gap-2 border rounded-lg p-3">
-              <div className="sm:col-span-2"><label className="block text-xs font-semibold mb-1">Tên sản phẩm</label><input required value={item.name || item.productName || ''} onChange={e=>setEditingContactTransaction(prev=>({...prev,items:prev.items.map((it,i)=>i===index?{...it,name:e.target.value}:it)}))} className="w-full border rounded p-2 text-sm" /></div>
-              <div><label className="block text-xs font-semibold mb-1">Số lượng</label><input required type="number" min="1" value={item.quantity ?? item.qty ?? 1} onChange={e=>setEditingContactTransaction(prev=>({...prev,items:prev.items.map((it,i)=>i===index?{...it,quantity:e.target.value}:it)}))} className="w-full border rounded p-2 text-sm" /></div>
-              <div><label className="block text-xs font-semibold mb-1">{isCus ? 'Giá bán' : 'Giá nhập'}</label><input required type="number" min="0" value={item.price ?? item.importCost ?? 0} onChange={e=>setEditingContactTransaction(prev=>({...prev,items:prev.items.map((it,i)=>i===index?{...it,price:e.target.value}:it)}))} className="w-full border rounded p-2 text-sm" /></div>
+            {(editingContactTransaction.items || []).map((item, index) => <div key={index} className="border rounded-lg p-3 space-y-2">
+              <div className="grid grid-cols-1 sm:grid-cols-4 gap-2">
+                <div className="sm:col-span-2"><label className="block text-xs font-semibold mb-1">Tên sản phẩm (gõ để xem gợi ý)</label><input required list={`contact-product-suggestions-${type}`} value={item.name || item.productName || ''} onChange={e=>{const value=e.target.value; const matched=products.find(p=>String(p.name||'').toLowerCase()===value.trim().toLowerCase()); setEditingContactTransaction(prev=>({...prev,items:prev.items.map((it,i)=>i===index?{...it,name:value,productId:matched?.id||'',productCode:matched?.code||matched?.productCode||'',code:matched?.code||matched?.productCode||'',cost:matched?Number(matched.cost??matched.importCost??it.cost??0):it.cost}:it)}));}} className="w-full border rounded p-2 text-sm" placeholder="Nhập mã hoặc tên sản phẩm..." /></div>
+                <div><label className="block text-xs font-semibold mb-1">Số lượng</label><input required type="number" min="1" value={item.quantity ?? item.qty ?? 1} onChange={e=>setEditingContactTransaction(prev=>({...prev,items:prev.items.map((it,i)=>i===index?{...it,quantity:e.target.value}:it)}))} className="w-full border rounded p-2 text-sm" /></div>
+                <div><label className="block text-xs font-semibold mb-1">{isCus ? 'Giá bán' : 'Giá nhập'}</label><input required type="number" min="0" value={item.price ?? item.importCost ?? 0} onChange={e=>setEditingContactTransaction(prev=>({...prev,items:prev.items.map((it,i)=>i===index?{...it,price:e.target.value}:it)}))} className="w-full border rounded p-2 text-sm" /></div>
+              </div>
+              <div className="flex justify-between items-center gap-2"><span className="text-xs text-gray-500">Thành tiền: {formatCurrency((Number(item.quantity ?? item.qty) || 0) * (Number(item.price ?? item.importCost) || 0))}</span><button type="button" disabled={savingDebtPayment} onClick={()=>setEditingContactTransaction(prev=>({...prev,items:(prev.items||[]).filter((_,i)=>i!==index)}))} className="inline-flex items-center gap-1 text-red-600 border border-red-200 rounded-lg px-3 py-1.5 text-xs font-semibold hover:bg-red-50"><Trash2 size={14}/> Xóa sản phẩm</button></div>
             </div>)}
           </div>
+          <button type="button" disabled={savingDebtPayment} onClick={()=>setEditingContactTransaction(prev=>({...prev,items:[...(prev.items||[]),{name:'',quantity:1,price:0,cost:0}]}))} className="inline-flex items-center gap-2 border border-blue-200 text-blue-700 rounded-lg px-3 py-2 font-semibold text-sm"><Plus size={16}/> Thêm sản phẩm</button>
+          <div className="flex justify-between items-center rounded-lg bg-gray-50 p-3 font-bold"><span>Tổng tiền mới</span><span>{formatCurrency((editingContactTransaction.items||[]).reduce((sum,item)=>sum+(Number(item.quantity??item.qty)||0)*(Number(item.price??item.importCost)||0),0))}</span></div>
           <div className="flex gap-2"><button type="button" disabled={savingDebtPayment} onClick={()=>setEditingContactTransaction(null)} className="flex-1 border rounded-lg p-3">Hủy</button><button type="submit" disabled={savingDebtPayment} className="flex-1 bg-blue-600 text-white rounded-lg p-3 font-bold">{savingDebtPayment?'Đang lưu...':'Lưu thay đổi'}</button></div>
         </form>}
       </Modal>
