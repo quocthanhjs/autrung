@@ -1751,6 +1751,7 @@ function ContactManager({ type, data, orders, products = [], navigationTarget, s
   const [savingDebtPayment, setSavingDebtPayment] = useState(false);
   const [editDetailStat, setEditDetailStat] = useState(null);
   const [editingContactTransaction, setEditingContactTransaction] = useState(null);
+  const [savedContactTransactions, setSavedContactTransactions] = useState({});
 
   // Keep these handlers inside ContactManager so the customer/supplier detail
   // buttons use this component's own state and selected contact.
@@ -1900,11 +1901,19 @@ function ContactManager({ type, data, orders, products = [], navigationTarget, s
     e.preventDefault();
     if (!editingContactTransaction || savingDebtPayment) return;
     const transaction = editingContactTransaction;
+    const sourceRef = doc(db, 'stores', storeId, isCus ? 'orders' : 'imports', transaction.id);
+    const transactionRef = doc(db, 'stores', storeId, isCus ? 'orders' : 'imports', transaction.id);
+    const currentSnapshot = await getDoc(transactionRef).catch(err => { showToast('Không đọc được giao dịch gốc: ' + (err?.message || ''), 'error'); return null; });
+    if (!currentSnapshot) return;
+    if (!currentSnapshot.exists()) { showToast('Không tìm thấy chứng từ gốc trên Firebase. Không thể lưu thay đổi.', 'error'); return; }
+    const original = { ...currentSnapshot.data(), id: transaction.id };
     const items = (transaction.items || []).map(item => ({
       ...item,
       name: String(item.name || item.productName || '').trim(),
       quantity: Math.max(0, Number(item.quantity ?? item.qty) || 0),
-      price: Math.max(0, Number(item.price) || 0),
+      price: Math.max(0, Number(item.price ?? item.importCost ?? item.cost) || 0),
+      qty: Math.max(0, Number(item.quantity ?? item.qty) || 0),
+      ...(!isCus ? { importCost: Math.max(0, Number(item.price ?? item.importCost ?? item.cost) || 0) } : {}),
       cost: Math.max(0, Number(item.cost ?? item.importCost) || 0)
     }));
     if (!items.length || items.some(item => !item.name || item.quantity <= 0)) {
@@ -1912,9 +1921,10 @@ function ContactManager({ type, data, orders, products = [], navigationTarget, s
     }
     const total = items.reduce((sum, item) => sum + item.quantity * item.price, 0);
     const totalCost = items.reduce((sum, item) => sum + item.quantity * item.cost, 0);
-    const oldTotal = Math.max(0, Number(transaction.total) || 0);
-    const oldRemaining = getOrderRemainingDebt(transaction);
-    const paidAmount = Math.max(0, Number(transaction.paidAmount ?? (oldTotal - oldRemaining)) || 0);
+    const oldTotal = Math.max(0, Number(original.total) || 0);
+    const oldRemaining = getOrderRemainingDebt(original);
+    const paidAmount = Math.max(0, Number(original.paidAmount ?? (oldTotal - oldRemaining)) || 0);
+    if (paidAmount > total) { showToast('Tổng tiền mới nhỏ hơn số đã thanh toán. Cần điều chỉnh/hoàn tác thanh toán trước khi lưu để không mất tiền đã thu/chi.', 'error'); return; }
     const newRemaining = Math.max(0, total - paidAmount);
     if (!window.confirm(`Lưu thay đổi ${isCus ? 'đơn hàng' : 'phiếu nhập'}? Tổng tiền mới: ${formatCurrency(total)}. Công nợ còn lại sẽ được tính lại theo số đã thanh toán; tồn kho được điều chỉnh theo chênh lệch sản phẩm/số lượng.`)) return;
     setSavingDebtPayment(true);
@@ -1927,20 +1937,22 @@ function ContactManager({ type, data, orders, products = [], navigationTarget, s
         if (!key || !delta) return;
         stockDeltas.set(key, (stockDeltas.get(key) || 0) + delta);
       };
-      const oldItems = Array.isArray(transaction.items) ? transaction.items : [];
+      const oldItems = Array.isArray(original.items) ? original.items : [];
       oldItems.forEach(item => addStockDelta(item, isCus ? Number(item.quantity ?? item.qty ?? 0) : -Number(item.quantity ?? item.qty ?? 0)));
       items.forEach(item => addStockDelta(item, isCus ? -item.quantity : item.quantity));
       for (const [key, delta] of stockDeltas.entries()) {
         if (!delta) continue;
         const product = products.find(p => [p.id, p.code, p.productCode, p.name].some(value => String(value || '').trim().toLowerCase() === key));
-        if (!product) continue;
+        if (!product) throw new Error('Không tìm thấy sản phẩm trong kho để điều chỉnh tồn: ' + key);
         const stock = Number(product.stock ?? product.quantity ?? 0) || 0;
-        batch.update(doc(db, 'stores', storeId, 'products', product.id), { stock: Math.max(0, stock + delta), updatedAt: new Date().toISOString() });
+        if (stock + delta < 0) throw new Error('Tồn kho không đủ để điều chỉnh: ' + (product.name || key));
+        batch.update(doc(db, 'stores', storeId, 'products', product.id), { stock: stock + delta, updatedAt: new Date().toISOString() });
       }
-      batch.update(doc(db, 'stores', storeId, isCus ? 'orders' : 'imports', transaction.id), {
+      batch.update(transactionRef, {
         items,
         total,
-        paidAmount: Math.min(total, paidAmount),
+        totalAmount: total,
+        paidAmount,
         remainingDebt: newRemaining,
         status: newRemaining > 0 ? 'DEBT' : 'PAID',
         ...(isCus ? { totalCost, customerName: detailTarget?.name || transaction.customerName } : { supplierName: detailTarget?.name || transaction.supplierName }),
@@ -1955,6 +1967,11 @@ function ContactManager({ type, data, orders, products = [], navigationTarget, s
         }, { merge: true });
       }
       await batch.commit();
+      const savedSnapshot = await getDoc(transactionRef);
+      if (!savedSnapshot.exists()) throw new Error('Không tìm thấy chứng từ sau khi lưu.');
+      const saved = { ...savedSnapshot.data(), id: transaction.id };
+      if (Number(saved.total) !== total || JSON.stringify(saved.items || []) !== JSON.stringify(items)) throw new Error('Firebase chưa trả về nội dung vừa sửa. Vui lòng tải lại trang và kiểm tra trước khi thử tiếp.');
+      setSavedContactTransactions(prev => ({ ...prev, [transaction.id]: saved }));
       setDetailTarget(prev => prev ? { ...prev, totalDebt: Math.max(0, (Number(prev.totalDebt) || 0) + contactDebtDelta) } : prev);
       setEditingContactTransaction(null);
       showToast('Đã cập nhật giao dịch, tính lại công nợ và điều chỉnh tồn kho theo chênh lệch.');
@@ -2399,7 +2416,7 @@ function ContactManager({ type, data, orders, products = [], navigationTarget, s
     const idField = isCus ? 'customerId' : 'supplierId';
     const nameField = isCus ? 'customerName' : 'supplierName';
     const sameName = value => String(value || '').trim().toLocaleLowerCase('vi') === String(detailTarget.name || '').trim().toLocaleLowerCase('vi');
-    const allOrders = orders || [];
+    const allOrders = (orders || []).map(o => savedContactTransactions[o.id] || o);
     const idMatches = detailTarget.id ? allOrders.filter(o => o[idField] && o[idField] === detailTarget.id) : [];
     const baseMatches = idMatches.length
       ? idMatches
@@ -2430,7 +2447,7 @@ function ContactManager({ type, data, orders, products = [], navigationTarget, s
     // Công nợ hiển thị theo số dư hồ sơ đã xác nhận, không cộng lại giao dịch cũ.
     let totalDebtRemain = Math.max(0, Number(detailTarget.totalDebt) || 0);
     return { list: visibleMatched, totalAmount, totalPaid, totalDebtRemain };
-  }, [detailTarget, orders, filterYear, isCus]);
+  }, [detailTarget, orders, filterYear, isCus, savedContactTransactions]);
   const detailPageList = detailRowsPerPage === 'all' ? detailData.list : detailData.list.slice((detailCurrentPage - 1) * Number(detailRowsPerPage), detailCurrentPage * Number(detailRowsPerPage));
   const detailTotalPages = detailRowsPerPage === 'all' ? 1 : Math.max(1, Math.ceil(detailData.list.length / Number(detailRowsPerPage)));
 
