@@ -1750,6 +1750,7 @@ function ContactManager({ type, data, orders, products = [], navigationTarget, s
   const [editingDebtPayment, setEditingDebtPayment] = useState(null);
   const [savingDebtPayment, setSavingDebtPayment] = useState(false);
   const [editDetailStat, setEditDetailStat] = useState(null);
+  const [editingContactTransaction, setEditingContactTransaction] = useState(null);
 
   // Keep these handlers inside ContactManager so the customer/supplier detail
   // buttons use this component's own state and selected contact.
@@ -1893,6 +1894,60 @@ function ContactManager({ type, data, orders, products = [], navigationTarget, s
     if (!window.confirm(`Xóa lần thanh toán ${formatCurrency(chosen[0].amount)} đã chọn? Hệ thống sẽ hoàn tác lần này để cập nhật lại công nợ và các giao dịch liên quan.`)) return;
     await handleUndoDebtPayment(chosen[0]);
     setSelectedPaymentIds([]);
+  };
+
+  const handleSaveContactTransaction = async (e) => {
+    e.preventDefault();
+    if (!editingContactTransaction || savingDebtPayment) return;
+    const transaction = editingContactTransaction;
+    const items = (transaction.items || []).map(item => ({
+      ...item,
+      name: String(item.name || item.productName || '').trim(),
+      quantity: Math.max(0, Number(item.quantity ?? item.qty) || 0),
+      price: Math.max(0, Number(item.price) || 0),
+      cost: Math.max(0, Number(item.cost ?? item.importCost) || 0)
+    }));
+    if (!items.length || items.some(item => !item.name || item.quantity <= 0)) {
+      showToast('Mỗi mặt hàng cần có tên và số lượng lớn hơn 0.', 'error'); return;
+    }
+    const total = items.reduce((sum, item) => sum + item.quantity * item.price, 0);
+    const totalCost = items.reduce((sum, item) => sum + item.quantity * item.cost, 0);
+    if (!window.confirm('Lưu thay đổi đơn hàng/phiếu nhập? Lưu ý: thao tác này cập nhật thông tin giao dịch và tổng tiền; không tự điều chỉnh tồn kho theo chênh lệch sản phẩm.')) return;
+    setSavingDebtPayment(true);
+    try {
+      await updateDoc(doc(db, 'stores', storeId, isCus ? 'orders' : 'imports', transaction.id), {
+        items,
+        total,
+        ...(isCus ? { totalCost, customerName: detailTarget?.name || transaction.customerName } : { supplierName: detailTarget?.name || transaction.supplierName }),
+        debtUpdatedAt: new Date().toISOString()
+      });
+      setEditingContactTransaction(null);
+      showToast('Đã cập nhật chi tiết giao dịch. Vui lòng kiểm tra tồn kho nếu có đổi sản phẩm/số lượng.');
+    } catch (err) {
+      showToast('Không thể cập nhật giao dịch: ' + (err?.message || ''), 'error');
+    } finally { setSavingDebtPayment(false); }
+  };
+
+  const handleDeleteOneContactTransaction = async (transaction) => {
+    if (!transaction || savingDebtPayment || !detailTarget?.id) return;
+    if (!window.confirm(`Xóa ${isCus ? 'đơn hàng' : 'phiếu nhập'} này khỏi lịch sử? Thao tác điều chỉnh công nợ hồ sơ nhưng không tự thay đổi tồn kho. Bạn có chắc chắn không?`)) return;
+    setSavingDebtPayment(true);
+    try {
+      const remaining = getOrderRemainingDebt(transaction);
+      const nextDebt = Math.max(0, (Number(detailTarget.totalDebt) || 0) - remaining);
+      const batch = writeBatch(db);
+      batch.delete(doc(db, 'stores', storeId, isCus ? 'orders' : 'imports', transaction.id));
+      batch.set(doc(db, 'stores', storeId, type, detailTarget.id), {
+        totalDebt: nextDebt,
+        debtUpdatedAt: new Date().toISOString(),
+        debtNote: `Đã xóa ${isCus ? 'đơn hàng' : 'phiếu nhập'} ${transaction.id}; điều chỉnh công nợ ${formatCurrency(remaining)}`
+      }, { merge: true });
+      await batch.commit();
+      setSelectedTransactionIds(prev => prev.filter(id => id !== transaction.id));
+      setDetailTarget(prev => prev ? { ...prev, totalDebt: nextDebt } : prev);
+      showToast('Đã xóa giao dịch khỏi lịch sử; tồn kho không thay đổi.');
+    } catch (err) { showToast('Không thể xóa giao dịch: ' + (err?.message || ''), 'error'); }
+    finally { setSavingDebtPayment(false); }
   };
 
   const handleDeleteSelectedTransactions = async () => {
@@ -2469,6 +2524,8 @@ function ContactManager({ type, data, orders, products = [], navigationTarget, s
                               {getOrderRemainingDebt(ord) > 0 && <span className="font-semibold text-orange-700">Còn: {formatCurrency(getOrderRemainingDebt(ord))}</span>}
                               <button type="button" disabled={savingDebtPayment || getOrderRemainingDebt(ord) <= 0} onClick={() => handlePartialTransactionPayment(ord)} className="text-blue-700 underline font-semibold disabled:opacity-40">Thanh toán một phần</button>
                               <button type="button" disabled={savingDebtPayment} onClick={() => handleChangeTransactionStatus(ord)} className="text-red-600 underline font-semibold disabled:opacity-40">Sửa trạng thái</button>
+                              <button type="button" disabled={savingDebtPayment} onClick={() => setEditingContactTransaction(JSON.parse(JSON.stringify(ord)))} className="text-blue-700 underline font-semibold disabled:opacity-40">Sửa đơn hàng</button>
+                              <button type="button" disabled={savingDebtPayment} onClick={() => handleDeleteOneContactTransaction(ord)} className="text-red-700 underline font-semibold disabled:opacity-40">Xóa đơn hàng</button>
                             </div>
                           </td>
                         </tr>
@@ -2482,6 +2539,19 @@ function ContactManager({ type, data, orders, products = [], navigationTarget, s
             </div>
           </div>
         </div>}
+      <Modal isOpen={!!editingContactTransaction} onClose={() => { if (!savingDebtPayment) setEditingContactTransaction(null); }} title={`Sửa ${isCus ? 'đơn hàng' : 'phiếu nhập'}`} maxWidth="max-w-3xl">
+        {editingContactTransaction && <form onSubmit={handleSaveContactTransaction} className="space-y-4">
+          <p className="text-sm text-amber-700 bg-amber-50 border border-amber-200 rounded-lg p-3">Chỉnh tên mặt hàng, số lượng và giá. Nếu đổi sản phẩm hoặc số lượng, bạn cần kiểm tra/điều chỉnh tồn kho riêng sau khi lưu.</p>
+          <div className="space-y-3 max-h-[55vh] overflow-y-auto">
+            {(editingContactTransaction.items || []).map((item, index) => <div key={index} className="grid grid-cols-1 sm:grid-cols-4 gap-2 border rounded-lg p-3">
+              <div className="sm:col-span-2"><label className="block text-xs font-semibold mb-1">Tên sản phẩm</label><input required value={item.name || item.productName || ''} onChange={e=>setEditingContactTransaction(prev=>({...prev,items:prev.items.map((it,i)=>i===index?{...it,name:e.target.value}:it)}))} className="w-full border rounded p-2 text-sm" /></div>
+              <div><label className="block text-xs font-semibold mb-1">Số lượng</label><input required type="number" min="1" value={item.quantity ?? item.qty ?? 1} onChange={e=>setEditingContactTransaction(prev=>({...prev,items:prev.items.map((it,i)=>i===index?{...it,quantity:e.target.value}:it)}))} className="w-full border rounded p-2 text-sm" /></div>
+              <div><label className="block text-xs font-semibold mb-1">{isCus ? 'Giá bán' : 'Giá nhập'}</label><input required type="number" min="0" value={item.price ?? item.importCost ?? 0} onChange={e=>setEditingContactTransaction(prev=>({...prev,items:prev.items.map((it,i)=>i===index?{...it,price:e.target.value}:it)}))} className="w-full border rounded p-2 text-sm" /></div>
+            </div>)}
+          </div>
+          <div className="flex gap-2"><button type="button" disabled={savingDebtPayment} onClick={()=>setEditingContactTransaction(null)} className="flex-1 border rounded-lg p-3">Hủy</button><button type="submit" disabled={savingDebtPayment} className="flex-1 bg-blue-600 text-white rounded-lg p-3 font-bold">{savingDebtPayment?'Đang lưu...':'Lưu thay đổi'}</button></div>
+        </form>}
+      </Modal>
       <Modal isOpen={!!editDetailStat} onClose={() => { if (!savingDebtPayment) setEditDetailStat(null); }} title={editDetailStat ? `Sửa số tiền: ${editDetailStat.label}` : 'Sửa số tiền'}>
         {editDetailStat && <form onSubmit={handleSaveDetailStat} className="space-y-4">
           <div><label className="block text-sm font-semibold text-gray-700 mb-1">Số tiền mới (VNĐ)</label><input autoFocus type="number" min="0" step="1" inputMode="numeric" required value={editDetailStat.newValue} onChange={e=>setEditDetailStat(v=>({...v,newValue:e.target.value}))} className="w-full p-3 border rounded-xl outline-none focus:ring-2 focus:ring-blue-500" placeholder="Nhập số tiền" /></div>
