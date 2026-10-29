@@ -2781,16 +2781,26 @@ function ContactManager({ type, data, orders, products = [], navigationTarget, s
 function GroupManagementView({ products, db, storeId, showToast }) {
   const [groups, setGroups] = useState([]);
   const [groupSearch, setGroupSearch] = useState('');
+  const getGroupName = value => String(value?.name ?? value?.groupName ?? value?.categoryName ?? value?.group ?? value?.category ?? value?.title ?? value?.['Tên nhóm hàng'] ?? value?.['Tên nhóm'] ?? '').trim();
+  const getProductGroup = product => getGroupName({
+    name: product?.category || product?.groupName || product?.categoryName || product?.group || product?.productGroup || product?.['Nhóm hàng'] || product?.['Tên nhóm hàng']
+  });
   const visibleGroups = useMemo(() => {
     const byName = new Map();
-    (groups || []).forEach(g => { const name = String(g.name || '').trim(); if (name) byName.set(name.toLocaleLowerCase(), { ...g, name }); });
-    (products || []).forEach(p => { const name = String(p.category || '').trim(); if (name && !byName.has(name.toLocaleLowerCase())) byName.set(name.toLocaleLowerCase(), { id: `category-${name.toLocaleLowerCase()}`, name, derivedFromProducts: true }); });
+    (groups || []).forEach(g => {
+      const name = getGroupName(g);
+      if (name) byName.set(name.toLocaleLowerCase('vi'), { ...g, name });
+    });
+    (products || []).forEach(p => {
+      const name = getProductGroup(p);
+      if (name && !byName.has(name.toLocaleLowerCase('vi'))) byName.set(name.toLocaleLowerCase('vi'), { id: `category-${name.toLocaleLowerCase('vi')}`, name, derivedFromProducts: true });
+    });
     return [...byName.values()].sort((a,b)=>a.name.localeCompare(b.name, 'vi'));
   }, [groups, products]);
   const [newGroupName, setNewGroupName] = useState('');
   const [editingGroup, setEditingGroup] = useState(null);
   const [groupProductIds, setGroupProductIds] = useState([]);
-  useEffect(() => onSnapshot(collection(db, 'stores', storeId, 'product_groups'), snap => setGroups(snap.docs.map(d => ({ id: d.id, ...d.data() }))), () => showToast('Không tải được danh sách nhóm hàng', 'error')), [db, storeId]);
+  useEffect(() => onSnapshot(collection(db, 'stores', storeId, 'product_groups'), snap => setGroups(snap.docs.map(d => { const data = d.data(); return { id: d.id, ...data, name: getGroupName(data) || d.id }; })), error => { console.error('Không tải được danh sách nhóm hàng:', error); showToast('Không tải được danh sách nhóm hàng từ Firebase', 'error'); }), [db, storeId]);
   const saveGroup = async () => {
     const name = newGroupName.trim();
     if (!name) return showToast('Vui lòng nhập tên nhóm hàng', 'error');
@@ -2812,7 +2822,7 @@ function GroupManagementView({ products, db, storeId, showToast }) {
   };
   const deleteGroup = async (g) => {
     if (!window.confirm(`Xóa nhóm hàng "${g.name}"? Sản phẩm trong nhóm sẽ chuyển về chưa phân nhóm.`)) return;
-    try { const batch = writeBatch(db); if (!g.derivedFromProducts) batch.delete(doc(db, 'stores', storeId, 'product_groups', g.id)); products.filter(p => String(p.category||'').trim().toLocaleLowerCase() === String(g.name||'').trim().toLocaleLowerCase()).forEach(p => batch.update(doc(db, 'stores', storeId, 'products', p.id), { category: '' })); await batch.commit(); if (editingGroup?.id === g.id) { setEditingGroup(null); setNewGroupName(''); setGroupProductIds([]); } showToast('Đã xóa nhóm hàng'); } catch(e) { showToast('Lỗi xóa nhóm hàng', 'error'); }
+    try { const batch = writeBatch(db); if (!g.derivedFromProducts) batch.delete(doc(db, 'stores', storeId, 'product_groups', g.id)); products.filter(p => getProductGroup(p).toLocaleLowerCase('vi') === String(g.name||'').trim().toLocaleLowerCase('vi')).forEach(p => batch.update(doc(db, 'stores', storeId, 'products', p.id), { category: '' })); await batch.commit(); if (editingGroup?.id === g.id) { setEditingGroup(null); setNewGroupName(''); setGroupProductIds([]); } showToast('Đã xóa nhóm hàng'); } catch(e) { showToast('Lỗi xóa nhóm hàng', 'error'); }
   };
   return <div className="flex-1 overflow-y-auto p-4 md:p-6 bg-gray-50/50 space-y-5">
     <div><h2 className="text-2xl font-bold text-gray-800">Quản lý nhóm hàng</h2><p className="text-sm text-gray-500 mt-1">Tạo nhóm và chọn sản phẩm để đưa vào nhóm.</p></div>
@@ -2820,9 +2830,9 @@ function GroupManagementView({ products, db, storeId, showToast }) {
       <h3 className="font-bold text-gray-800">{editingGroup ? `Chỉnh sửa nhóm hàng: ${editingGroup.name}` : 'Tạo nhóm hàng mới'}</h3>
       <div className="flex flex-col sm:flex-row gap-2"><input value={newGroupName} onChange={e=>setNewGroupName(e.target.value)} placeholder="Tên nhóm hàng mới" className="flex-1 border rounded-lg p-2.5"/><button type="button" onClick={saveGroup} className="bg-blue-600 hover:bg-blue-700 text-white px-5 py-2.5 rounded-lg font-bold">{editingGroup ? 'Lưu chỉnh sửa' : 'Tạo nhóm'}</button>{editingGroup && <button type="button" onClick={()=>{setEditingGroup(null);setNewGroupName('');setGroupProductIds([]);}} className="border px-4 py-2.5 rounded-lg font-bold">Hủy</button>}</div>
       <p className="text-sm text-gray-500">Chọn sản phẩm bên dưới trước khi bấm “Tạo nhóm”. Sản phẩm đã chọn sẽ được cập nhật nhóm tương ứng.</p>
-      <div className="max-h-80 overflow-y-auto border rounded-xl divide-y">{products.map(p=><label key={p.id} className="flex items-center gap-3 p-3 hover:bg-gray-50"><input type="checkbox" checked={groupProductIds.includes(p.id)} onChange={e=>setGroupProductIds(v=>e.target.checked?[...v,p.id]:v.filter(id=>id!==p.id))} className="w-4 h-4"/><span className="flex-1 font-medium">{p.name}</span><span className="text-xs text-gray-500">{p.category||'Chưa phân nhóm'}</span></label>)}{products.length===0&&<p className="p-5 text-center text-gray-400">Chưa có sản phẩm trong kho.</p>}</div>
+      <div className="max-h-80 overflow-y-auto border rounded-xl divide-y">{products.map(p=><label key={p.id} className="flex items-center gap-3 p-3 hover:bg-gray-50"><input type="checkbox" checked={groupProductIds.includes(p.id)} onChange={e=>setGroupProductIds(v=>e.target.checked?[...v,p.id]:v.filter(id=>id!==p.id))} className="w-4 h-4"/><span className="flex-1 font-medium">{p.name}</span><span className="text-xs text-gray-500">{getProductGroup(p)||'Chưa phân nhóm'}</span></label>)}{products.length===0&&<p className="p-5 text-center text-gray-400">Chưa có sản phẩm trong kho.</p>}</div>
     </section>
-    <section className="bg-white rounded-2xl border border-blue-100 shadow-md p-5"><div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mb-3"><h3 className="font-bold text-gray-800">Nhóm hàng hiện có ({visibleGroups.length})</h3><div className="relative w-full sm:w-72"><Search size={16} className="absolute left-3 top-3 text-gray-400"/><input value={groupSearch} onChange={e=>setGroupSearch(e.target.value)} placeholder="Tìm nhóm hàng..." className="w-full pl-9 pr-3 py-2 border rounded-lg text-sm"/></div></div>{visibleGroups.length ? <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">{visibleGroups.map(g=><div key={g.id} className="p-4 border rounded-xl"><p className="font-bold text-gray-800">{g.name}</p><p className="text-sm text-gray-500 mt-1">{products.filter(p=>String(p.category||'').trim().toLocaleLowerCase()===String(g.name||'').trim().toLocaleLowerCase()).length} sản phẩm</p><div className="flex gap-2 mt-3"><button type="button" onClick={()=>{setEditingGroup(g.derivedFromProducts ? null : g);setNewGroupName(g.name);setGroupProductIds(products.filter(p=>String(p.category||'').trim().toLocaleLowerCase()===String(g.name||'').trim().toLocaleLowerCase()).map(p=>p.id));}} className="text-blue-600 bg-blue-50 px-3 py-1.5 rounded-lg text-xs font-bold flex items-center gap-1"><Edit size={14}/> Sửa</button><button type="button" onClick={()=>deleteGroup(g)} className="text-blue-600 bg-blue-50 px-3 py-1.5 rounded-lg text-xs font-bold flex items-center gap-1"><Trash2 size={14}/> Xóa</button></div></div>)}</div> : <p className="text-sm text-gray-500">Chưa có nhóm hàng.</p>}</section>
+    <section className="bg-white rounded-2xl border border-blue-100 shadow-md p-5"><div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mb-3"><h3 className="font-bold text-gray-800">Nhóm hàng hiện có ({visibleGroups.length})</h3><div className="relative w-full sm:w-72"><Search size={16} className="absolute left-3 top-3 text-gray-400"/><input value={groupSearch} onChange={e=>setGroupSearch(e.target.value)} placeholder="Tìm nhóm hàng..." className="w-full pl-9 pr-3 py-2 border rounded-lg text-sm"/></div></div>{visibleGroups.length ? <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">{visibleGroups.map(g=><div key={g.id} className="p-4 border rounded-xl"><p className="font-bold text-gray-800">{g.name}</p><p className="text-sm text-gray-500 mt-1">{products.filter(p=>getProductGroup(p).toLocaleLowerCase('vi')===String(g.name||'').trim().toLocaleLowerCase('vi')).length} sản phẩm</p><div className="flex gap-2 mt-3"><button type="button" onClick={()=>{setEditingGroup(g.derivedFromProducts ? null : g);setNewGroupName(g.name);setGroupProductIds(products.filter(p=>getProductGroup(p).toLocaleLowerCase('vi')===String(g.name||'').trim().toLocaleLowerCase('vi')).map(p=>p.id));}} className="text-blue-600 bg-blue-50 px-3 py-1.5 rounded-lg text-xs font-bold flex items-center gap-1"><Edit size={14}/> Sửa</button><button type="button" onClick={()=>deleteGroup(g)} className="text-blue-600 bg-blue-50 px-3 py-1.5 rounded-lg text-xs font-bold flex items-center gap-1"><Trash2 size={14}/> Xóa</button></div></div>)}</div> : <p className="text-sm text-gray-500">Chưa có nhóm hàng.</p>}</section>
   </div>;
 }
 
@@ -3895,14 +3905,14 @@ function ImportView({ products, orders = [], imports = [], suppliers, db, storeI
     if (isAddingNewProduct) return;
     setIsAddingNewProduct(true);
     try {
-      const costVal = Number(newProdForm.cost) || 0;
-      const priceVal = Number(newProdForm.price) || 0;
+      const costVal = 0;
+      const priceVal = 0;
       if (!newProdForm.name.trim()) { showToast('Vui lòng nhập tên sản phẩm', 'error'); return; }
-      // San pham moi luon bat dau voi ton kho 0; so luong chi tang khi luu phieu nhap.
+      // San pham moi luon bat dau voi gia von/gia ban va ton kho bang 0; so luong chi tang khi luu phieu nhap.
       const newProdData = { name: newProdForm.name.trim(), category: newProdForm.category.trim(), cost: costVal, price: priceVal, stock: 0, createdAt: new Date().toISOString() };
       const docRef = await addDoc(collection(db, 'stores', storeId, 'products'), newProdData);
       setCart(c => [...c, { id: docRef.id, name: newProdData.name, category: newProdData.category, qty: 0, importCost: costVal, price: priceVal }]);
-      setShowAddProdModal(false); setShowGroupSuggestions(false); setShowAddGroupForm(false); setGroupSearch(''); setNewProdForm({ name: '', category: '', cost: '0', price: '0' }); showToast("Đã thêm hàng mới và đưa vào phiếu nhập! Số lượng mặc định là 0.");
+      setShowAddProdModal(false); setShowGroupSuggestions(false); setShowAddGroupForm(false); setGroupSearch(''); setNewProdForm({ name: '', category: '', cost: '0', price: '0' }); showToast("Đã lưu sản phẩm mới và đưa vào phiếu nhập! Giá và tồn kho mặc định bằng 0.");
     } catch (err) {
       console.error('Loi them san pham moi trong phieu nhap:', err);
       showToast("Lỗi thêm sản phẩm mới", "error");
@@ -4149,10 +4159,9 @@ function ImportView({ products, orders = [], imports = [], suppliers, db, storeI
             {showGroupSuggestions && <div className="absolute left-0 right-0 top-full z-[130] mt-1 border rounded-lg max-h-48 overflow-auto overscroll-contain bg-white shadow-xl">{visibleGroups.slice(0,8).map((g,i)=><button type="button" key={`${g}-${i}`} onClick={()=>{setNewProdForm(v=>({...v,category:g}));setGroupSearch(g);setShowGroupSuggestions(false);}} className="block w-full text-left px-3 py-2 text-sm hover:bg-blue-50">{g}</button>)}<button type="button" onClick={()=>{setNewGroupName(groupSearch || newProdForm.category);setShowAddGroupForm(v=>!v);}} className="w-full text-left px-3 py-2 text-sm text-blue-700 font-semibold border-t"><Plus size={14} className="inline mr-1"/>Thêm nhóm hàng mới</button></div>}
             {showAddGroupForm && <div className="mt-2 flex gap-2"><input value={newGroupName} onChange={e=>setNewGroupName(e.target.value)} placeholder="Tên nhóm hàng mới" className="min-w-0 flex-1 p-2 border rounded-lg text-sm"/><button type="button" onClick={handleAddGroupQuick} className="px-3 rounded-lg bg-blue-600 text-white text-sm font-bold">Chọn nhóm</button></div>}
           </div>
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3"><div><label className="block text-xs font-bold text-gray-500 mb-1">Giá vốn (đ) *</label><input type="number" step="any" placeholder="0" value={newProdForm.cost} onChange={e=>setNewProdForm(v=>({...v,cost:e.target.value}))} className="w-full min-w-0 p-3 border rounded-lg text-sm"/></div><div><label className="block text-xs font-bold text-gray-500 mb-1">Giá bán (đ) *</label><input type="number" step="any" placeholder="0" value={newProdForm.price} onChange={e=>setNewProdForm(v=>({...v,price:e.target.value}))} className="w-full min-w-0 p-3 border rounded-lg text-sm"/></div></div>
-          <button type="submit" disabled={isAddingNewProduct} className="w-full bg-blue-600 disabled:opacity-60 disabled:cursor-not-allowed text-white font-bold p-2.5 rounded-lg text-sm">{isAddingNewProduct ? 'Đang lưu sản phẩm...' : 'Lưu & đưa vào phiếu nhập'}</button>
+          <button type="submit" disabled={isAddingNewProduct} className="w-full bg-blue-600 disabled:opacity-60 disabled:cursor-not-allowed text-white font-bold p-2.5 rounded-lg text-sm">{isAddingNewProduct ? 'Đang lưu sản phẩm...' : 'Lưu sản phẩm'}</button>
         </form>}
-        <div className="flex-1 min-h-0 bg-white rounded-xl border shadow-sm overflow-hidden flex flex-col justify-between">
+        <div className="hidden md:flex flex-1 min-h-0 bg-white rounded-xl border shadow-sm overflow-hidden flex-col justify-between">
           <div className="overflow-auto flex-1">
             <table className="w-full text-left text-sm">
               <thead className="bg-gray-100 sticky top-0 border-b select-none">
