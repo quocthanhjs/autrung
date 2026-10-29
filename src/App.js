@@ -1064,12 +1064,12 @@ function POSView({ products, orders = [], customers, db, storeId, user, storeCon
         <div>
           <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center mb-4 gap-3">
             <h2 className="text-xl font-bold text-gray-800">Sản phẩm bán hàng</h2>
-            <div className="flex items-center gap-2 w-full sm:w-auto">
-              <select value={selectedCategory} onChange={e=>{ setSelectedCategory(e.target.value); setPosCurrentPage(1); }} className="p-2 border rounded-lg text-sm bg-white font-medium outline-none w-full sm:w-40"><option value="ALL">-- Tất cả Nhóm --</option>{categories.map((c, i) => <option key={i} value={c}>{c}</option>)}</select>
-              <div className="relative flex-1 sm:w-64 z-30"><Search size={16} className="absolute left-3 top-3 text-gray-400 pointer-events-none"/><input type="search" autoComplete="off" aria-label="Tìm nhanh sản phẩm" placeholder="Tìm nhanh sản phẩm..." value={searchTerm} onFocus={()=>setShowProductSuggestions(!!searchTerm.trim())} onChange={e=>{ const value=e.target.value; setSearchTerm(value); setPosCurrentPage(1); setShowProductSuggestions(!!value.trim()); }} className="w-full pl-9 pr-9 py-2 border rounded-lg bg-white outline-none text-sm focus:ring-2 focus:ring-blue-300 focus:border-blue-400 touch-manipulation"/>{searchTerm && <button type="button" aria-label="Xóa tìm kiếm sản phẩm" onClick={()=>{setSearchTerm('');setShowProductSuggestions(false);setPosCurrentPage(1);}} className="absolute right-2 top-1.5 rounded-md px-2 py-1 text-gray-400 hover:bg-gray-100">×</button>}</div>
+            <div className="flex items-center gap-2 w-full sm:w-auto min-w-0">
+              <select value={selectedCategory} onChange={e=>{ setSelectedCategory(e.target.value); setPosCurrentPage(1); }} className="p-2 border rounded-lg text-sm bg-white font-medium outline-none w-[30%] min-w-0 shrink-0 sm:w-40"><option value="ALL">-- Tất cả Nhóm --</option>{categories.map((c, i) => <option key={i} value={c}>{c}</option>)}</select>
+              <div className="relative flex-1 min-w-0 sm:w-64 z-30"><Search size={16} className="absolute left-3 top-3 text-gray-400 pointer-events-none"/><input type="search" autoComplete="off" aria-label="Tìm nhanh sản phẩm" placeholder="Tìm nhanh sản phẩm..." value={searchTerm} onFocus={()=>setShowProductSuggestions(!!searchTerm.trim())} onChange={e=>{ const value=e.target.value; setSearchTerm(value); setPosCurrentPage(1); setShowProductSuggestions(!!value.trim()); }} className="w-full pl-9 pr-9 py-2 border rounded-lg bg-white outline-none text-sm focus:ring-2 focus:ring-blue-300 focus:border-blue-400 touch-manipulation"/>{searchTerm && <button type="button" aria-label="Xóa tìm kiếm sản phẩm" onClick={()=>{setSearchTerm('');setShowProductSuggestions(false);setPosCurrentPage(1);}} className="absolute right-2 top-1.5 rounded-md px-2 py-1 text-gray-400 hover:bg-gray-100">×</button>}</div>
             </div>
           </div>
-          <div className="grid grid-cols-2 sm:grid-cols-3 xl:grid-cols-4 gap-4">
+          <div className={(searchTerm.trim() && showProductSuggestions ? 'grid ' : 'hidden sm:grid ') + "grid-cols-2 sm:grid-cols-3 xl:grid-cols-4 gap-4"}>
             {displayedProducts.map((p, index) => {
               const stockClass = p.stock < 0 ? 'text-blue-500 font-bold' : 'text-gray-500';
               return (
@@ -1083,7 +1083,7 @@ function POSView({ products, orders = [], customers, db, storeId, user, storeCon
             {searchTerm.trim() && filteredProducts.length === 0 && <div className="col-span-full rounded-xl border border-dashed bg-white p-6 text-center text-sm text-gray-500">Không tìm thấy sản phẩm phù hợp.</div>}
           </div>
         </div>
-        {!searchTerm.trim() && <div className="mt-4 shrink-0 bg-white rounded-xl border shadow-sm">
+        {!searchTerm.trim() && <div className="hidden sm:block mt-4 shrink-0 bg-white rounded-xl border shadow-sm">
           <PaginationControls currentPage={posCurrentPage} totalPages={totalPosPages} rowsPerPage={posRowsPerPage} onPageChange={(p) => setPosCurrentPage(p)} onRowsChange={(r) => { setPosRowsPerPage(r); setPosCurrentPage(1); }} totalItems={filteredProducts.length} />
         </div>}
       </div>
