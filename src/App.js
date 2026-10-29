@@ -4133,8 +4133,8 @@ function ImportView({ products, orders = [], imports = [], suppliers, db, storeI
         </div></div>
       ) : (
       <Modal isOpen={activeImportTab === 'create'} onClose={() => setActiveImportTab('history')} title={editingImport ? 'Sửa phiếu nhập hàng' : 'Tạo phiếu nhập hàng'} maxWidth="max-w-6xl">
-      <div className="flex flex-col lg:flex-row overflow-hidden min-h-0 max-h-[75vh]">
-      <div className="flex-1 p-4 md:p-6 flex flex-col overflow-visible">
+      <div className="flex flex-col lg:flex-row overflow-hidden min-h-0 h-[80vh] max-h-[80vh] lg:h-[75vh] lg:max-h-[75vh]">
+      <div className="flex-1 min-w-0 min-h-0 p-4 md:p-6 flex flex-col overflow-hidden">
         <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center mb-4 gap-3 shrink-0">
           <div className="flex items-center gap-2"><h2 className="text-xl font-bold text-gray-800">Chọn sản phẩm nhập</h2><button type="button" onClick={() => { setShowAddProdModal(v => !v); setNewProdForm(v => ({ ...v, name: v.name || searchTerm })); setGroupSearch(''); setShowGroupSuggestions(false); }} className="bg-blue-600 hover:bg-blue-700 text-white px-3 py-1.5 rounded-lg text-xs font-bold flex items-center gap-1 shadow"><Plus size={14}/> {showAddProdModal ? 'Đóng thêm mới' : 'Sản phẩm mới'}</button></div>
           <div className="relative z-[110] w-full sm:w-64"><Search size={16} className="absolute left-3 top-3 text-gray-400"/><input placeholder="Tìm kiếm sản phẩm nhập..." value={searchTerm} onFocus={()=>setShowProductSuggestions(!!searchTerm.trim())} onBlur={()=>setTimeout(()=>setShowProductSuggestions(false),120)} onChange={e=>{const value=e.target.value;setSearchTerm(value);setImportCurrentPage(1);setShowProductSuggestions(!!value.trim());}} className="w-full pl-9 pr-3 py-2 border rounded-lg bg-white outline-none text-sm"/>
@@ -4152,7 +4152,7 @@ function ImportView({ products, orders = [], imports = [], suppliers, db, storeI
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-3"><div><label className="block text-xs font-bold text-gray-500 mb-1">Giá vốn (đ) *</label><input type="number" step="any" placeholder="0" value={newProdForm.cost} onChange={e=>setNewProdForm(v=>({...v,cost:e.target.value}))} className="w-full min-w-0 p-3 border rounded-lg text-sm"/></div><div><label className="block text-xs font-bold text-gray-500 mb-1">Giá bán (đ) *</label><input type="number" step="any" placeholder="0" value={newProdForm.price} onChange={e=>setNewProdForm(v=>({...v,price:e.target.value}))} className="w-full min-w-0 p-3 border rounded-lg text-sm"/></div></div>
           <button type="submit" disabled={isAddingNewProduct} className="w-full bg-blue-600 disabled:opacity-60 disabled:cursor-not-allowed text-white font-bold p-2.5 rounded-lg text-sm">{isAddingNewProduct ? 'Đang lưu sản phẩm...' : 'Lưu & đưa vào phiếu nhập'}</button>
         </form>}
-        <div className="flex-1 bg-white rounded-xl border shadow-sm overflow-hidden flex flex-col justify-between">
+        <div className="flex-1 min-h-0 bg-white rounded-xl border shadow-sm overflow-hidden flex flex-col justify-between">
           <div className="overflow-auto flex-1">
             <table className="w-full text-left text-sm">
               <thead className="bg-gray-100 sticky top-0 border-b select-none">
@@ -4189,9 +4189,9 @@ function ImportView({ products, orders = [], imports = [], suppliers, db, storeI
         </div>
       </div>
       
-      <div className="w-full lg:w-[460px] bg-white border-l shadow-lg shrink-0 z-20 flex flex-col h-[65vh] lg:h-auto">
+      <div className="w-full lg:w-[460px] bg-white border-l shadow-lg z-20 flex flex-col flex-1 min-h-0 lg:flex-none lg:h-full">
         <div className="p-4 border-b bg-gray-50"><h2 className="font-bold flex items-center gap-2"><ArrowDownToLine size={20} className="text-gray-600"/> {editingImport ? `Sửa phiếu nhập ${editingImport.invoiceCode || editingImport.id?.slice(0,8) || ""}` : "Phiếu Nhập Kho"}</h2>{editingImport && <button onClick={() => { setEditingImport(null); setCart([]); setSupplierId(''); setIsDebt(false); }} className="text-xs text-blue-600 mt-2">Hủy chỉnh sửa</button>}</div>
-        <div className="flex-1 overflow-y-auto p-4 space-y-3">
+        <div className="flex-1 min-h-0 overflow-y-auto p-4 space-y-3">
           {cart.map(item => (
             <div key={item.id} className="bg-gray-50 p-3 rounded-xl border space-y-2 shadow-sm">
               <div className="flex justify-between items-center"><h4 className="font-bold text-sm text-gray-800 truncate">{item.name}</h4><button onClick={() => setCart(c => c.filter(i => i.id !== item.id))} className="text-blue-400 hover:text-blue-600"><X size={16}/></button></div>
