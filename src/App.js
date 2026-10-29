@@ -1744,7 +1744,7 @@ function ContactManager({ type, data, orders, products = [], navigationTarget, s
   const [selectedIds, setSelectedIds] = useState([]);
   const [searchTerm, setSearchTerm] = useState('');
   const [detailTarget, setDetailTarget] = useState(null);
-  const [detailRowsPerPage, setDetailRowsPerPage] = useState('20');
+  const [detailRowsPerPage, setDetailRowsPerPage] = useState('5');
   const [detailCurrentPage, setDetailCurrentPage] = useState(1);
   const [debtPayments, setDebtPayments] = useState([]);
   const [deletedContactTransactions, setDeletedContactTransactions] = useState([]);
@@ -2680,7 +2680,7 @@ function ContactManager({ type, data, orders, products = [], navigationTarget, s
               <div className="border rounded-xl overflow-hidden">
                 {selectedTransactionIds.length > 0 && <div className="flex flex-wrap items-center justify-between gap-2 bg-red-50 border-b border-red-200 p-2 text-xs"><span>Đã chọn {selectedTransactionIds.length} giao dịch</span><button type="button" disabled={savingDebtPayment} onClick={handleDeleteSelectedTransactions} className="bg-red-600 text-white rounded px-3 py-1.5 font-bold disabled:opacity-50">Xóa giao dịch đã chọn</button></div>}
                 <div className="flex flex-wrap items-center justify-between gap-2 p-2 border-b bg-gray-50"><span className="text-xs text-gray-500">{detailData.list.length} giao dịch</span><label className="text-xs flex items-center gap-2">Hiển thị <select className="border rounded-lg p-1.5 bg-white" value={detailRowsPerPage} onChange={e=>{setDetailRowsPerPage(e.target.value);setDetailCurrentPage(1);}}><option value="5">5 dòng</option><option value="10">10 dòng</option><option value="20">20 dòng</option><option value="all">Tất cả</option></select></label></div>
-                <div className="max-h-80 overflow-y-auto overflow-x-auto"><table className="w-full text-xs text-left">
+                <div className="max-h-80 overflow-auto"><table className="w-full text-xs text-left">
                   <thead className="bg-gray-100 sticky top-0 border-b"><tr><th className="p-2.5">Chọn</th><th className="p-2.5">Thời gian giao dịch</th><th className="p-2.5">Thời gian thanh toán</th><th className="p-2.5">Mặt hàng & Ghi chú/BH</th><th className="p-2.5">Giá nhập</th><th className="p-2.5">Giá bán</th><th className="p-2.5">Giá trị đơn</th><th className="p-2.5">Trạng thái nợ</th></tr></thead>
                   <tbody>
                     {detailPageList.map(ord => {
@@ -3892,9 +3892,10 @@ function ImportView({ products, orders = [], imports = [], suppliers, db, storeI
     e.preventDefault();
     try {
       const costVal = Number(newProdForm.cost) || 0; const priceVal = Number(newProdForm.price) || 0; const initStock = Number(newProdForm.stock) || 0;
-      const newProdData = { name: newProdForm.name, category: newProdForm.category || '', cost: costVal, price: priceVal, stock: initStock, createdAt: new Date().toISOString() };
+      // Ton kho ban dau bang 0; so luong chi duoc cong khi hoan tat phieu nhap.
+      const newProdData = { name: newProdForm.name, category: newProdForm.category || '', cost: costVal, price: priceVal, stock: 0, createdAt: new Date().toISOString() };
       const docRef = await addDoc(collection(db, 'stores', storeId, 'products'), newProdData);
-      setCart(c => [...c, { id: docRef.id, name: newProdData.name, category: newProdData.category, qty: initStock > 0 ? initStock : 1, importCost: costVal, price: priceVal }]);
+      setCart(c => [...c, { id: docRef.id, name: newProdData.name, category: newProdData.category, qty: initStock, importCost: costVal, price: priceVal }]);
       setShowAddProdModal(false); setShowGroupSuggestions(false); setShowAddGroupForm(false); setNewProdForm({ name: '', category: '', cost: '', price: '', stock: '' }); showToast("Đã thêm hàng mới và đưa vào phiếu nhập!");
     } catch (err) { showToast("Lỗi thêm sản phẩm mới", "error"); }
   };
@@ -3903,7 +3904,7 @@ function ImportView({ products, orders = [], imports = [], suppliers, db, storeI
     if (cart.length === 0 || !supplierId) { showToast("Vui lòng chọn hoặc thêm mới Nhà cung cấp và có ít nhất 1 sản phẩm trước khi nhập hàng!", "error"); return; }
     try {
       const s = suppliers.find(sup => sup.id === supplierId);
-      const total = cart.reduce((sum, i) => sum + Number(i.importCost || 0) * Number(i.qty || 1), 0);
+      const total = cart.reduce((sum, i) => sum + Number(i.importCost || 0) * Number(i.qty ?? 0), 0);
       const batch = writeBatch(db);
       const importPayload = { supplierId, supplierName: s?.name || supplierSearch || newSuppForm.name || 'Nhà cung cấp', createdByUid: editingImport?.createdByUid || user?.uid || '', createdByName: editingImport?.createdByName || userData?.name || user?.displayName || user?.email || 'Nhân viên', items: cart, total, status: isDebt ? 'DEBT' : 'PAID', date: editingImport?.date || new Date().toISOString() };
       if (editingImport) {
@@ -3927,7 +3928,7 @@ function ImportView({ products, orders = [], imports = [], suppliers, db, storeI
         cart.forEach(item => {
           const p = products.find(prod => prod.id === item.id);
           if (p) {
-            let newCost = Number(item.importCost || 0); const oldCost = Number(p.cost || 0); const currentStock = Number(p.stock || 0); const importQty = Number(item.qty || 1);
+            let newCost = Number(item.importCost || 0); const oldCost = Number(p.cost || 0); const currentStock = Number(p.stock || 0); const importQty = Number(item.qty ?? 0);
             const method = storeConfig?.costCalcMethod || 'LATEST';
             if (method === 'AVERAGE') { if (currentStock + importQty > 0) newCost = Math.round(((currentStock * oldCost) + (importQty * newCost)) / (currentStock + importQty)); }
             else if (method === 'HIGHEST') newCost = Math.max(oldCost, newCost);
