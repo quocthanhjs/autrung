@@ -942,7 +942,6 @@ function POSView({ products, orders = [], customers, db, storeId, user, storeCon
   const [completedOrder, setCompletedOrder] = useState(null);
   const [showModal, setShowModal] = useState(false);
   const [searchTerm, setSearchTerm] = useState('');
-  const [showPosProductSuggestions, setShowPosProductSuggestions] = useState(false);
   const [selectedCategory, setSelectedCategory] = useState('ALL');
   const [printInvoice, setPrintInvoice] = useState(true);
   const [showAddCusModal, setShowAddCusModal] = useState(false);
@@ -1057,12 +1056,10 @@ function POSView({ products, orders = [], customers, db, storeId, user, storeCon
             <h2 className="text-xl font-bold text-gray-800">Sản phẩm bán hàng</h2>
             <div className="flex items-center gap-2 w-full sm:w-auto">
               <select value={selectedCategory} onChange={e=>{ setSelectedCategory(e.target.value); setPosCurrentPage(1); }} className="p-2 border rounded-lg text-sm bg-white font-medium outline-none w-full sm:w-40"><option value="ALL">-- Tất cả Nhóm --</option>{categories.map((c, i) => <option key={i} value={c}>{c}</option>)}</select>
-              <div className="relative flex-1 sm:w-64 z-30"><Search size={16} className="absolute left-3 top-3 text-gray-400"/><input placeholder="Tìm nhanh sản phẩm..." value={searchTerm} onFocus={()=>setShowPosProductSuggestions(Boolean(searchTerm.trim()))} onChange={e=>{ const value=e.target.value; setSearchTerm(value); setPosCurrentPage(1); setShowPosProductSuggestions(Boolean(value.trim())); }} className="w-full pl-9 pr-3 py-2 border rounded-lg bg-white outline-none text-sm"/>
-                {showPosProductSuggestions && searchTerm.trim() && <div className="absolute left-0 right-0 top-full mt-1 z-50 max-h-64 overflow-y-auto overscroll-contain rounded-xl border border-gray-200 bg-white shadow-xl">{filteredProducts.slice(0,8).map(p=><button type="button" key={p.id} onMouseDown={e=>e.preventDefault()} onClick={()=>{addToCart(p);setSearchTerm('');setShowPosProductSuggestions(false);}} className="block w-full min-h-[52px] touch-manipulation border-b px-3 py-3 text-left last:border-b-0 hover:bg-blue-50"><span className="block text-sm font-semibold text-gray-800">{p.name}</span><span className="block text-xs text-gray-500">{p.category || 'Chưa phân nhóm'} · Giá: {formatCurrency(p.price)} · Tồn: {p.stock}</span></button>)}{filteredProducts.length===0 && <div className="px-3 py-3 text-sm text-gray-500">Không tìm thấy sản phẩm phù hợp.</div>}</div>}
-              </div>
+              <div className="relative flex-1 sm:w-64"><Search size={16} className="absolute left-3 top-3 text-gray-400"/><input placeholder="Tìm nhanh sản phẩm..." value={searchTerm} onChange={e=>{ setSearchTerm(e.target.value); setPosCurrentPage(1); }} className="w-full pl-9 pr-3 py-2 border rounded-lg bg-white outline-none text-sm"/></div>
             </div>
           </div>
-          {searchTerm.trim() ? <div className="grid grid-cols-2 sm:grid-cols-3 xl:grid-cols-4 gap-4">
+          <div className="grid grid-cols-2 sm:grid-cols-3 xl:grid-cols-4 gap-4">
             {paginatedProducts.map(p => {
               const stockClass = p.stock < 0 ? 'text-blue-500 font-bold' : 'text-gray-500';
               return (
@@ -1073,11 +1070,11 @@ function POSView({ products, orders = [], customers, db, storeId, user, storeCon
                 </div>
               );
             })}
-          </div> : <div className="rounded-xl border border-dashed border-gray-300 bg-white px-4 py-8 text-center text-sm text-gray-500">Nhập tên sản phẩm để xem gợi ý.</div>}
+          </div>
         </div>
-        {searchTerm.trim() && <div className="mt-4 shrink-0 bg-white rounded-xl border shadow-sm">
+        <div className="mt-4 shrink-0 bg-white rounded-xl border shadow-sm">
           <PaginationControls currentPage={posCurrentPage} totalPages={totalPosPages} rowsPerPage={posRowsPerPage} onPageChange={(p) => setPosCurrentPage(p)} onRowsChange={(r) => { setPosRowsPerPage(r); setPosCurrentPage(1); }} totalItems={filteredProducts.length} />
-        </div>}
+        </div>
       </div>
       
       <div className="w-full lg:w-[420px] xl:w-[460px] bg-white border-l shadow-2xl shrink-0 flex flex-col z-20 h-[65vh] lg:h-auto">
@@ -3171,21 +3168,22 @@ function InventoryView({ products, orders, imports, warrantyRequests = [], custo
 function WarrantyAutocomplete({ value, options = [], onChange, onSelect, placeholder = '', required = false, className = '' }) {
   const [open, setOpen] = useState(false);
   const [activeIndex, setActiveIndex] = useState(0);
-  const normalized = (v) => String(v ?? '').trim().toLocaleLowerCase('vi');
+  const normalized = (v) => String(v ?? '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/đ/gi, 'd').trim().toLocaleLowerCase('vi');
   const getName = (option) => typeof option === 'string' ? option : (option?.name || '');
-  const filtered = options.filter(option => getName(option) && (!value || normalized(getName(option)).includes(normalized(value)))).slice(0, 8);
+  const hasQuery = String(value ?? '').trim().length > 0;
+  const filtered = hasQuery ? options.filter(option => getName(option) && normalized(getName(option)).includes(normalized(value))).slice(0, 8) : [];
   return <div className="relative min-w-0 flex-1">
     <input value={value} required={required} autoComplete="off" placeholder={placeholder} className={className || 'w-full p-2 border rounded-lg font-normal'}
-      onFocus={() => { setOpen(true); setActiveIndex(0); }}
+      onFocus={() => { setOpen(!!String(value ?? '').trim()); setActiveIndex(0); }}
       onBlur={() => setTimeout(() => setOpen(false), 140)}
-      onChange={e => { onChange(e.target.value); setOpen(true); setActiveIndex(0); }}
+      onChange={e => { const nextValue = e.target.value; onChange(nextValue); setOpen(!!nextValue.trim()); setActiveIndex(0); }}
       onKeyDown={e => {
         if (e.key === 'ArrowDown' && filtered.length) { e.preventDefault(); setOpen(true); setActiveIndex(i => (i + 1) % filtered.length); }
         else if (e.key === 'ArrowUp' && filtered.length) { e.preventDefault(); setActiveIndex(i => (i - 1 + filtered.length) % filtered.length); }
         else if (e.key === 'Enter' && open && filtered.length) { e.preventDefault(); onSelect(filtered[activeIndex] || filtered[0]); setOpen(false); }
         else if (e.key === 'Escape') setOpen(false);
       }} />
-    {open && <div className="absolute z-[80] left-0 right-0 top-full mt-1 max-h-60 overflow-y-auto rounded-lg border border-gray-200 bg-white shadow-xl">
+    {open && hasQuery && <div className="absolute z-[80] left-0 right-0 top-full mt-1 max-h-60 overflow-y-auto overscroll-contain rounded-lg border border-gray-200 bg-white shadow-xl">
       {filtered.length ? filtered.map((option, index) => <button type="button" key={`${getName(option)}-${option?.id || index}`} onMouseDown={e => e.preventDefault()} onClick={() => { onSelect(option); setOpen(false); }} className={`block w-full text-left px-3 py-2.5 text-sm border-b last:border-b-0 hover:bg-purple-50 ${index === activeIndex ? 'bg-purple-50' : ''}`}>
         <span className="block font-semibold text-gray-800">{getName(option)}</span>
         {(option?.phone || option?.address) && <span className="block text-xs text-gray-500">{[option.phone, option.address].filter(Boolean).join(' · ')}</span>}
@@ -3820,7 +3818,7 @@ function ImportView({ products, orders = [], imports = [], suppliers, db, storeI
   const [newSuppForm, setNewSuppForm] = useState({ name: '', phone: '', address: '' });
   const [showAddProdModal, setShowAddProdModal] = useState(false);
   const [isAddingNewProduct, setIsAddingNewProduct] = useState(false);
-  const [newProdForm, setNewProdForm] = useState({ name: '', category: '', cost: '', price: '', stock: '' });
+  const [newProdForm, setNewProdForm] = useState({ name: '', category: '', cost: '0', price: '0' });
   const [showProductSuggestions, setShowProductSuggestions] = useState(false);
   const [bulkImportFile, setBulkImportFile] = useState(null);
   const [bulkImportRows, setBulkImportRows] = useState([]);
@@ -3899,12 +3897,12 @@ function ImportView({ products, orders = [], imports = [], suppliers, db, storeI
     try {
       const costVal = Number(newProdForm.cost) || 0;
       const priceVal = Number(newProdForm.price) || 0;
-      const initStock = Number(newProdForm.stock) || 0;
-      // San pham moi de ton 0; so luong nhap duoc cong dung mot lan khi luu phieu nhap.
-      const newProdData = { name: newProdForm.name.trim(), category: newProdForm.category || '', cost: costVal, price: priceVal, stock: 0, createdAt: new Date().toISOString() };
+      if (!newProdForm.name.trim()) { showToast('Vui lòng nhập tên sản phẩm', 'error'); return; }
+      // San pham moi luon bat dau voi ton kho 0; so luong chi tang khi luu phieu nhap.
+      const newProdData = { name: newProdForm.name.trim(), category: newProdForm.category.trim(), cost: costVal, price: priceVal, stock: 0, createdAt: new Date().toISOString() };
       const docRef = await addDoc(collection(db, 'stores', storeId, 'products'), newProdData);
-      setCart(c => [...c, { id: docRef.id, name: newProdData.name, category: newProdData.category, qty: initStock, importCost: costVal, price: priceVal }]);
-      setShowAddProdModal(false); setShowGroupSuggestions(false); setShowAddGroupForm(false); setNewProdForm({ name: '', category: '', cost: '', price: '', stock: '' }); showToast("Đã thêm hàng mới và đưa vào phiếu nhập!");
+      setCart(c => [...c, { id: docRef.id, name: newProdData.name, category: newProdData.category, qty: 0, importCost: costVal, price: priceVal }]);
+      setShowAddProdModal(false); setShowGroupSuggestions(false); setShowAddGroupForm(false); setGroupSearch(''); setNewProdForm({ name: '', category: '', cost: '0', price: '0' }); showToast("Đã thêm hàng mới và đưa vào phiếu nhập! Số lượng mặc định là 0.");
     } catch (err) {
       console.error('Loi them san pham moi trong phieu nhap:', err);
       showToast("Lỗi thêm sản phẩm mới", "error");
@@ -4138,24 +4136,23 @@ function ImportView({ products, orders = [], imports = [], suppliers, db, storeI
       <div className="flex flex-col lg:flex-row overflow-hidden min-h-0 max-h-[75vh]">
       <div className="flex-1 p-4 md:p-6 flex flex-col overflow-visible">
         <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center mb-4 gap-3 shrink-0">
-          <div className="flex items-center gap-2"><h2 className="text-xl font-bold text-gray-800">Chọn sản phẩm nhập</h2><button type="button" onClick={() => { setShowAddProdModal(v => !v); setNewProdForm(v => ({ ...v, name: v.name || searchTerm })); }} className="bg-blue-600 hover:bg-blue-700 text-white px-3 py-1.5 rounded-lg text-xs font-bold flex items-center gap-1 shadow"><Plus size={14}/> {showAddProdModal ? 'Đóng thêm mới' : 'Sản phẩm mới'}</button></div>
-          <div className="relative z-[110] w-full sm:w-64"><Search size={16} className="absolute left-3 top-3 text-gray-400"/><input placeholder="Tìm kiếm sản phẩm nhập..." value={searchTerm} onFocus={()=>setShowProductSuggestions(Boolean(searchTerm.trim()))} onChange={e=>{const value=e.target.value;setSearchTerm(value);setImportCurrentPage(1);setShowProductSuggestions(Boolean(value.trim()));}} className="w-full pl-9 pr-3 py-2 border rounded-lg bg-white outline-none text-sm"/>
-            {showProductSuggestions && searchTerm.trim() && <div className="absolute left-0 right-0 top-full mt-1 z-[120] max-h-64 overflow-auto overscroll-contain bg-white border rounded-lg shadow-xl">{filteredProducts.slice(0,8).map(p=><button type="button" key={p.id} onMouseDown={e=>e.preventDefault()} onClick={()=>{addProductToCart(p);setSearchTerm('');setShowProductSuggestions(false);}} className="block w-full text-left px-4 py-3.5 text-sm hover:bg-blue-50 touch-manipulation min-h-[52px]"><span className="font-semibold">{p.name}</span><span className="block text-xs text-gray-500">{p.category || 'Chưa phân nhóm'} · Tồn: {p.stock}</span></button>)}{filteredProducts.length===0 && <div className="px-3 py-2 text-sm text-gray-500">Không tìm thấy sản phẩm phù hợp.</div>}<button type="button" onClick={()=>{setShowAddProdModal(true);setShowProductSuggestions(false);setNewProdForm(v=>({...v,name:searchTerm}));}} className="w-full text-left px-3 py-2 text-sm text-blue-700 font-semibold border-t"><Plus size={14} className="inline mr-1"/>Thêm sản phẩm mới</button></div>}
+          <div className="flex items-center gap-2"><h2 className="text-xl font-bold text-gray-800">Chọn sản phẩm nhập</h2><button type="button" onClick={() => { setShowAddProdModal(v => !v); setNewProdForm(v => ({ ...v, name: v.name || searchTerm })); setGroupSearch(''); setShowGroupSuggestions(false); }} className="bg-blue-600 hover:bg-blue-700 text-white px-3 py-1.5 rounded-lg text-xs font-bold flex items-center gap-1 shadow"><Plus size={14}/> {showAddProdModal ? 'Đóng thêm mới' : 'Sản phẩm mới'}</button></div>
+          <div className="relative z-[110] w-full sm:w-64"><Search size={16} className="absolute left-3 top-3 text-gray-400"/><input placeholder="Tìm kiếm sản phẩm nhập..." value={searchTerm} onFocus={()=>setShowProductSuggestions(!!searchTerm.trim())} onBlur={()=>setTimeout(()=>setShowProductSuggestions(false),120)} onChange={e=>{const value=e.target.value;setSearchTerm(value);setImportCurrentPage(1);setShowProductSuggestions(!!value.trim());}} className="w-full pl-9 pr-3 py-2 border rounded-lg bg-white outline-none text-sm"/>
+            {showProductSuggestions && <div className="absolute left-0 right-0 top-full mt-1 z-[120] max-h-64 overflow-auto overscroll-contain bg-white border rounded-lg shadow-xl">{filteredProducts.slice(0,8).map(p=><button type="button" key={p.id} onMouseDown={e=>e.preventDefault()} onClick={()=>{addProductToCart(p);setSearchTerm('');setShowProductSuggestions(false);}} className="block w-full text-left px-4 py-3.5 text-sm hover:bg-blue-50 touch-manipulation min-h-[52px]"><span className="font-semibold">{p.name}</span><span className="block text-xs text-gray-500">{p.category || 'Chưa phân nhóm'} · Tồn: {p.stock}</span></button>)}{filteredProducts.length===0 && <div className="px-3 py-2 text-sm text-gray-500">Không tìm thấy sản phẩm phù hợp.</div>}<button type="button" onClick={()=>{setShowAddProdModal(true);setShowProductSuggestions(false);setNewProdForm(v=>({...v,name:searchTerm}));}} className="w-full text-left px-3 py-2 text-sm text-blue-700 font-semibold border-t"><Plus size={14} className="inline mr-1"/>Thêm sản phẩm mới</button></div>}
           </div>
         </div>
 
-        {showAddProdModal && <form onSubmit={handleAddNewProductInImport} className="mb-3 bg-white border border-blue-200 rounded-xl p-3 space-y-3 shadow-sm">
+        {showAddProdModal && <form onSubmit={handleAddNewProductInImport} className="mb-3 bg-white border border-blue-200 rounded-xl p-3 sm:p-4 space-y-3 shadow-sm">
           <div className="font-bold text-sm text-blue-700">Thêm sản phẩm mới ngay trong phiếu nhập</div>
-          <div><label className="block text-xs font-bold text-gray-500 mb-1">Tên sản phẩm *</label><input required placeholder="Nhập tên sản phẩm..." value={newProdForm.name} onChange={e=>setNewProdForm({...newProdForm,name:e.target.value})} className="w-full p-2.5 border rounded-lg outline-none text-sm"/></div>
-          <div className="relative"><label className="block text-xs font-bold text-gray-500 mb-1">Nhóm hàng</label><input placeholder="Tìm hoặc chọn nhóm hàng..." value={groupSearch || newProdForm.category} onFocus={()=>setShowGroupSuggestions(true)} onChange={e=>{setGroupSearch(e.target.value);setNewProdForm(v=>({...v,category:e.target.value}));setShowGroupSuggestions(true);}} className="w-full p-2.5 border rounded-lg outline-none text-sm"/>
-            {showGroupSuggestions && <div className="mt-1 border rounded-lg max-h-32 overflow-auto bg-white">{visibleGroups.slice(0,8).map((g,i)=><button type="button" key={`${g}-${i}`} onClick={()=>{setNewProdForm(v=>({...v,category:g}));setGroupSearch(g);setShowGroupSuggestions(false);}} className="block w-full text-left px-3 py-2 text-sm hover:bg-blue-50">{g}</button>)}<button type="button" onClick={()=>{setNewGroupName(groupSearch || newProdForm.category);setShowAddGroupForm(v=>!v);}} className="w-full text-left px-3 py-2 text-sm text-blue-700 font-semibold border-t"><Plus size={14} className="inline mr-1"/>Thêm nhóm hàng mới</button></div>}
+          <div><label className="block text-xs font-bold text-gray-500 mb-1">Tên sản phẩm *</label><input required placeholder="Nhập tên sản phẩm..." value={newProdForm.name} onChange={e=>setNewProdForm(v=>({...v,name:e.target.value}))} className="w-full p-2.5 border rounded-lg outline-none text-sm"/></div>
+          <div className="relative"><label className="block text-xs font-bold text-gray-500 mb-1">Nhóm hàng</label><input placeholder="Tìm hoặc chọn nhóm hàng..." value={groupSearch} onFocus={()=>setShowGroupSuggestions(true)} onBlur={()=>setTimeout(()=>setShowGroupSuggestions(false),120)} onChange={e=>{const value=e.target.value;setGroupSearch(value);setNewProdForm(v=>({...v,category:value}));setShowGroupSuggestions(!!value.trim());if(!value.trim())setShowAddGroupForm(false);}} className="w-full p-2.5 border rounded-lg outline-none text-sm"/>
+            {showGroupSuggestions && <div className="absolute left-0 right-0 top-full z-[130] mt-1 border rounded-lg max-h-48 overflow-auto overscroll-contain bg-white shadow-xl">{visibleGroups.slice(0,8).map((g,i)=><button type="button" key={`${g}-${i}`} onClick={()=>{setNewProdForm(v=>({...v,category:g}));setGroupSearch(g);setShowGroupSuggestions(false);}} className="block w-full text-left px-3 py-2 text-sm hover:bg-blue-50">{g}</button>)}<button type="button" onClick={()=>{setNewGroupName(groupSearch || newProdForm.category);setShowAddGroupForm(v=>!v);}} className="w-full text-left px-3 py-2 text-sm text-blue-700 font-semibold border-t"><Plus size={14} className="inline mr-1"/>Thêm nhóm hàng mới</button></div>}
             {showAddGroupForm && <div className="mt-2 flex gap-2"><input value={newGroupName} onChange={e=>setNewGroupName(e.target.value)} placeholder="Tên nhóm hàng mới" className="min-w-0 flex-1 p-2 border rounded-lg text-sm"/><button type="button" onClick={handleAddGroupQuick} className="px-3 rounded-lg bg-blue-600 text-white text-sm font-bold">Chọn nhóm</button></div>}
           </div>
-          <div className="grid grid-cols-2 gap-3"><div><label className="block text-xs font-bold text-gray-500 mb-1">Giá vốn (đ) *</label><input required type="number" step="any" placeholder="0 (có thể âm)" value={newProdForm.cost} onChange={e=>setNewProdForm({...newProdForm,cost:e.target.value})} className="w-full p-2.5 border rounded-lg text-sm"/></div><div><label className="block text-xs font-bold text-gray-500 mb-1">Giá bán (đ) *</label><input required type="number" step="any" placeholder="0 (có thể âm)" value={newProdForm.price} onChange={e=>setNewProdForm({...newProdForm,price:e.target.value})} className="w-full p-2.5 border rounded-lg text-sm"/></div></div>
-          <div><label className="block text-xs font-bold text-gray-500 mb-1">Số lượng tồn ban đầu *</label><input required type="number" placeholder="0" value={newProdForm.stock} onChange={e=>setNewProdForm({...newProdForm,stock:e.target.value})} className="w-full p-2.5 border rounded-lg text-sm"/></div>
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3"><div><label className="block text-xs font-bold text-gray-500 mb-1">Giá vốn (đ) *</label><input type="number" step="any" placeholder="0" value={newProdForm.cost} onChange={e=>setNewProdForm(v=>({...v,cost:e.target.value}))} className="w-full min-w-0 p-3 border rounded-lg text-sm"/></div><div><label className="block text-xs font-bold text-gray-500 mb-1">Giá bán (đ) *</label><input type="number" step="any" placeholder="0" value={newProdForm.price} onChange={e=>setNewProdForm(v=>({...v,price:e.target.value}))} className="w-full min-w-0 p-3 border rounded-lg text-sm"/></div></div>
           <button type="submit" disabled={isAddingNewProduct} className="w-full bg-blue-600 disabled:opacity-60 disabled:cursor-not-allowed text-white font-bold p-2.5 rounded-lg text-sm">{isAddingNewProduct ? 'Đang lưu sản phẩm...' : 'Lưu & đưa vào phiếu nhập'}</button>
         </form>}
-        {searchTerm.trim() ? <div className="flex-1 bg-white rounded-xl border shadow-sm overflow-hidden flex flex-col justify-between">
+        <div className="flex-1 bg-white rounded-xl border shadow-sm overflow-hidden flex flex-col justify-between">
           <div className="overflow-auto flex-1">
             <table className="w-full text-left text-sm">
               <thead className="bg-gray-100 sticky top-0 border-b select-none">
@@ -4189,7 +4186,7 @@ function ImportView({ products, orders = [], imports = [], suppliers, db, storeI
           <div className="border-t shrink-0">
             <PaginationControls currentPage={importCurrentPage} totalPages={totalImportPages} rowsPerPage={importRowsPerPage} onPageChange={(p) => setImportCurrentPage(p)} onRowsChange={(r) => { setImportRowsPerPage(r); setImportCurrentPage(1); }} totalItems={filteredProducts.length} />
           </div>
-        </div> : <div className="flex-1 rounded-xl border border-dashed border-gray-300 bg-white px-4 py-8 text-center text-sm text-gray-500">Nhập tên sản phẩm để xem gợi ý nhập hàng.</div>}
+        </div>
       </div>
       
       <div className="w-full lg:w-[460px] bg-white border-l shadow-lg shrink-0 z-20 flex flex-col h-[65vh] lg:h-auto">
@@ -4210,8 +4207,8 @@ function ImportView({ products, orders = [], imports = [], suppliers, db, storeI
         <div className="p-4 border-t bg-gray-50 space-y-3">
           <div className="relative">
             <label className="block text-xs font-bold text-gray-500 mb-1">Nhà cung cấp *</label>
-            <input required value={supplierSearch || ((suppliers || []).find(s=>s.id===supplierId)?.name || '')} onFocus={()=>setShowSupplierSuggestions(true)} onChange={e=>{setSupplierSearch(e.target.value);setSupplierId('');setShowSupplierSuggestions(true);}} placeholder="Tìm hoặc chọn nhà cung cấp..." className="w-full p-2.5 border rounded-lg outline-none text-sm bg-white font-medium"/>
-            {showSupplierSuggestions && <div className="absolute z-30 top-full left-0 right-0 mt-1 max-h-48 overflow-auto bg-white border rounded-lg shadow-lg">{visibleSuppliers.slice(0,8).map(s=><button type="button" key={s.id} onClick={()=>{setSupplierId(s.id);setSupplierSearch(s.name);setShowSupplierSuggestions(false);}} className="block w-full text-left px-3 py-2 text-sm hover:bg-blue-50">{s.name}</button>)}<button type="button" onClick={()=>{setNewSuppForm(v=>({...v,name:supplierSearch}));setShowAddSuppModal(v=>!v);setShowSupplierSuggestions(false);}} className="w-full text-left px-3 py-2 text-sm text-blue-700 font-semibold border-t"><Plus size={14} className="inline mr-1"/>Thêm nhà cung cấp mới</button></div>}
+            <input required value={supplierSearch || ((suppliers || []).find(s=>s.id===supplierId)?.name || '')} onFocus={()=>setShowSupplierSuggestions(!!supplierSearch.trim())} onBlur={()=>setTimeout(()=>setShowSupplierSuggestions(false),120)} onChange={e=>{const value=e.target.value;setSupplierSearch(value);setSupplierId('');setShowSupplierSuggestions(!!value.trim());}} placeholder="Tìm hoặc chọn nhà cung cấp..." className="w-full p-2.5 border rounded-lg outline-none text-sm bg-white font-medium"/>
+            {showSupplierSuggestions && <div className="absolute z-30 top-full left-0 right-0 mt-1 max-h-56 overflow-auto overscroll-contain bg-white border rounded-lg shadow-lg">{visibleSuppliers.slice(0,8).map(s=><button type="button" key={s.id} onClick={()=>{setSupplierId(s.id);setSupplierSearch(s.name);setShowSupplierSuggestions(false);}} className="block w-full text-left px-3 py-2 text-sm hover:bg-blue-50">{s.name}</button>)}<button type="button" onClick={()=>{setNewSuppForm(v=>({...v,name:supplierSearch}));setShowAddSuppModal(v=>!v);setShowSupplierSuggestions(false);}} className="w-full text-left px-3 py-2 text-sm text-blue-700 font-semibold border-t"><Plus size={14} className="inline mr-1"/>Thêm nhà cung cấp mới</button></div>}
           </div>
           {showAddSuppModal && <form onSubmit={handleAddSupplierQuick} className="border border-blue-200 bg-white rounded-xl p-3 space-y-2">
             <div className="font-bold text-sm text-blue-700">Thêm nhà cung cấp mới</div>
