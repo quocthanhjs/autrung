@@ -198,7 +198,7 @@ const ReceiptTemplate = ({ order, storeConfig, isA4A5, baseFontSize }) => {
 
         <div className="text-center mt-3">
           <h1 className="font-bold uppercase" style={{fontSize: fsInvoiceTitle}}>
-            {cfg.printInvoiceTitle || 'HÓA ĐƠN BÁN HÀNG'}
+            {storeConfig?.printInvoiceTitle || cfg.printInvoiceTitle || 'HÓA ĐƠN BÁN HÀNG'}
           </h1>
           {cfg.printShowDate && <div className="text-center mt-1 text-gray-800" style={{fontSize: `${baseFontSize + (cfg.fsMetaOffset ?? 0)}px`}}>{order?.date ? formatDateOnly(order.date) : formatDateOnly(new Date())}</div>}
           {cfg.printShowInvoiceId && <div className="text-center mt-1 text-gray-800" style={{fontSize: fsMeta}}>{cfg.printInvoiceIdLabel ?? 'Mã HĐ'}: {order?.invoiceCode || order?.id?.slice(0,6).toUpperCase() || 'HD12345'}</div>}
@@ -4337,6 +4337,7 @@ function SettingsView({ db, storeId, showToast, storeConfig }) {
   const updateActiveSizeConfig = (field, value) => {
     setForm(prev => ({
       ...prev,
+      ...(field === 'printInvoiceTitle' ? { printInvoiceTitle: value } : {}),
       [editPaperSize]: {
         ...(prev[editPaperSize] || {}),
         [field]: value
