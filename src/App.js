@@ -200,7 +200,7 @@ const ReceiptTemplate = ({ order, storeConfig, isA4A5, baseFontSize }) => {
           <h1 className="font-bold uppercase" style={{fontSize: fsInvoiceTitle}}>
             {cfg.printInvoiceTitle || 'HÓA ĐƠN BÁN HÀNG'}
           </h1>
-          {cfg.printShowDate && <div className="text-center mt-1 text-gray-800" style={{fontSize: `${baseFontSize + (cfg.fsMetaOffset ?? 0)}px`}}>{cfg.printDateLabel ?? 'Ngày lập phiếu'}: {order?.date ? formatDateOnly(order.date) : formatDateOnly(new Date())}</div>}
+          {cfg.printShowDate && <div className="text-center mt-1 text-gray-800" style={{fontSize: `${baseFontSize + (cfg.fsMetaOffset ?? 0)}px`}}>{order?.date ? formatDateOnly(order.date) : formatDateOnly(new Date())}</div>}
           {cfg.printShowInvoiceId && <div className="text-center mt-1 text-gray-800" style={{fontSize: fsMeta}}>{cfg.printInvoiceIdLabel ?? 'Mã HĐ'}: {order?.invoiceCode || order?.id?.slice(0,6).toUpperCase() || 'HD12345'}</div>}
         </div>
       </div>
@@ -1140,7 +1140,7 @@ function POSView({ products, orders = [], customers, db, storeId, user, storeCon
             </div>
             <div id="print-invoice-area-pos" className={`bg-white shadow-xl border border-gray-200 mx-auto transition-all relative overflow-hidden ${paperWidthClass}`} style={{ fontSize: `${baseFontSize}px`, padding: isA4A5 ? '20px' : '15px', color: '#000', fontFamily: 'sans-serif' }}>
               {storeConfig?.watermarkLogoEnabled !== false && storeConfig?.logo && <img src={storeConfig.logo} alt="Logo chìm" className="pointer-events-none absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2" style={{width:`${Math.max(20,Math.min(100,Number(storeConfig.watermarkLogoSize)||55))}%`,maxWidth:'80%',maxHeight:'75%',objectFit:'contain',opacity:Number(storeConfig.watermarkLogoOpacity??0.12),zIndex:0}} />}
-              <div className="relative z-10"><ReceiptTemplate order={completedOrder} storeConfig={storeConfig} isA4A5={isA4A5} baseFontSize={baseFontSize} /></div>
+              <div className="relative z-10"><ReceiptTemplate order={completedOrder} storeConfig={{...storeConfig, printPaperSize: localPrintSize}} isA4A5={isA4A5} baseFontSize={baseFontSize} /></div>
             </div>
           </div>
         )}
@@ -1516,7 +1516,7 @@ function SalesHistoryView({ orders, imports = [], products, customers, storeConf
             </div>
             <div id="print-invoice-area" className={`bg-white shadow-xl border border-gray-200 mx-auto transition-all relative overflow-hidden ${paperWidthClass}`} style={{ fontSize: `${baseFontSize}px`, padding: isA4A5 ? '20px' : '15px', color: '#000', fontFamily: 'sans-serif' }}>
               {storeConfig?.watermarkLogoEnabled !== false && storeConfig?.logo && <img src={storeConfig.logo} alt="Logo chìm" className="pointer-events-none absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2" style={{width:`${Math.max(20,Math.min(100,Number(storeConfig.watermarkLogoSize)||55))}%`,maxWidth:'80%',maxHeight:'75%',objectFit:'contain',opacity:Number(storeConfig.watermarkLogoOpacity??0.12),zIndex:0}} />}
-              <div className="relative z-10"><ReceiptTemplate order={viewingOrderPrint} storeConfig={storeConfig} isA4A5={isA4A5} baseFontSize={baseFontSize} /></div>
+              <div className="relative z-10"><ReceiptTemplate order={viewingOrderPrint} storeConfig={{...storeConfig, printPaperSize: localPrintSize}} isA4A5={isA4A5} baseFontSize={baseFontSize} /></div>
             </div>
           </div>
         )}
