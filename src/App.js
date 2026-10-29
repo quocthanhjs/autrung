@@ -946,6 +946,8 @@ function POSView({ products, orders = [], customers, db, storeId, user, storeCon
   const [printInvoice, setPrintInvoice] = useState(true);
   const [showAddCusModal, setShowAddCusModal] = useState(false);
   const [newCusForm, setNewCusForm] = useState({ name: '', phone: '', address: '' });
+  const [showProductSuggestions, setShowProductSuggestions] = useState(false);
+  const [showCustomerSuggestions, setShowCustomerSuggestions] = useState(false);
   const [posRowsPerPage, setPosRowsPerPage] = useState('10');
   const [posCurrentPage, setPosCurrentPage] = useState(1);
   const [localPrintSize, setLocalPrintSize] = useState(storeConfig.printPaperSize || 'K80');
@@ -957,15 +959,22 @@ function POSView({ products, orders = [], customers, db, storeId, user, storeCon
     return () => window.removeEventListener('keydown', handleKeyDown);
   }, []);
 
+  const normalizePosSearch = value => String(value ?? '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/đ/g, 'd').replace(/Đ/g, 'd').toLocaleLowerCase('vi').trim();
   const categories = useMemo(() => [...new Set(products.map(p => p.category).filter(Boolean))], [products]);
   const filteredProducts = useMemo(() => {
+    const query = normalizePosSearch(searchTerm);
     return products.filter(p => {
-      const matchSearch = p.name && p.name.toLowerCase().includes(searchTerm.toLowerCase());
+      const searchable = [p.name, p.code, p.productCode, p.sku, p.barcode, p.category].map(normalizePosSearch).join(' ');
+      const matchSearch = !query || searchable.includes(query);
       const matchCategory = selectedCategory === 'ALL' || p.category === selectedCategory;
       return matchSearch && matchCategory;
     });
   }, [products, searchTerm, selectedCategory]);
-
+  const filteredCustomerSuggestions = useMemo(() => {
+    const query = normalizePosSearch(customerSearchTerm);
+    if (!query) return [];
+    return (customers || []).filter(c => [c.name, c.code, c.customerCode, c.phone, c.address].map(normalizePosSearch).some(value => value.includes(query))).slice(0, 8);
+  }, [customers, customerSearchTerm]);
   const paginatedProducts = useMemo(() => {
     if (posRowsPerPage === 'all') return filteredProducts;
     const limit = parseInt(posRowsPerPage) || 10;
@@ -973,6 +982,7 @@ function POSView({ products, orders = [], customers, db, storeId, user, storeCon
     return filteredProducts.slice(start, start + limit);
   }, [filteredProducts, posRowsPerPage, posCurrentPage]);
   const totalPosPages = posRowsPerPage === 'all' ? 1 : Math.ceil(filteredProducts.length / (parseInt(posRowsPerPage) || 10));
+  const displayedProducts = searchTerm.trim() ? filteredProducts.slice(0, 12) : paginatedProducts;
 
   const addToCart = (product) => {
     setCart(prev => {
@@ -1056,25 +1066,26 @@ function POSView({ products, orders = [], customers, db, storeId, user, storeCon
             <h2 className="text-xl font-bold text-gray-800">Sản phẩm bán hàng</h2>
             <div className="flex items-center gap-2 w-full sm:w-auto">
               <select value={selectedCategory} onChange={e=>{ setSelectedCategory(e.target.value); setPosCurrentPage(1); }} className="p-2 border rounded-lg text-sm bg-white font-medium outline-none w-full sm:w-40"><option value="ALL">-- Tất cả Nhóm --</option>{categories.map((c, i) => <option key={i} value={c}>{c}</option>)}</select>
-              <div className="relative flex-1 sm:w-64"><Search size={16} className="absolute left-3 top-3 text-gray-400"/><input placeholder="Tìm nhanh sản phẩm..." value={searchTerm} onChange={e=>{ setSearchTerm(e.target.value); setPosCurrentPage(1); }} className="w-full pl-9 pr-3 py-2 border rounded-lg bg-white outline-none text-sm"/></div>
+              <div className="relative flex-1 sm:w-64 z-30"><Search size={16} className="absolute left-3 top-3 text-gray-400 pointer-events-none"/><input type="search" autoComplete="off" aria-label="Tìm nhanh sản phẩm" placeholder="Tìm nhanh sản phẩm..." value={searchTerm} onFocus={()=>setShowProductSuggestions(!!searchTerm.trim())} onChange={e=>{ const value=e.target.value; setSearchTerm(value); setPosCurrentPage(1); setShowProductSuggestions(!!value.trim()); }} className="w-full pl-9 pr-9 py-2 border rounded-lg bg-white outline-none text-sm focus:ring-2 focus:ring-blue-300 focus:border-blue-400 touch-manipulation"/>{searchTerm && <button type="button" aria-label="Xóa tìm kiếm sản phẩm" onClick={()=>{setSearchTerm('');setShowProductSuggestions(false);setPosCurrentPage(1);}} className="absolute right-2 top-1.5 rounded-md px-2 py-1 text-gray-400 hover:bg-gray-100">×</button>}</div>
             </div>
           </div>
           <div className="grid grid-cols-2 sm:grid-cols-3 xl:grid-cols-4 gap-4">
-            {paginatedProducts.map(p => {
+            {displayedProducts.map((p, index) => {
               const stockClass = p.stock < 0 ? 'text-blue-500 font-bold' : 'text-gray-500';
               return (
-                <div key={p.id} onClick={() => addToCart(p)} className="bg-white p-3 rounded-xl border cursor-pointer hover:border-blue-400 shadow-sm transition transform hover:-translate-y-0.5">
+                <div key={p.id} onClick={() => { addToCart(p); if (searchTerm.trim()) { setSearchTerm(''); setShowProductSuggestions(false); setPosCurrentPage(1); } }} className={(searchTerm.trim() && index >= 6 ? 'hidden sm:block ' : '') + "bg-white p-3 rounded-xl border cursor-pointer hover:border-blue-400 shadow-sm transition transform hover:-translate-y-0.5 touch-manipulation"}>
                   {p.category && <span className="text-[10px] bg-blue-50 text-blue-600 px-1.5 py-0.5 rounded font-bold mb-1 inline-block">{p.category}</span>}
                   <h3 className="font-semibold text-sm text-gray-800 line-clamp-2">{p.name}</h3>
                   <div className="flex justify-between items-end mt-2"><p className="text-blue-600 font-bold">{formatCurrency(p.price)}</p><p className={"text-xs " + stockClass}>Kho: {p.stock}</p></div>
                 </div>
               );
             })}
+            {searchTerm.trim() && filteredProducts.length === 0 && <div className="col-span-full rounded-xl border border-dashed bg-white p-6 text-center text-sm text-gray-500">Không tìm thấy sản phẩm phù hợp.</div>}
           </div>
         </div>
-        <div className="mt-4 shrink-0 bg-white rounded-xl border shadow-sm">
+        {!searchTerm.trim() && <div className="mt-4 shrink-0 bg-white rounded-xl border shadow-sm">
           <PaginationControls currentPage={posCurrentPage} totalPages={totalPosPages} rowsPerPage={posRowsPerPage} onPageChange={(p) => setPosCurrentPage(p)} onRowsChange={(r) => { setPosRowsPerPage(r); setPosCurrentPage(1); }} totalItems={filteredProducts.length} />
-        </div>
+        </div>}
       </div>
       
       <div className="w-full lg:w-[420px] xl:w-[460px] bg-white border-l shadow-2xl shrink-0 flex flex-col z-20 h-[65vh] lg:h-auto">
@@ -1097,7 +1108,7 @@ function POSView({ products, orders = [], customers, db, storeId, user, storeCon
         </div>
         <div className="p-4 border-t bg-white space-y-3 shadow-[0_-4px_6px_-1px_rgba(0,0,0,0.05)]">
           <div className="flex flex-row items-center gap-2 w-full">
-            <div className="flex-1 min-w-0 space-y-1"><div className="relative"><Search size={15} className="absolute left-3 top-3 text-gray-400"/><input value={customerSearchTerm} onChange={e=>setCustomerSearchTerm(e.target.value)} placeholder="Tìm khách hàng..." className="w-full pl-9 pr-3 p-2.5 border border-gray-300 rounded-xl text-sm"/>{customerSearchTerm.trim() && <div className="absolute z-40 top-full mt-1 left-0 right-0 max-h-56 overflow-auto rounded-xl border bg-white shadow-xl">{customers.filter(c=>(c.name||'').toLocaleLowerCase('vi').includes(customerSearchTerm.toLocaleLowerCase('vi')) || (c.phone||'').includes(customerSearchTerm)).slice(0,50).map(c=><button type="button" key={c.id} onClick={()=>{setCustomerId(c.id);setCustomerSearchTerm('');}} className="w-full text-left px-3 py-2.5 hover:bg-blue-50 border-b last:border-b-0"><span className="block text-sm font-bold">{c.name}</span><span className="block text-xs text-gray-500">{c.phone || 'Không có số điện thoại'}</span></button>)}{!customers.some(c=>(c.name||'').toLocaleLowerCase('vi').includes(customerSearchTerm.toLocaleLowerCase('vi')) || (c.phone||'').includes(customerSearchTerm)) && <div className="p-3 text-sm text-gray-500">Không tìm thấy khách hàng phù hợp.</div>}</div>}</div><select value={customerId} onChange={e=>setCustomerId(e.target.value)} className="w-full min-w-0 p-2.5 border border-gray-300 rounded-xl outline-none text-sm bg-gray-50 focus:bg-white font-medium"><option value="">-- Khách lẻ (Tiền mặt) --</option>{customers.filter(c=>(c.name||'').toLocaleLowerCase('vi').includes(customerSearchTerm.toLocaleLowerCase('vi')) || (c.phone||'').includes(customerSearchTerm)).map(c => <option key={c.id} value={c.id}>{c.name}</option>)}</select></div>
+            <div className="flex-1 min-w-0 space-y-1 relative z-50"><div className="relative"><Search size={15} className="absolute left-3 top-3 text-gray-400 pointer-events-none"/><input type="search" autoComplete="off" aria-label="Tìm khách hàng" value={customerSearchTerm} onFocus={()=>setShowCustomerSuggestions(!!customerSearchTerm.trim())} onChange={e=>{const value=e.target.value;setCustomerSearchTerm(value);setShowCustomerSuggestions(!!value.trim());}} placeholder="Tìm khách hàng..." className="w-full pl-9 pr-9 p-2.5 border border-gray-300 rounded-xl text-sm focus:ring-2 focus:ring-blue-300 outline-none touch-manipulation"/>{customerSearchTerm && <button type="button" aria-label="Xóa tìm kiếm khách hàng" onClick={()=>{setCustomerSearchTerm('');setShowCustomerSuggestions(false);}} className="absolute right-2 top-1.5 rounded-md px-2 py-1 text-gray-400 hover:bg-gray-100">×</button>}{showCustomerSuggestions && customerSearchTerm.trim() && <div className="absolute z-[100] top-full mt-1 left-0 right-0 max-h-56 overflow-y-auto overscroll-contain rounded-xl border border-gray-200 bg-white shadow-xl">{filteredCustomerSuggestions.map(c=><button type="button" key={c.id} onMouseDown={e=>e.preventDefault()} onClick={()=>{setCustomerId(c.id);setCustomerSearchTerm('');setShowCustomerSuggestions(false);}} className="w-full text-left px-3 py-3 hover:bg-blue-50 active:bg-blue-100 border-b last:border-b-0 touch-manipulation"><span className="block text-sm font-bold">{c.name}</span><span className="block text-xs text-gray-500">{[c.phone,c.code||c.customerCode].filter(Boolean).join(' · ') || 'Không có thông tin liên hệ'}</span></button>)}{filteredCustomerSuggestions.length===0 && <div className="p-3 text-sm text-gray-500">Không tìm thấy khách hàng phù hợp.</div>}</div>}</div><select value={customerId} onChange={e=>{setCustomerId(e.target.value);setCustomerSearchTerm('');setShowCustomerSuggestions(false);}} className="w-full min-w-0 p-2.5 border border-gray-300 rounded-xl outline-none text-sm bg-gray-50 focus:bg-white font-medium"><option value="">-- Khách lẻ (Tiền mặt) --</option>{customers.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}</select></div>
             <button type="button" onClick={() => setShowAddCusModal(true)} className="bg-blue-50 hover:bg-blue-100 text-blue-600 border border-blue-200 px-3.5 py-2.5 rounded-xl font-bold text-xs flex items-center justify-center gap-1 shrink-0 whitespace-nowrap transition-colors shadow-sm"><Plus size={16}/> Thêm KH</button>
           </div>
           <textarea value={orderNote} onChange={e=>setOrderNote(e.target.value)} placeholder="Ghi chú đơn hàng..." className="w-full p-2.5 border border-gray-300 rounded-xl outline-none text-sm resize-none h-12 bg-gray-50 focus:bg-white focus:ring-2 focus:ring-blue-500 transition-all"></textarea>
