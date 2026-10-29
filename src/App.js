@@ -3816,6 +3816,7 @@ function ImportView({ products, orders = [], imports = [], suppliers, db, storeI
   const [showAddSuppModal, setShowAddSuppModal] = useState(false);
   const [newSuppForm, setNewSuppForm] = useState({ name: '', phone: '', address: '' });
   const [showAddProdModal, setShowAddProdModal] = useState(false);
+  const [isAddingNewProduct, setIsAddingNewProduct] = useState(false);
   const [newProdForm, setNewProdForm] = useState({ name: '', category: '', cost: '', price: '', stock: '' });
   const [showProductSuggestions, setShowProductSuggestions] = useState(false);
   const [bulkImportFile, setBulkImportFile] = useState(null);
@@ -3890,14 +3891,23 @@ function ImportView({ products, orders = [], imports = [], suppliers, db, storeI
 
   const handleAddNewProductInImport = async (e) => {
     e.preventDefault();
+    if (isAddingNewProduct) return;
+    setIsAddingNewProduct(true);
     try {
-      const costVal = Number(newProdForm.cost) || 0; const priceVal = Number(newProdForm.price) || 0; const initStock = Number(newProdForm.stock) || 0;
-      // Ton kho ban dau bang 0; so luong chi duoc cong khi hoan tat phieu nhap.
-      const newProdData = { name: newProdForm.name, category: newProdForm.category || '', cost: costVal, price: priceVal, stock: 0, createdAt: new Date().toISOString() };
+      const costVal = Number(newProdForm.cost) || 0;
+      const priceVal = Number(newProdForm.price) || 0;
+      const initStock = Number(newProdForm.stock) || 0;
+      // San pham moi de ton 0; so luong nhap duoc cong dung mot lan khi luu phieu nhap.
+      const newProdData = { name: newProdForm.name.trim(), category: newProdForm.category || '', cost: costVal, price: priceVal, stock: 0, createdAt: new Date().toISOString() };
       const docRef = await addDoc(collection(db, 'stores', storeId, 'products'), newProdData);
       setCart(c => [...c, { id: docRef.id, name: newProdData.name, category: newProdData.category, qty: initStock, importCost: costVal, price: priceVal }]);
       setShowAddProdModal(false); setShowGroupSuggestions(false); setShowAddGroupForm(false); setNewProdForm({ name: '', category: '', cost: '', price: '', stock: '' }); showToast("Đã thêm hàng mới và đưa vào phiếu nhập!");
-    } catch (err) { showToast("Lỗi thêm sản phẩm mới", "error"); }
+    } catch (err) {
+      console.error('Loi them san pham moi trong phieu nhap:', err);
+      showToast("Lỗi thêm sản phẩm mới", "error");
+    } finally {
+      setIsAddingNewProduct(false);
+    }
   };
 
   const handleImport = async () => {
@@ -3925,17 +3935,26 @@ function ImportView({ products, orders = [], imports = [], suppliers, db, storeI
       } else {
         const importRef = doc(collection(db, 'stores', storeId, 'imports'));
         batch.set(importRef, importPayload);
-        cart.forEach(item => {
-          const p = products.find(prod => prod.id === item.id);
+        for (const item of cart) {
+          let p = products.find(prod => prod.id === item.id);
+          // Danh sach products cap nhat qua onSnapshot co the chua co san pham vua tao.
+          // Doc truc tiep Firestore de khong bo qua cap nhat ton kho khi luu phieu ngay sau khi tao.
+          if (!p && item.id) {
+            const productSnap = await getDoc(doc(db, 'stores', storeId, 'products', item.id));
+            if (productSnap.exists()) p = { id: productSnap.id, ...productSnap.data() };
+          }
           if (p) {
-            let newCost = Number(item.importCost || 0); const oldCost = Number(p.cost || 0); const currentStock = Number(p.stock || 0); const importQty = Number(item.qty ?? 0);
+            let newCost = Number(item.importCost || 0);
+            const oldCost = Number(p.cost || 0);
+            const currentStock = Number(p.stock || 0);
+            const importQty = Number(item.qty ?? 0);
             const method = storeConfig?.costCalcMethod || 'LATEST';
             if (method === 'AVERAGE') { if (currentStock + importQty > 0) newCost = Math.round(((currentStock * oldCost) + (importQty * newCost)) / (currentStock + importQty)); }
             else if (method === 'HIGHEST') newCost = Math.max(oldCost, newCost);
             else if (method === 'LOWEST') newCost = oldCost === 0 ? newCost : Math.min(oldCost, newCost);
             batch.update(doc(db, 'stores', storeId, 'products', p.id), { stock: currentStock + importQty, cost: newCost, lastSupplierId: supplierId, lastSupplierName: s?.name || supplierSearch || newSuppForm.name || '' });
           }
-        });
+        }
         if (isDebt && s) batch.update(doc(db, 'stores', storeId, 'suppliers', supplierId), { totalDebt: Number(s.totalDebt || 0) + total });
       }
       await batch.commit();
@@ -4131,7 +4150,7 @@ function ImportView({ products, orders = [], imports = [], suppliers, db, storeI
           </div>
           <div className="grid grid-cols-2 gap-3"><div><label className="block text-xs font-bold text-gray-500 mb-1">Giá vốn (đ) *</label><input required type="number" step="any" placeholder="0 (có thể âm)" value={newProdForm.cost} onChange={e=>setNewProdForm({...newProdForm,cost:e.target.value})} className="w-full p-2.5 border rounded-lg text-sm"/></div><div><label className="block text-xs font-bold text-gray-500 mb-1">Giá bán (đ) *</label><input required type="number" step="any" placeholder="0 (có thể âm)" value={newProdForm.price} onChange={e=>setNewProdForm({...newProdForm,price:e.target.value})} className="w-full p-2.5 border rounded-lg text-sm"/></div></div>
           <div><label className="block text-xs font-bold text-gray-500 mb-1">Số lượng tồn ban đầu *</label><input required type="number" placeholder="0" value={newProdForm.stock} onChange={e=>setNewProdForm({...newProdForm,stock:e.target.value})} className="w-full p-2.5 border rounded-lg text-sm"/></div>
-          <button type="submit" className="w-full bg-blue-600 text-white font-bold p-2.5 rounded-lg text-sm">Lưu & đưa vào phiếu nhập</button>
+          <button type="submit" disabled={isAddingNewProduct} className="w-full bg-blue-600 disabled:opacity-60 disabled:cursor-not-allowed text-white font-bold p-2.5 rounded-lg text-sm">{isAddingNewProduct ? 'Đang lưu sản phẩm...' : 'Lưu & đưa vào phiếu nhập'}</button>
         </form>}
         <div className="flex-1 bg-white rounded-xl border shadow-sm overflow-hidden flex flex-col justify-between">
           <div className="overflow-auto flex-1">
