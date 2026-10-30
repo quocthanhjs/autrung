@@ -941,12 +941,12 @@ function POSView({ products, orders = [], customers, db, storeId, user, storeCon
   const [orderNote, setOrderNote] = useState('');
   const [completedOrder, setCompletedOrder] = useState(null);
   const [showModal, setShowModal] = useState(false);
-  const [searchTerm, setSearchTerm] = useState('');
   const [selectedCategory, setSelectedCategory] = useState('ALL');
+  const [searchTerm, setSearchTerm] = useState('');
+  const [showProductSuggestions, setShowProductSuggestions] = useState(false);
   const [printInvoice, setPrintInvoice] = useState(true);
   const [showAddCusModal, setShowAddCusModal] = useState(false);
   const [newCusForm, setNewCusForm] = useState({ name: '', phone: '', address: '' });
-  const [showProductSuggestions, setShowProductSuggestions] = useState(false);
   const [showCustomerSuggestions, setShowCustomerSuggestions] = useState(false);
   const [posRowsPerPage, setPosRowsPerPage] = useState('10');
   const [posCurrentPage, setPosCurrentPage] = useState(1);
@@ -1084,7 +1084,7 @@ function POSView({ products, orders = [], customers, db, storeId, user, storeCon
           </div>
         </div>
         {!searchTerm.trim() && <div className="hidden sm:block mt-4 shrink-0 bg-white rounded-xl border shadow-sm">
-          <PaginationControls currentPage={posCurrentPage} totalPages={totalPosPages} rowsPerPage={posRowsPerPage} onPageChange={(p) => setPosCurrentPage(p)} onRowsChange={(r) => { setPosRowsPerPage(r); setPosCurrentPage(1); }} totalItems={filteredProducts.length} />
+          <PaginationControls currentPage={posCurrentPage} totalPages={totalPosPages} rowsPerPage={posRowsPerPage} onPageChange={(p) => setPosCurrentPage(p)} onRowsChange={(r) => { setPosRowsPerPage(r); setPosCurrentPage(1); }} totalItems={(products || []).length} />
         </div>}
       </div>
       
@@ -3827,6 +3827,39 @@ function ExpenseView({ expenses, db, storeId, showToast }) {
   );
 }
 
+const ImportProductPicker = React.memo(function ImportProductPicker({ productSearchIndex, onSelect, onAddNew }) {
+  const [value, setValue] = useState('');
+  const [open, setOpen] = useState(false);
+  const normalize = (input) => String(input || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/đ/g, 'd').replace(/Đ/g, 'D').trim().toLocaleLowerCase('vi');
+  const matches = useMemo(() => {
+    const q = normalize(value);
+    return productSearchIndex.filter(entry => !q || entry.nameKey.includes(q) || entry.categoryKey.includes(q)).slice(0, 8);
+  }, [productSearchIndex, value]);
+  return <div className="relative z-[110] w-full sm:w-64"><Search size={16} className="absolute left-3 top-3 text-gray-400"/><input placeholder="Tìm kiếm sản phẩm nhập..." value={value} onFocus={()=>setOpen(!!value.trim())} onBlur={()=>setTimeout(()=>setOpen(false),120)} onChange={e=>{setValue(e.target.value);setOpen(!!e.target.value.trim());}} className="w-full pl-9 pr-3 py-2 border rounded-lg bg-white outline-none text-sm"/>
+    {open && <div className="absolute left-0 right-0 top-full mt-1 z-[120] max-h-64 overflow-auto overscroll-contain bg-white border rounded-lg shadow-xl">{matches.map(({product})=><button type="button" key={product.id} onMouseDown={e=>e.preventDefault()} onClick={()=>{onSelect(product);setValue('');setOpen(false);}} className="block w-full text-left px-4 py-3.5 text-sm hover:bg-blue-50 touch-manipulation min-h-[52px]"><span className="font-semibold">{product.name}</span><span className="block text-xs text-gray-500">{product.category || 'Chưa phân nhóm'} · Tồn: {product.stock}</span></button>)}{matches.length===0 && <div className="px-3 py-2 text-sm text-gray-500">Không tìm thấy sản phẩm phù hợp.</div>}<button type="button" onClick={()=>{onAddNew(value);setOpen(false);}} className="w-full text-left px-3 py-2 text-sm text-blue-700 font-semibold border-t"><Plus size={14} className="inline mr-1"/>Thêm sản phẩm mới</button></div>}
+  </div>;
+});
+
+const ImportCartRow = React.memo(function ImportCartRow({ item, onCommit, onRemove }) {
+  const [qty, setQty] = useState(String(item.qty ?? 1));
+  const [cost, setCost] = useState(String(item.importCost ?? 0));
+  useEffect(() => { setQty(String(item.qty ?? 1)); setCost(String(item.importCost ?? 0)); }, [item.id, item.qty, item.importCost]);
+  const commit = () => onCommit(item.id, { qty: Number(qty) || 0, importCost: cost === '' ? 0 : Number(cost) || 0 });
+  return <div className="bg-gray-50 p-3 rounded-xl border space-y-2 shadow-sm">
+    <div className="flex justify-between items-center"><h4 className="font-bold text-sm text-gray-800 truncate">{item.name}</h4><button type="button" onClick={()=>onRemove(item.id)} className="text-blue-400 hover:text-blue-600"><X size={16}/></button></div>
+    <div className="grid grid-cols-2 gap-2 text-xs"><div><label className="text-[10px] text-gray-500 font-bold">Số lượng nhập</label><input type="number" value={qty} onChange={e=>setQty(e.target.value)} onBlur={commit} className="w-full p-1.5 border rounded outline-none font-bold text-center bg-white"/></div><div><label className="text-[10px] text-gray-500 font-bold">Đơn giá nhập (đ)</label><input type="number" step="any" value={cost} onChange={e=>setCost(e.target.value)} onBlur={commit} className="w-full p-1.5 border rounded outline-none font-bold text-blue-600 text-center bg-white"/></div></div>
+    <div className="flex justify-between items-center pt-1 border-t border-gray-200"><span className="text-[11px] text-gray-500">Thành tiền:</span><span className="font-bold text-xs text-gray-900">{formatCurrency((Number(qty)||0)*(Number(cost)||0))}</span></div>
+  </div>;
+});
+
+function getImportSortTimestamp(value) {
+  if (!value) return 0;
+  if (typeof value?.toDate === 'function') return value.toDate().getTime() || 0;
+  if (typeof value === 'object' && Number.isFinite(value.seconds)) return value.seconds * 1000;
+  const parsed = new Date(value).getTime();
+  return Number.isFinite(parsed) ? parsed : 0;
+}
+
 function ImportView({ products, orders = [], imports = [], suppliers, db, storeId, user, userData, showToast, storeConfig, setActiveTab }) {
   const [activeImportTab, setActiveImportTab] = useState('history');
   const [cart, setCart] = useState([]);
@@ -3834,13 +3867,11 @@ function ImportView({ products, orders = [], imports = [], suppliers, db, storeI
   const [isDebt, setIsDebt] = useState(false);
   const [editingImport, setEditingImport] = useState(null);
   const [detailImport, setDetailImport] = useState(null);
-  const [searchTerm, setSearchTerm] = useState('');
   const [showAddSuppModal, setShowAddSuppModal] = useState(false);
   const [newSuppForm, setNewSuppForm] = useState({ name: '', phone: '', address: '' });
   const [showAddProdModal, setShowAddProdModal] = useState(false);
   const [isAddingNewProduct, setIsAddingNewProduct] = useState(false);
   const [newProdForm, setNewProdForm] = useState({ name: '', category: '', cost: '0', price: '0' });
-  const [showProductSuggestions, setShowProductSuggestions] = useState(false);
   const [bulkImportFile, setBulkImportFile] = useState(null);
   const [bulkImportRows, setBulkImportRows] = useState([]);
   const [bulkImportSelected, setBulkImportSelected] = useState([]);
@@ -3883,18 +3914,18 @@ function ImportView({ products, orders = [], imports = [], suppliers, db, storeI
   const productSearchIndex = useMemo(() => (products || []).filter(p => p.name).map(p => ({ product: p, nameKey: normalizeImportSearch(p.name), categoryKey: normalizeImportSearch(p.category) })), [products]);
   const supplierSearchIndex = useMemo(() => (suppliers || []).map(s => ({ supplier: s, nameKey: String(s.name || '').toLocaleLowerCase('vi') })), [suppliers]);
   const groupSearchIndex = useMemo(() => [...new Set((products || []).map(p => String(p.category || '').trim()).filter(Boolean))].map(name => ({ name, nameKey: name.toLocaleLowerCase('vi') })), [products]);
-  const filteredProducts = useMemo(() => { const q = normalizeImportSearch(searchTerm); return productSearchIndex.filter(entry => !q || entry.nameKey.includes(q) || entry.categoryKey.includes(q)).map(entry => entry.product); }, [productSearchIndex, searchTerm]);
   const visibleSuppliers = useMemo(() => { const q = supplierSearch.toLocaleLowerCase('vi'); return supplierSearchIndex.filter(entry => entry.nameKey.includes(q)).map(entry => entry.supplier); }, [supplierSearchIndex, supplierSearch]);
   const visibleGroups = useMemo(() => { const q = groupSearch.toLocaleLowerCase('vi'); return groupSearchIndex.filter(entry => entry.nameKey.includes(q)).map(entry => entry.name); }, [groupSearchIndex, groupSearch]);
 
   const paginatedProducts = useMemo(() => {
-    if (importRowsPerPage === 'all') return filteredProducts;
+    const source = products || [];
+    if (importRowsPerPage === 'all') return source;
     const limit = parseInt(importRowsPerPage) || 10;
     const start = (importCurrentPage - 1) * limit;
-    return filteredProducts.slice(start, start + limit);
-  }, [filteredProducts, importRowsPerPage, importCurrentPage]);
+    return source.slice(start, start + limit);
+  }, [products, importRowsPerPage, importCurrentPage]);
 
-  const totalImportPages = importRowsPerPage === 'all' ? 1 : Math.ceil(filteredProducts.length / (parseInt(importRowsPerPage) || 10));
+  const totalImportPages = importRowsPerPage === 'all' ? 1 : Math.ceil((products || []).length / (parseInt(importRowsPerPage) || 10));
 
   const handleAddSupplierQuick = async (e) => {
     e.preventDefault();
@@ -4111,13 +4142,13 @@ function ImportView({ products, orders = [], imports = [], suppliers, db, storeI
 
   const addProductToCart = (p) => setCart(c => c.find(i => i.id === p.id) ? c : [...c, { id: p.id, name: p.name, category: p.category || '', qty: 1, importCost: p.cost || 0, price: p.price || 0 }]);
 
-  const sortedImports = [...(imports || [])].sort((a, b) => {
+  const sortedImports = useMemo(() => [...(imports || [])].sort((a, b) => {
     const field = historySort.field;
-    let av = field === 'date' ? new Date(a.date || 0).getTime() : field === 'code' ? (a.invoiceCode || a.receiptCode || a.id || '') : field === 'supplier' ? (a.supplierName || '') : field === 'total' ? (Number(a.total) || 0) : field === 'status' ? (a.status || '') : (a.items || []).map(x => x.name || '').join(' ');
-    let bv = field === 'date' ? new Date(b.date || 0).getTime() : field === 'code' ? (b.invoiceCode || b.receiptCode || b.id || '') : field === 'supplier' ? (b.supplierName || '') : field === 'total' ? (Number(b.total) || 0) : field === 'status' ? (b.status || '') : (b.items || []).map(x => x.name || '').join(' ');
+    let av = field === 'date' ? getImportSortTimestamp(a.date || a.createdAt) : field === 'code' ? (a.invoiceCode || a.receiptCode || a.id || '') : field === 'supplier' ? (a.supplierName || '') : field === 'total' ? (Number(a.total) || 0) : field === 'status' ? (a.status || '') : (a.items || []).map(x => x.name || '').join(' ');
+    let bv = field === 'date' ? getImportSortTimestamp(b.date || b.createdAt) : field === 'code' ? (b.invoiceCode || b.receiptCode || b.id || '') : field === 'supplier' ? (b.supplierName || '') : field === 'total' ? (Number(b.total) || 0) : field === 'status' ? (b.status || '') : (b.items || []).map(x => x.name || '').join(' ');
     const cmp = typeof av === 'number' && typeof bv === 'number' ? av - bv : String(av).localeCompare(String(bv), 'vi', {numeric:true, sensitivity:'base'});
     return historySort.direction === 'asc' ? cmp : -cmp;
-  });
+  }), [imports, historySort]);
   const filteredHistoryImports = sortedImports.filter(im => {
     const haystack = `${im.invoiceCode || ''} ${im.receiptCode || ''} ${im.id || ''} ${im.supplierName || ''} ${(im.items || []).map(it => it.name || '').join(' ')}`.toLocaleLowerCase('vi');
     const dateKey = im.date ? getVietnamDateKey(new Date(im.date)) : '';
@@ -4162,10 +4193,8 @@ function ImportView({ products, orders = [], imports = [], suppliers, db, storeI
       <div className="flex flex-col lg:flex-row overflow-hidden min-h-0 h-[80vh] max-h-[80vh] lg:h-[75vh] lg:max-h-[75vh]">
       <div className="flex-1 min-w-0 min-h-0 p-4 md:p-6 flex flex-col overflow-hidden">
         <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center mb-4 gap-3 shrink-0">
-          <div className="flex items-center gap-2"><h2 className="text-xl font-bold text-gray-800">Chọn sản phẩm nhập</h2><button type="button" onClick={() => { setShowAddProdModal(v => !v); setNewProdForm(v => ({ ...v, name: v.name || searchTerm })); setGroupSearch(''); setShowGroupSuggestions(false); }} className="bg-blue-600 hover:bg-blue-700 text-white px-3 py-1.5 rounded-lg text-xs font-bold flex items-center gap-1 shadow"><Plus size={14}/> {showAddProdModal ? 'Đóng thêm mới' : 'Sản phẩm mới'}</button></div>
-          <div className="relative z-[110] w-full sm:w-64"><Search size={16} className="absolute left-3 top-3 text-gray-400"/><input placeholder="Tìm kiếm sản phẩm nhập..." value={searchTerm} onFocus={()=>setShowProductSuggestions(!!searchTerm.trim())} onBlur={()=>setTimeout(()=>setShowProductSuggestions(false),120)} onChange={e=>{const value=e.target.value;setSearchTerm(value);setImportCurrentPage(1);setShowProductSuggestions(!!value.trim());}} className="w-full pl-9 pr-3 py-2 border rounded-lg bg-white outline-none text-sm"/>
-            {showProductSuggestions && <div className="absolute left-0 right-0 top-full mt-1 z-[120] max-h-64 overflow-auto overscroll-contain bg-white border rounded-lg shadow-xl">{filteredProducts.slice(0,8).map(p=><button type="button" key={p.id} onMouseDown={e=>e.preventDefault()} onClick={()=>{addProductToCart(p);setSearchTerm('');setShowProductSuggestions(false);}} className="block w-full text-left px-4 py-3.5 text-sm hover:bg-blue-50 touch-manipulation min-h-[52px]"><span className="font-semibold">{p.name}</span><span className="block text-xs text-gray-500">{p.category || 'Chưa phân nhóm'} · Tồn: {p.stock}</span></button>)}{filteredProducts.length===0 && <div className="px-3 py-2 text-sm text-gray-500">Không tìm thấy sản phẩm phù hợp.</div>}<button type="button" onClick={()=>{setShowAddProdModal(true);setShowProductSuggestions(false);setNewProdForm(v=>({...v,name:searchTerm}));}} className="w-full text-left px-3 py-2 text-sm text-blue-700 font-semibold border-t"><Plus size={14} className="inline mr-1"/>Thêm sản phẩm mới</button></div>}
-          </div>
+          <div className="flex items-center gap-2"><h2 className="text-xl font-bold text-gray-800">Chọn sản phẩm nhập</h2><button type="button" onClick={() => { setShowAddProdModal(v => !v); setNewProdForm(v => ({ ...v, name: v.name })); setGroupSearch(''); setShowGroupSuggestions(false); }} className="bg-blue-600 hover:bg-blue-700 text-white px-3 py-1.5 rounded-lg text-xs font-bold flex items-center gap-1 shadow"><Plus size={14}/> {showAddProdModal ? 'Đóng thêm mới' : 'Sản phẩm mới'}</button></div>
+          <ImportProductPicker productSearchIndex={productSearchIndex} onSelect={addProductToCart} onAddNew={value=>{setShowAddProdModal(true);setNewProdForm(v=>({...v,name:value}));}} />
         </div>
 
         {showAddProdModal && <form onSubmit={handleAddNewProductInImport} className="mb-3 bg-white border border-blue-200 rounded-xl p-3 sm:p-4 space-y-3 shadow-sm">
@@ -4204,12 +4233,12 @@ function ImportView({ products, orders = [], imports = [], suppliers, db, storeI
                     </tr>
                   );
                 })}
-                {paginatedProducts.length === 0 && (<tr><td colSpan="5" className="p-8 text-center text-gray-400">Không tìm thấy sản phẩm</td></tr>)}
+                {paginatedProducts.length === 0 && (<tr><td colSpan="5" className="p-8 text-center text-gray-400">Chưa có sản phẩm</td></tr>)}
               </tbody>
             </table>
           </div>
           <div className="border-t shrink-0">
-            <PaginationControls currentPage={importCurrentPage} totalPages={totalImportPages} rowsPerPage={importRowsPerPage} onPageChange={(p) => setImportCurrentPage(p)} onRowsChange={(r) => { setImportRowsPerPage(r); setImportCurrentPage(1); }} totalItems={filteredProducts.length} />
+            <PaginationControls currentPage={importCurrentPage} totalPages={totalImportPages} rowsPerPage={importRowsPerPage} onPageChange={(p) => setImportCurrentPage(p)} onRowsChange={(r) => { setImportRowsPerPage(r); setImportCurrentPage(1); }} totalItems={(products || []).length} />
           </div>
         </div>
       </div>
@@ -4217,26 +4246,18 @@ function ImportView({ products, orders = [], imports = [], suppliers, db, storeI
       <div className="w-full lg:w-[460px] bg-white border-l shadow-lg z-20 flex flex-col flex-1 min-h-0 lg:flex-none lg:h-full">
         <div className="p-4 border-b bg-gray-50"><h2 className="font-bold flex items-center gap-2"><ArrowDownToLine size={20} className="text-gray-600"/> {editingImport ? `Sửa phiếu nhập ${editingImport.invoiceCode || editingImport.id?.slice(0,8) || ""}` : "Phiếu Nhập Kho"}</h2>{editingImport && <button onClick={() => { setEditingImport(null); setCart([]); setSupplierId(''); setIsDebt(false); }} className="text-xs text-blue-600 mt-2">Hủy chỉnh sửa</button>}</div>
         <div className="flex-1 min-h-0 overflow-y-auto p-4 space-y-3">
-          {cart.map(item => (
-            <div key={item.id} className="bg-gray-50 p-3 rounded-xl border space-y-2 shadow-sm">
-              <div className="flex justify-between items-center"><h4 className="font-bold text-sm text-gray-800 truncate">{item.name}</h4><button onClick={() => setCart(c => c.filter(i => i.id !== item.id))} className="text-blue-400 hover:text-blue-600"><X size={16}/></button></div>
-              <div className="grid grid-cols-2 gap-2 text-xs">
-                <div><label className="text-[10px] text-gray-500 font-bold">Số lượng nhập</label><input type="number" value={item.qty} onChange={e => setCart(c => c.map(i => i.id === item.id ? {...i, qty: Number(e.target.value)} : i))} className="w-full p-1.5 border rounded outline-none font-bold text-center bg-white" /></div>
-                <div><label className="text-[10px] text-gray-500 font-bold">Đơn giá nhập (đ)</label><input type="number" step="any" value={item.importCost} onChange={e => setCart(c => c.map(i => i.id === item.id ? {...i, importCost: e.target.value === '' ? 0 : Number(e.target.value)} : i))} className="w-full p-1.5 border rounded outline-none font-bold text-blue-600 text-center bg-white" /></div>
-              </div>
-              <div className="flex justify-between items-center pt-1 border-t border-gray-200"><span className="text-[11px] text-gray-500">Thành tiền:</span><span className="font-bold text-xs text-gray-900">{formatCurrency(Number(item.qty || 0) * Number(item.importCost || 0))}</span></div>
-            </div>
-          ))}
+          {cart.map(item => <ImportCartRow key={item.id} item={item} onCommit={(id, values)=>setCart(c=>c.map(i=>i.id===id?{...i,...values}:i))} onRemove={id=>setCart(c=>c.filter(i=>i.id!==id))}/>)}
           {cart.length === 0 && <div className="text-center text-gray-400 py-12">Chưa chọn sản phẩm nào để nhập</div>}
         </div>
         <div className="p-4 border-t bg-gray-50 space-y-3">
           <div className="relative">
             <label className="block text-xs font-bold text-gray-500 mb-1">Nhà cung cấp *</label>
             <input required value={supplierSearch || ((suppliers || []).find(s=>s.id===supplierId)?.name || '')} onFocus={()=>setShowSupplierSuggestions(!!supplierSearch.trim())} onBlur={()=>setTimeout(()=>setShowSupplierSuggestions(false),120)} onChange={e=>{const value=e.target.value;setSupplierSearch(value);setSupplierId('');setShowSupplierSuggestions(!!value.trim());}} placeholder="Tìm hoặc chọn nhà cung cấp..." className="w-full p-2.5 border rounded-lg outline-none text-sm bg-white font-medium"/>
-            {showSupplierSuggestions && <div className="absolute z-30 top-full left-0 right-0 mt-1 max-h-56 overflow-auto overscroll-contain bg-white border rounded-lg shadow-lg">{visibleSuppliers.slice(0,8).map(s=><button type="button" key={s.id} onClick={()=>{setSupplierId(s.id);setSupplierSearch(s.name);setShowSupplierSuggestions(false);}} className="block w-full text-left px-3 py-2 text-sm hover:bg-blue-50">{s.name}</button>)}<button type="button" onClick={()=>{setNewSuppForm(v=>({...v,name:supplierSearch}));setShowAddSuppModal(v=>!v);setShowSupplierSuggestions(false);}} className="w-full text-left px-3 py-2 text-sm text-blue-700 font-semibold border-t"><Plus size={14} className="inline mr-1"/>Thêm nhà cung cấp mới</button></div>}
+            {showSupplierSuggestions && <div className="absolute z-30 top-full left-0 right-0 mt-1 max-h-56 overflow-auto overscroll-contain bg-white border rounded-lg shadow-lg">{visibleSuppliers.slice(0,8).map(s=><button type="button" key={s.id} onClick={()=>{setSupplierId(s.id);setSupplierSearch(s.name);setShowSupplierSuggestions(false);}} className="block w-full text-left px-3 py-2 text-sm hover:bg-blue-50">{s.name}</button>)}<button type="button" onClick={()=>{setNewSuppForm(v=>({...v,name:supplierSearch}));setShowAddSuppModal(true);setShowSupplierSuggestions(false);}} className="w-full text-left px-3 py-2 text-sm text-blue-700 font-semibold border-t"><Plus size={14} className="inline mr-1"/>Thêm nhà cung cấp mới</button></div>}
           </div>
+          <button type="button" onClick={()=>{setNewSuppForm(v=>({...v,name:v.name || supplierSearch}));setShowAddSuppModal(v=>!v);}} className="w-full flex items-center justify-center gap-1.5 border border-blue-200 bg-blue-50 text-blue-700 hover:bg-blue-100 rounded-lg py-2 text-sm font-semibold"><Plus size={15}/>{showAddSuppModal ? 'Ẩn thêm nhà cung cấp mới' : 'Thêm nhà cung cấp mới'}</button>
           {showAddSuppModal && <form onSubmit={handleAddSupplierQuick} className="border border-blue-200 bg-white rounded-xl p-3 space-y-2">
-            <div className="font-bold text-sm text-blue-700">Thêm nhà cung cấp mới</div>
+            <div className="flex items-center justify-between gap-2"><div className="font-bold text-sm text-blue-700">Thêm nhà cung cấp mới</div><button type="button" onClick={()=>setShowAddSuppModal(false)} className="text-xs font-semibold text-gray-500 hover:text-gray-800 px-2 py-1 rounded">Ẩn</button></div>
             <input required placeholder="Tên nhà cung cấp *" value={newSuppForm.name} onChange={e=>setNewSuppForm({...newSuppForm,name:e.target.value})} className="w-full p-2.5 border rounded-lg outline-none text-sm"/>
             <input placeholder="Số điện thoại" value={newSuppForm.phone} onChange={e=>setNewSuppForm({...newSuppForm,phone:e.target.value})} className="w-full p-2.5 border rounded-lg outline-none text-sm"/>
             <input placeholder="Địa chỉ" value={newSuppForm.address} onChange={e=>setNewSuppForm({...newSuppForm,address:e.target.value})} className="w-full p-2.5 border rounded-lg outline-none text-sm"/>
