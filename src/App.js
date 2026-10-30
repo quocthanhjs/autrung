@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useMemo, useDeferredValue } from 'react';
 import { LayoutDashboard, ShoppingCart, Package, Users, Truck, Plus, Edit, Trash2, Check, X, Image as ImageIcon, ShoppingBag, TrendingUp, AlertCircle, ArrowDownToLine, Phone, DollarSign, CheckCircle2, Printer, FileText, CreditCard, Lock, LogOut, ShieldAlert, User as UserIcon, Database, UserCog, KeyRound, MonitorSmartphone, Mail, Download, Upload, ArrowUpDown, Search, Eye, EyeOff, Bell, Award, BarChart3, Receipt, ChevronDown, ChevronUp, Image, Store, Sliders, HardDrive, ChevronLeft, ChevronRight, Menu } from 'lucide-react';
 import { initializeApp } from 'firebase/app';
 import { getAuth, signInWithEmailAndPassword, signOut, onAuthStateChanged, sendPasswordResetEmail, EmailAuthProvider, reauthenticateWithCredential } from 'firebase/auth';
@@ -993,7 +993,7 @@ function POSView({ products, orders = [], customers, db, storeId, user, storeCon
   };
 
   const updateQty = (id, delta) => setCart(prev => prev.map(i => {
-    if (i.id === id) { const nq = i.quantity + delta; if (nq > 0) return { ...i, quantity: nq }; }
+    if (i.id === id) { const nq = (Number(i.quantity) || 1) + delta; if (nq > 0) return { ...i, quantity: nq }; }
     return i;
   }));
 
@@ -1019,7 +1019,7 @@ function POSView({ products, orders = [], customers, db, storeId, user, storeCon
       const orderData = {
         invoiceCode: generateInvoiceCode(orders),
         customerId: customerId || null, customerName: c ? c.name : 'Khách lẻ', sellerUid: user.uid, sellerName: userData?.name || user?.displayName || user?.email || 'Nhân viên', note: orderNote,
-        items: cart.map(i => ({ id: i.id, name: i.name, price: i.price, cost: i.cost || 0, quantity: i.quantity, warrantyValue: i.warrantyValue || '', warrantyUnit: i.warrantyUnit || 'tháng', note: i.note || '' })),
+        items: cart.map(i => ({ id: i.id, name: i.name, price: i.price, cost: i.cost || 0, quantity: Math.max(1, Math.floor(Number(i.quantity) || 1)), warrantyValue: i.warrantyValue || '', warrantyUnit: i.warrantyUnit || 'tháng', note: i.note || '' })),
         total: cartTotal, totalCost: cart.reduce((s, item) => s + ((item.cost || 0) * item.quantity), 0),
         status: isDebt ? 'DEBT' : 'PAID', date: new Date().toISOString()
       };
@@ -1096,7 +1096,7 @@ function POSView({ products, orders = [], customers, db, storeId, user, storeCon
               <div className="flex justify-between items-start"><h4 className="font-bold text-sm text-gray-800 pr-2">{item.name}</h4><button onClick={() => setCart(c => c.filter(i => i.id !== item.id))} className="text-blue-400 hover:text-blue-600 bg-blue-50 p-1 rounded"><X size={14}/></button></div>
               <div className="flex justify-between items-center gap-2">
                 <div><label className="text-[10px] text-gray-400 uppercase font-bold tracking-wider">Giá bán (đ)</label><input type="number" value={item.price} onChange={e => updatePrice(item.id, e.target.value)} className="w-28 p-1.5 border border-gray-300 rounded-lg text-sm font-bold text-blue-600 outline-none focus:border-blue-500"/></div>
-                <div className="flex bg-gray-100 rounded-lg p-1 items-center border border-gray-200 shadow-inner"><button onClick={() => updateQty(item.id, -1)} className="w-7 h-7 bg-white rounded-md shadow-sm text-gray-600 font-bold hover:bg-gray-50">-</button><span className="w-8 text-center text-sm font-bold">{item.quantity}</span><button onClick={() => updateQty(item.id, 1)} className="w-7 h-7 bg-white rounded-md shadow-sm text-gray-600 font-bold hover:bg-gray-50">+</button></div>
+                <div className="flex bg-gray-100 rounded-lg p-1 items-center border border-gray-200 shadow-inner"><button type="button" onClick={() => updateQty(item.id, -1)} className="w-7 h-7 bg-white rounded-md shadow-sm text-gray-600 font-bold hover:bg-gray-50">-</button><input type="number" inputMode="numeric" min="1" step="1" aria-label={`Số lượng ${item.name}`} value={item.quantity ?? 1} onChange={e => updateItemField(item.id, 'quantity', e.target.value)} onBlur={e => updateItemField(item.id, 'quantity', Math.max(1, Math.floor(Number(e.target.value) || 1)))} className="w-14 h-8 px-1 text-center text-sm font-bold bg-white border border-gray-200 rounded-md outline-none focus:border-blue-500"/><button type="button" onClick={() => updateQty(item.id, 1)} className="w-7 h-7 bg-white rounded-md shadow-sm text-gray-600 font-bold hover:bg-gray-50">+</button></div>
               </div>
               <div className="grid grid-cols-2 gap-2 pt-2 border-t border-gray-100">
                 <div><label className="text-[10px] text-gray-500 font-bold block mb-0.5">Bảo hành</label><div className="flex gap-1"><input type="number" placeholder="Số" value={item.warrantyValue || ''} onChange={e => updateItemField(item.id, 'warrantyValue', e.target.value)} className="w-12 p-1.5 border border-gray-300 rounded bg-gray-50 text-xs outline-none text-center font-bold"/><select value={item.warrantyUnit || 'tháng'} onChange={e => updateItemField(item.id, 'warrantyUnit', e.target.value)} className="p-1 border border-gray-300 rounded bg-gray-50 text-xs outline-none flex-1"><option value="ngày">Ngày</option><option value="tuần">Tuần</option><option value="tháng">Tháng</option><option value="năm">Năm</option></select></div></div>
@@ -3912,9 +3912,10 @@ function ImportView({ products, orders = [], imports = [], suppliers, db, storeI
   // Lập chỉ mục tìm kiếm một lần khi dữ liệu hàng hóa/NCC thay đổi; không chuẩn hóa
   // toàn bộ danh mục lặp lại theo từng phím người dùng gõ trong phiếu nhập.
   const productSearchIndex = useMemo(() => (products || []).filter(p => p.name).map(p => ({ product: p, nameKey: normalizeImportSearch(p.name), categoryKey: normalizeImportSearch(p.category) })), [products]);
-  const supplierSearchIndex = useMemo(() => (suppliers || []).map(s => ({ supplier: s, nameKey: String(s.name || '').toLocaleLowerCase('vi') })), [suppliers]);
+  const supplierSearchIndex = useMemo(() => (suppliers || []).map(s => ({ supplier: s, nameKey: normalizeImportSearch(s.name) })), [suppliers]);
+  const deferredSupplierSearch = useDeferredValue(supplierSearch);
   const groupSearchIndex = useMemo(() => [...new Set((products || []).map(p => String(p.category || '').trim()).filter(Boolean))].map(name => ({ name, nameKey: name.toLocaleLowerCase('vi') })), [products]);
-  const visibleSuppliers = useMemo(() => { const q = supplierSearch.toLocaleLowerCase('vi').trim(); if (!q) return []; const matches = []; for (const entry of supplierSearchIndex) { if (entry.nameKey.includes(q)) { matches.push(entry.supplier); if (matches.length >= 8) break; } } return matches; }, [supplierSearchIndex, supplierSearch]);
+  const visibleSuppliers = useMemo(() => { const q = normalizeImportSearch(deferredSupplierSearch); if (!q) return []; const matches = []; for (const entry of supplierSearchIndex) { if (entry.nameKey.includes(q)) { matches.push(entry.supplier); if (matches.length >= 8) break; } } return matches; }, [supplierSearchIndex, deferredSupplierSearch]);
   const visibleGroups = useMemo(() => { const q = groupSearch.toLocaleLowerCase('vi'); return groupSearchIndex.filter(entry => entry.nameKey.includes(q)).map(entry => entry.name); }, [groupSearchIndex, groupSearch]);
 
   const paginatedProducts = useMemo(() => {
@@ -4140,7 +4141,7 @@ function ImportView({ products, orders = [], imports = [], suppliers, db, storeI
     finally{setBulkImportBusy(false);}
   };
 
-  const addProductToCart = (p) => setCart(c => c.find(i => i.id === p.id) ? c : [...c, { id: p.id, name: p.name, category: p.category || '', qty: 1, importCost: p.cost || 0, price: p.price || 0 }]);
+  const addProductToCart = (p) => setCart(c => c.find(i => i.id === p.id) ? c : [{ id: p.id, name: p.name, category: p.category || '', qty: 1, importCost: p.cost || 0, price: p.price || 0 }, ...c]);
 
   const sortedImports = useMemo(() => [...(imports || [])].sort((a, b) => {
     const field = historySort.field;
