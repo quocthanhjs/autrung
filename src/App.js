@@ -3836,7 +3836,7 @@ const ImportProductPicker = React.memo(function ImportProductPicker({ productSea
     return productSearchIndex.filter(entry => !q || entry.nameKey.includes(q) || entry.categoryKey.includes(q)).slice(0, 8);
   }, [productSearchIndex, value]);
   return <div className="relative z-[110] w-full sm:w-64"><Search size={16} className="absolute left-3 top-3 text-gray-400"/><input placeholder="Tìm kiếm sản phẩm nhập..." value={value} onFocus={()=>setOpen(!!value.trim())} onBlur={()=>setTimeout(()=>setOpen(false),120)} onChange={e=>{setValue(e.target.value);setOpen(!!e.target.value.trim());}} className="w-full pl-9 pr-3 py-2 border rounded-lg bg-white outline-none text-sm"/>
-    {open && <div className="absolute left-0 right-0 top-full mt-1 z-[120] max-h-64 overflow-auto overscroll-contain bg-white border rounded-lg shadow-xl">{matches.map(({product})=><button type="button" key={product.id} onMouseDown={e=>e.preventDefault()} onClick={()=>{onSelect(product);setValue('');setOpen(false);}} className="block w-full text-left px-4 py-3.5 text-sm hover:bg-blue-50 touch-manipulation min-h-[52px]"><span className="font-semibold">{product.name}</span><span className="block text-xs text-gray-500">{product.category || 'Chưa phân nhóm'} · Tồn: {product.stock}</span></button>)}{matches.length===0 && <div className="px-3 py-2 text-sm text-gray-500">Không tìm thấy sản phẩm phù hợp.</div>}<button type="button" onClick={()=>{onAddNew(value);setOpen(false);}} className="w-full text-left px-3 py-2 text-sm text-blue-700 font-semibold border-t"><Plus size={14} className="inline mr-1"/>Thêm sản phẩm mới</button></div>}
+    {open && <div className="absolute left-0 right-0 top-full mt-1 z-[120] max-h-28 overflow-auto overscroll-contain bg-white border rounded-lg shadow-xl">{matches.map(({product})=><button type="button" key={product.id} onMouseDown={e=>e.preventDefault()} onClick={()=>{onSelect(product);setValue('');setOpen(false);}} className="block w-full text-left px-4 py-3.5 text-sm hover:bg-blue-50 touch-manipulation min-h-[52px]"><span className="font-semibold">{product.name}</span><span className="block text-xs text-gray-500">{product.category || 'Chưa phân nhóm'} · Tồn: {product.stock}</span></button>)}{matches.length===0 && <div className="px-3 py-2 text-sm text-gray-500">Không tìm thấy sản phẩm phù hợp.</div>}<button type="button" onClick={()=>{onAddNew(value);setOpen(false);}} className="w-full text-left px-3 py-2 text-sm text-blue-700 font-semibold border-t"><Plus size={14} className="inline mr-1"/>Thêm sản phẩm mới</button></div>}
   </div>;
 });
 
@@ -4146,10 +4146,26 @@ function ImportView({ products, orders = [], imports = [], suppliers, db, storeI
   // Giữ cùng cách sắp xếp lịch sử nhập hàng như bản Offline đã xác nhận đúng.
   // Dùng trực tiếp trường date (thời gian phiếu nhập), không thay bằng createdAt,
   // để thứ tự phản ánh đúng thời điểm nhập hàng do người dùng ghi nhận.
+  const getImportHistoryTime = value => {
+    if (value === undefined || value === null || value === '') return 0;
+    let date;
+    if (typeof value?.toDate === 'function') date = value.toDate();
+    else if (value instanceof Date) date = value;
+    else if (typeof value === 'number') date = new Date(value);
+    else {
+      const raw = String(value).trim();
+      const vn = raw.match(/^(?:(\d{1,2}):(\d{2})(?::(\d{2}))?\s+)?(\d{1,2})[\/.-](\d{1,2})[\/.-](\d{2,4})$/);
+      if (vn) {
+        let year = Number(vn[6]); if (year < 100) year += year >= 70 ? 1900 : 2000;
+        date = new Date(year, Number(vn[5])-1, Number(vn[4]), Number(vn[1]||0), Number(vn[2]||0), Number(vn[3]||0));
+      } else date = new Date(raw);
+    }
+    return date && !Number.isNaN(date.getTime()) ? date.getTime() : 0;
+  };
   const sortedImports = useMemo(() => [...(imports || [])].sort((a, b) => {
     const field = historySort.field;
-    let av = field === 'date' ? new Date(a.date || 0).getTime() : field === 'code' ? (a.invoiceCode || a.receiptCode || a.id || '') : field === 'supplier' ? (a.supplierName || '') : field === 'total' ? (Number(a.total) || 0) : field === 'status' ? (a.status || '') : (a.items || []).map(x => x.name || '').join(' ');
-    let bv = field === 'date' ? new Date(b.date || 0).getTime() : field === 'code' ? (b.invoiceCode || b.receiptCode || b.id || '') : field === 'supplier' ? (b.supplierName || '') : field === 'total' ? (Number(b.total) || 0) : field === 'status' ? (b.status || '') : (b.items || []).map(x => x.name || '').join(' ');
+    let av = field === 'date' ? getImportHistoryTime(a.date || a.importDate || a.createdAt) : field === 'code' ? (a.invoiceCode || a.receiptCode || a.id || '') : field === 'supplier' ? (a.supplierName || '') : field === 'total' ? (Number(a.total) || 0) : field === 'status' ? (a.status || '') : (a.items || []).map(x => x.name || '').join(' ');
+    let bv = field === 'date' ? getImportHistoryTime(b.date || b.importDate || b.createdAt) : field === 'code' ? (b.invoiceCode || b.receiptCode || b.id || '') : field === 'supplier' ? (b.supplierName || '') : field === 'total' ? (Number(b.total) || 0) : field === 'status' ? (b.status || '') : (b.items || []).map(x => x.name || '').join(' ');
     const cmp = typeof av === 'number' && typeof bv === 'number' ? av - bv : String(av).localeCompare(String(bv), 'vi', {numeric:true, sensitivity:'base'});
     return historySort.direction === 'asc' ? cmp : -cmp;
   }), [imports, historySort]);
