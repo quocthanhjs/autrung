@@ -2849,7 +2849,10 @@ function GroupManagementView({ products, db, storeId, showToast }) {
 
 function InventoryView({ products, orders, imports, warrantyRequests = [], customers = [], suppliers = [], navigationTarget, storeConfig, db, storeId, showToast }) {
   const [groups, setGroups] = useState([]);
+  const [deletedProducts, setDeletedProducts] = useState([]);
+  const [showDeletedProducts, setShowDeletedProducts] = useState(false);
   useEffect(() => onSnapshot(collection(db, 'stores', storeId, 'product_groups'), snap => setGroups(snap.docs.map(d => ({ id: d.id, ...d.data() })))), [db, storeId]);
+  useEffect(() => onSnapshot(collection(db, 'stores', storeId, 'deletedProducts'), snap => setDeletedProducts(snap.docs.map(d => ({ id: d.id, ...d.data() })).sort((a,b) => String(b.deletedAt || '').localeCompare(String(a.deletedAt || ''))))), [db, storeId]);
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [form, setForm] = useState({ name: '', category: '', price: '', cost: '', stock: '' });
   const [selectedIds, setSelectedIds] = useState([]);
@@ -2908,17 +2911,66 @@ function InventoryView({ products, orders, imports, warrantyRequests = [], custo
     } catch (e) { showToast("Lỗi", "error"); }
   };
 
-  const handleDelete = async (id) => {
-    if (window.confirm("Xác nhận xóa sản phẩm này?")) { await deleteDoc(doc(db, 'stores', storeId, 'products', id)); showToast("Đã xóa sản phẩm"); }
+  const getLinkedOrders = (product) => (orders || []).filter(order => (order.items || []).some(item => {
+    const linkedId = item.productId || item.id || item.product_id || '';
+    return (linkedId && linkedId === product.id) || String(item.name || item.productName || '').trim().toLocaleLowerCase('vi') === String(product.name || '').trim().toLocaleLowerCase('vi');
+  }));
+
+  const moveProductsToDeleted = async (ids) => {
+    const selectedProducts = (products || []).filter(product => ids.includes(product.id));
+    if (!selectedProducts.length) return;
+    const linked = selectedProducts.map(product => ({ product, orders: getLinkedOrders(product) }));
+    const orderLines = linked.filter(x => x.orders.length).map(x => `• ${x.product.name}: ${x.orders.map(o => `${o.invoiceCode || o.id} (${o.customerName || 'Không rõ khách hàng'})`).join(', ')}`);
+    const warning = `Bạn sắp chuyển ${selectedProducts.length} sản phẩm vào danh sách đã xóa.\n\n${orderLines.length ? `Các đơn hàng có liên kết:\n${orderLines.join('\n')}\n\nLịch sử đơn hàng sẽ được giữ nguyên.` : 'Không tìm thấy đơn hàng bán nào liên kết với các sản phẩm này.'}\n\nXác nhận tiếp tục?`;
+    if (!window.confirm(warning)) return;
+    try {
+      const batch = writeBatch(db);
+      selectedProducts.forEach(product => {
+        const { id, ...data } = product;
+        batch.set(doc(db, 'stores', storeId, 'deletedProducts', id), { ...data, originalProductId: id, deletedAt: new Date().toISOString(), linkedOrderIds: linked.find(x => x.product.id === id)?.orders.map(o => o.id) || [] });
+        batch.delete(doc(db, 'stores', storeId, 'products', id));
+      });
+      await batch.commit();
+      setSelectedIds([]);
+      showToast(`Đã chuyển ${selectedProducts.length} sản phẩm vào danh sách đã xóa`);
+    } catch (error) { showToast(`Không thể xóa sản phẩm: ${error.message || 'Lỗi'}`, 'error'); }
   };
+
+  const handleDelete = async (id) => moveProductsToDeleted([id]);
 
   const handleBatchDelete = async () => {
     if (selectedIds.length === 0) return;
-    if (window.confirm("Xác nhận xóa " + selectedIds.length + " sản phẩm đã chọn?")) {
-      let batch = writeBatch(db);
-      selectedIds.forEach(id => batch.delete(doc(db, 'stores', storeId, 'products', id)));
-      await batch.commit(); setSelectedIds([]); showToast("Đã xóa các sản phẩm đã chọn");
-    }
+    await moveProductsToDeleted(selectedIds);
+  };
+
+  const restoreDeletedProduct = async (product) => {
+    if (!window.confirm(`Khôi phục sản phẩm \"${product.name || ''}\" về danh sách sản phẩm?`)) return;
+    try {
+      const { id, originalProductId, deletedAt, linkedOrderIds, ...data } = product;
+      const restoreId = originalProductId || id;
+      await setDoc(doc(db, 'stores', storeId, 'products', restoreId), data);
+      await deleteDoc(doc(db, 'stores', storeId, 'deletedProducts', id));
+      showToast('Đã khôi phục sản phẩm');
+    } catch (error) { showToast(`Không thể khôi phục: ${error.message || 'Lỗi'}`, 'error'); }
+  };
+
+  const permanentlyDeleteProduct = async (product) => {
+    if (!window.confirm(`Xóa vĩnh viễn sản phẩm \"${product.name || ''}\"? Không thể hoàn tác.`)) return;
+    try { await deleteDoc(doc(db, 'stores', storeId, 'deletedProducts', product.id)); showToast('Đã xóa vĩnh viễn sản phẩm'); }
+    catch (error) { showToast(`Không thể xóa vĩnh viễn: ${error.message || 'Lỗi'}`, 'error'); }
+  };
+
+  const permanentlyDeleteAllProducts = async () => {
+    if (!deletedProducts.length) return;
+    if (!window.confirm(`XÓA VĨNH VIỄN toàn bộ ${deletedProducts.length} sản phẩm trong danh sách đã xóa? Thao tác này không thể hoàn tác.`)) return;
+    try {
+      for (let i = 0; i < deletedProducts.length; i += 400) {
+        const batch = writeBatch(db);
+        deletedProducts.slice(i, i + 400).forEach(product => batch.delete(doc(db, 'stores', storeId, 'deletedProducts', product.id)));
+        await batch.commit();
+      }
+      showToast('Đã xóa sạch danh sách sản phẩm đã xóa vĩnh viễn');
+    } catch (error) { showToast(`Không thể xóa sạch: ${error.message || 'Lỗi'}`, 'error'); }
   };
 
   const handlePrintProductDetail = () => {
@@ -3045,6 +3097,10 @@ function InventoryView({ products, orders, imports, warrantyRequests = [], custo
           <button onClick={() => {setForm({name:'', category:'', price:'', cost:'', stock:''}); setIsModalOpen(true);}} className="bg-blue-600 text-white px-4 py-2 rounded-lg font-bold flex items-center gap-2 shrink-0"><Plus size={18}/> Thêm mới</button>
         </div>
       </div>
+      <section className="mb-4 rounded-xl border border-amber-200 bg-white shadow-sm overflow-hidden">
+        <button type="button" onClick={() => setShowDeletedProducts(v => !v)} className="w-full flex items-center justify-between gap-3 px-4 py-3 bg-amber-50 text-amber-900 font-bold text-left"><span className="flex items-center gap-2"><Trash2 size={17}/> Sản phẩm đã xóa ({deletedProducts.length})</span><span>{showDeletedProducts ? 'Thu gọn ▲' : 'Xem danh sách ▼'}</span></button>
+        {showDeletedProducts && <div className="p-3 space-y-2"><div className="flex flex-wrap items-center justify-between gap-2"><p className="text-xs text-gray-500">Khôi phục sản phẩm hoặc xóa vĩnh viễn khỏi danh sách này.</p><button type="button" disabled={!deletedProducts.length} onClick={permanentlyDeleteAllProducts} className="rounded-lg bg-red-600 px-3 py-2 text-xs font-bold text-white disabled:opacity-40">Xóa sạch vĩnh viễn</button></div>{deletedProducts.length === 0 ? <p className="py-4 text-center text-sm text-gray-500">Chưa có sản phẩm nào bị xóa.</p> : <div className="overflow-x-auto"><table className="w-full text-sm"><thead className="bg-gray-50"><tr><th className="p-2 text-left">Sản phẩm</th><th className="p-2 text-left">Ngày xóa</th><th className="p-2 text-right">Thao tác</th></tr></thead><tbody>{deletedProducts.map(product => <tr key={product.id} className="border-t"><td className="p-2 font-medium">{product.name || 'Không tên'}</td><td className="p-2">{formatDate(product.deletedAt)}</td><td className="p-2"><div className="flex justify-end gap-2"><button type="button" onClick={() => restoreDeletedProduct(product)} className="rounded-lg bg-green-50 px-2 py-1.5 text-xs font-bold text-green-700">Hoàn tác</button><button type="button" onClick={() => permanentlyDeleteProduct(product)} className="rounded-lg bg-red-50 px-2 py-1.5 text-xs font-bold text-red-700">Xóa vĩnh viễn</button></div></td></tr>)}</tbody></table></div>}</div>}
+      </section>
       <details className="mb-4 rounded-2xl border border-blue-200 bg-white shadow-md overflow-hidden">
         <summary className="cursor-pointer list-none px-4 py-3 bg-blue-50 text-blue-800 font-extrabold flex items-center justify-between"><span className="flex items-center gap-2"><Package size={18}/> Nhóm hàng</span><span className="text-xs font-semibold">Quản lý nhóm và sản phẩm trong nhóm ▾</span></summary>
         <div className="p-2 sm:p-3"><GroupManagementView products={products} db={db} storeId={storeId} showToast={showToast} /></div>
