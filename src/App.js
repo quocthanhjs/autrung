@@ -4143,10 +4143,13 @@ function ImportView({ products, orders = [], imports = [], suppliers, db, storeI
 
   const addProductToCart = (p) => setCart(c => c.find(i => i.id === p.id) ? c : [{ id: p.id, name: p.name, category: p.category || '', qty: 1, importCost: p.cost || 0, price: p.price || 0 }, ...c]);
 
+  // Giữ cùng cách sắp xếp lịch sử nhập hàng như bản Offline đã xác nhận đúng.
+  // Dùng trực tiếp trường date (thời gian phiếu nhập), không thay bằng createdAt,
+  // để thứ tự phản ánh đúng thời điểm nhập hàng do người dùng ghi nhận.
   const sortedImports = useMemo(() => [...(imports || [])].sort((a, b) => {
     const field = historySort.field;
-    let av = field === 'date' ? getImportSortTimestamp(a.date || a.createdAt) : field === 'code' ? (a.invoiceCode || a.receiptCode || a.id || '') : field === 'supplier' ? (a.supplierName || '') : field === 'total' ? (Number(a.total) || 0) : field === 'status' ? (a.status || '') : (a.items || []).map(x => x.name || '').join(' ');
-    let bv = field === 'date' ? getImportSortTimestamp(b.date || b.createdAt) : field === 'code' ? (b.invoiceCode || b.receiptCode || b.id || '') : field === 'supplier' ? (b.supplierName || '') : field === 'total' ? (Number(b.total) || 0) : field === 'status' ? (b.status || '') : (b.items || []).map(x => x.name || '').join(' ');
+    let av = field === 'date' ? new Date(a.date || 0).getTime() : field === 'code' ? (a.invoiceCode || a.receiptCode || a.id || '') : field === 'supplier' ? (a.supplierName || '') : field === 'total' ? (Number(a.total) || 0) : field === 'status' ? (a.status || '') : (a.items || []).map(x => x.name || '').join(' ');
+    let bv = field === 'date' ? new Date(b.date || 0).getTime() : field === 'code' ? (b.invoiceCode || b.receiptCode || b.id || '') : field === 'supplier' ? (b.supplierName || '') : field === 'total' ? (Number(b.total) || 0) : field === 'status' ? (b.status || '') : (b.items || []).map(x => x.name || '').join(' ');
     const cmp = typeof av === 'number' && typeof bv === 'number' ? av - bv : String(av).localeCompare(String(bv), 'vi', {numeric:true, sensitivity:'base'});
     return historySort.direction === 'asc' ? cmp : -cmp;
   }), [imports, historySort]);
