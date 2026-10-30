@@ -4246,7 +4246,7 @@ function ImportView({ products, orders = [], imports = [], suppliers, db, storeI
       <div className="w-full lg:w-[460px] bg-white border-l shadow-lg z-20 flex flex-col flex-1 min-h-0 lg:flex-none lg:h-full">
         <div className="p-4 border-b bg-gray-50"><h2 className="font-bold flex items-center gap-2"><ArrowDownToLine size={20} className="text-gray-600"/> {editingImport ? `Sửa phiếu nhập ${editingImport.invoiceCode || editingImport.id?.slice(0,8) || ""}` : "Phiếu Nhập Kho"}</h2>{editingImport && <button onClick={() => { setEditingImport(null); setCart([]); setSupplierId(''); setIsDebt(false); }} className="text-xs text-blue-600 mt-2">Hủy chỉnh sửa</button>}</div>
         <div className="flex-1 min-h-0 overflow-y-auto p-4 space-y-3">
-          {cart.map(item => <ImportCartRow key={item.id} item={item} onCommit={(id, values)=>setCart(c=>c.map(i=>i.id===id?{...i,...values}:i))} onRemove={id=>setCart(c=>c.filter(i=>i.id!==id))}/>)}
+          {[...cart].reverse().map(item => <ImportCartRow key={item.id} item={item} onCommit={(id, values)=>setCart(c=>c.map(i=>i.id===id?{...i,...values}:i))} onRemove={id=>setCart(c=>c.filter(i=>i.id!==id))}/>)}
           {cart.length === 0 && <div className="text-center text-gray-400 py-12">Chưa chọn sản phẩm nào để nhập</div>}
         </div>
         <div className="p-4 border-t bg-gray-50 space-y-3">
