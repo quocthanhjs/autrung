@@ -3959,7 +3959,7 @@ function ImportView({ products, orders = [], imports = [], suppliers, db, storeI
       // San pham moi luon bat dau voi gia von/gia ban va ton kho bang 0; so luong chi tang khi luu phieu nhap.
       const newProdData = { name: newProdForm.name.trim(), category: newProdForm.category.trim(), cost: costVal, price: priceVal, stock: 0, createdAt: new Date().toISOString() };
       const docRef = await addDoc(collection(db, 'stores', storeId, 'products'), newProdData);
-      setCart(c => [...c, { id: docRef.id, name: newProdData.name, category: newProdData.category, qty: 0, importCost: costVal, price: priceVal }]);
+      setCart(c => [{ id: docRef.id, name: newProdData.name, category: newProdData.category, qty: 0, importCost: costVal, price: priceVal }, ...c]);
       setShowAddProdModal(false); setShowGroupSuggestions(false); setShowAddGroupForm(false); setGroupSearch(''); setNewProdForm({ name: '', category: '', cost: '0', price: '0' }); showToast("Đã lưu sản phẩm mới và đưa vào phiếu nhập! Giá và tồn kho mặc định bằng 0.");
     } catch (err) {
       console.error('Loi them san pham moi trong phieu nhap:', err);
@@ -4141,7 +4141,12 @@ function ImportView({ products, orders = [], imports = [], suppliers, db, storeI
     finally{setBulkImportBusy(false);}
   };
 
-  const addProductToCart = (p) => setCart(c => c.find(i => i.id === p.id) ? c : [{ id: p.id, name: p.name, category: p.category || '', qty: 1, importCost: p.cost || 0, price: p.price || 0 }, ...c]);
+  const addProductToCart = (p) => setCart(c => {
+    const existing = c.find(i => i.id === p.id);
+    return existing
+      ? c.map(i => i.id === p.id ? { ...i, qty: Number(i.qty ?? 0) + 1 } : i)
+      : [{ id: p.id, name: p.name, category: p.category || '', qty: 1, importCost: p.cost || 0, price: p.price || 0 }, ...c];
+  });
 
   // Giữ cùng cách sắp xếp lịch sử nhập hàng như bản Offline đã xác nhận đúng.
   // Dùng trực tiếp trường date (thời gian phiếu nhập), không thay bằng createdAt,
@@ -4266,7 +4271,7 @@ function ImportView({ products, orders = [], imports = [], suppliers, db, storeI
       <div className="w-full lg:w-[460px] bg-white border-l shadow-lg z-20 flex flex-col flex-1 min-h-0 lg:flex-none lg:h-full">
         <div className="p-4 border-b bg-gray-50"><h2 className="font-bold flex items-center gap-2"><ArrowDownToLine size={20} className="text-gray-600"/> {editingImport ? `Sửa phiếu nhập ${editingImport.invoiceCode || editingImport.id?.slice(0,8) || ""}` : "Phiếu Nhập Kho"}</h2>{editingImport && <button onClick={() => { setEditingImport(null); setCart([]); setSupplierId(''); setIsDebt(false); }} className="text-xs text-blue-600 mt-2">Hủy chỉnh sửa</button>}</div>
         <div className="flex-1 min-h-0 overflow-y-auto p-4 space-y-3">
-          {[...cart].reverse().map(item => <ImportCartRow key={item.id} item={item} onCommit={(id, values)=>setCart(c=>c.map(i=>i.id===id?{...i,...values}:i))} onRemove={id=>setCart(c=>c.filter(i=>i.id!==id))}/>)}
+          {cart.map(item => <ImportCartRow key={item.id} item={item} onCommit={(id, values)=>setCart(c=>c.map(i=>i.id===id?{...i,...values}:i))} onRemove={id=>setCart(c=>c.filter(i=>i.id!==id))}/>)}
           {cart.length === 0 && <div className="text-center text-gray-400 py-12">Chưa chọn sản phẩm nào để nhập</div>}
         </div>
         <div className="p-4 border-t bg-gray-50 space-y-3">
